@@ -17,7 +17,7 @@ function start(setup: MatchSetup): void {
     teamB: TEAMS[setup.rival],
     user: { role: setup.role },
   });
-  const view = new MatchView(document.getElementById('app')!, sim);
+  const view = new MatchView(document.getElementById('app')!, sim, ui);
   const hud = new Hud(ui, sim);
   const panel = new DecisionPanel(ui, sim);
 
@@ -27,20 +27,25 @@ function start(setup: MatchSetup): void {
   let speed = 1;
   window.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'f') speed = speed === 1 ? 4 : 1;
+    if (e.code === 'Space' && view.replaying) view.skipReplay();
   });
+  window.addEventListener('pointerdown', () => view.skipReplay());
 
   let last = performance.now();
   let acc = 0;
   function frame(now: number): void {
     // La cámara lenta de decisión ignora la aceleración x4.
-    const scale = sim.timeScale < 1 ? sim.timeScale : speed;
-    acc += Math.min(0.25, (now - last) / 1000) * scale;
+    const dtReal = Math.min(0.25, (now - last) / 1000);
     last = now;
-    while (acc >= TUNING.dt) {
-      sim.step(TUNING.dt);
-      acc -= TUNING.dt;
+    // Durante una repetición la simulación espera; la cámara lenta de decisión ignora la aceleración x4.
+    if (!view.replaying) {
+      acc += dtReal * (sim.timeScale < 1 ? sim.timeScale : speed);
+      while (acc >= TUNING.dt) {
+        sim.step(TUNING.dt);
+        acc -= TUNING.dt;
+      }
     }
-    view.render();
+    view.render(dtReal);
     hud.update();
     panel.update();
     requestAnimationFrame(frame);

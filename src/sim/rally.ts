@@ -149,7 +149,8 @@ export class Simulation {
         if (p.team !== team) continue;
         const idx = court.indexOf(p.key);
         let target: Vec3;
-        if (idx < 0) target = toWorld(team, 2.5 + 0.7 * bench++, -6.5);
+        // Ambas bancas del lado lejano de la cámara de transmisión (z negativo).
+        if (idx < 0) target = v3(sideSign(team) * (2.5 + 0.7 * bench++), 0, -6.5);
         else if (!receiving && idx === 0) target = spot(team, SERVE_SPOT);
         else target = spot(team, (receiving ? RECEIVE_SPOTS : DEFENSE_SPOTS)[idx]);
         p.pos = clone(target);

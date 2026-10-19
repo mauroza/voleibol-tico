@@ -20,10 +20,10 @@ function start(setup: MatchSetup): void {
     setsToWin: setup.setsToWin,
     teamA: TEAMS[setup.team],
     teamB: TEAMS[setup.rival],
-    user: { role: setup.role },
+    control: 'A',
     difficulty: setup.difficulty,
   });
-  const stats = attachStats(sim.bus, sim.userKey);
+  const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
   const hud = new Hud(ui, sim);
   const panel = new DecisionPanel(ui, sim);

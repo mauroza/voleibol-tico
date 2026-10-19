@@ -14,6 +14,7 @@ button { font: inherit; cursor: pointer; }
 .menu h1 { margin: 8px 0 0; font-size: clamp(34px, 7vw, 56px); font-style: italic; font-weight: 900; text-align: center; letter-spacing: 1px;
            text-shadow: 0 4px 0 #ce1126, 0 8px 18px #000; }
 .menu h1 span { color: #ffe14d; }
+.menu-coach { margin: 0; padding: 10px 14px; border-radius: 10px; background: #ffe14d1a; border: 1px solid #ffe14d55; color: #f3e7b0; font-size: 14px; }
 .menu-sub { margin: -6px 0 4px; text-align: center; color: #aab4d0; }
 .menu section h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: #ffe14d; }
 .menu-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }

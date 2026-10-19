@@ -87,7 +87,7 @@ export class MatchView {
     this.ballShadow.rotation.x = -Math.PI / 2;
     this.scene.add(this.ball, this.ballShadow);
     this.userRing.rotation.x = -Math.PI / 2;
-    this.userRing.visible = sim.userKey !== null;
+    this.userRing.visible = false;
     this.scene.add(this.userRing);
     this.fx = new Effects(this.camera);
     this.scene.add(this.fx.group);
@@ -131,8 +131,11 @@ export class MatchView {
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
     }
 
-    if (this.sim.userKey) {
-      const u = this.byKey.get(this.sim.userKey)!.rig.root.position;
+    // Anillo bajo el jugador que está decidiendo.
+    const deciding = this.replay ? null : this.sim.decision?.playerKey;
+    this.userRing.visible = !!deciding;
+    if (deciding) {
+      const u = this.byKey.get(deciding)!.rig.root.position;
       this.userRing.position.set(u.x, 0.02, u.z);
     }
     this.ball.position.copy(ballPos);
@@ -187,7 +190,7 @@ export class MatchView {
           reason: e.reason,
           attackQuality: this.lastAttackQuality,
           userPerfect: this.lastUserTiming === 'perfect',
-          userWon: this.sim.userKey !== null && e.winner === 'A',
+          userWon: this.sim.control !== null && e.winner === this.sim.control,
         });
         if (replay) {
           const b = this.sim.ballPos;

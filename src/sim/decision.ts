@@ -9,7 +9,8 @@ export type UserOption =
   | { id: 'dump' }
   | { id: 'shot'; shot: AttackShot }
   | { id: 'free' }
-  | { id: 'block'; jump: boolean };
+  /** Esquema de bloqueo: cuántos delanteros saltan (0 = sin bloqueo). */
+  | { id: 'block'; n: number };
 
 export type DecisionKind = 'serve' | 'pass' | 'set' | 'attack' | 'block';
 
@@ -20,6 +21,8 @@ export interface DecisionOption {
 
 export interface Decision {
   kind: DecisionKind;
+  /** Jugador que ejecuta (en el bloqueo, el bloqueador principal). */
+  playerKey: string;
   options: DecisionOption[];
   /** Instante de simulación del contacto (o del remate rival en un bloqueo); null en el saque. */
   contactTime: number | null;

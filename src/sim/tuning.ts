@@ -29,9 +29,11 @@ export const TUNING = {
     base: 1.05,
     noise: 2.0,
     minPassForCombination: 0.55,
+    /** La semi-rápida tolera un pase algo peor que la rápida. */
+    minPassForSemi: 0.4,
     outOfSystemPass: 0.3,
     rescueFlightTime: 1.5,
-    flightTime: { zone4: 1.25, zone2: 1.0, quick: 0.55, pipe: 0.95 },
+    flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.95, back1: 1.0 },
   },
   attack: {
     base: 1.08,
@@ -64,5 +66,16 @@ export const TUNING = {
     toolScale: 0.4,
     highPass: { flightTime: 1.8, noiseFactor: 0.5, riskFactor: 0.5 },
   },
-  block: { reactionTime: 0.3, lateralSpeed: 3.0, handWidth: 0.6, stuffBase: 0.08, stuffScale: 0.3, touchChance: 0.25, doubleBonus: 1.25 },
+  block: {
+    reactionTime: 0.3,
+    lateralSpeed: 3.0,
+    handWidth: 0.6,
+    stuffBase: 0.08,
+    stuffScale: 0.3,
+    /** Multiplicador de tapa y probabilidad de toque según cuántos bloquean. */
+    nFactor: [0, 0.75, 1.1, 1.35],
+    touchByN: [0, 0.2, 0.28, 0.33],
+    /** Separación lateral entre bloqueadores que cierran el bloqueo (m). */
+    spacing: 0.75,
+  },
 } as const;

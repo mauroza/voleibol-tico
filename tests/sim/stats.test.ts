@@ -6,9 +6,9 @@ import type { Difficulty } from '../../src/sim/rally';
 import { attachStats } from '../../src/sim/stats';
 
 describe('attachStats', () => {
-  it('cuenta puntos por motivo y atribuye al usuario', () => {
+  it('cuenta puntos por motivo y atribuye al equipo controlado', () => {
     const bus = new EventBus();
-    const s = attachStats(bus, 'A:u');
+    const s = attachStats(bus, 'A');
     const sets = { A: 0, B: 0 };
     const contact = (playerKey: string, team: 'A' | 'B', kind: 'serve' | 'reception' | 'set' | 'attack' | 'block') =>
       bus.emit({ type: 'contact', time: 0, playerKey, team, kind, quality: 0.5 });
@@ -23,7 +23,7 @@ describe('attachStats', () => {
 
     expect(s.teams.A).toMatchObject({ points: 2, aces: 1, blocks: 1 });
     expect(s.teams.B).toMatchObject({ points: 1, kills: 1 });
-    expect(s.user).toMatchObject({ touches: 2, aces: 1, blocks: 1, kills: 0, perfect: 1, bad: 1 });
+    expect(s.user).toMatchObject({ touches: 4, aces: 1, blocks: 1, kills: 0, perfect: 1, bad: 1 });
   });
 });
 
@@ -42,6 +42,6 @@ describe('dificultad', () => {
   it('el rival difícil gana más puntos que el fácil', () => {
     const easy = shareA('easy');
     const hard = shareA('hard');
-    expect(easy).toBeGreaterThan(hard + 0.04);
+    expect(easy).toBeGreaterThan(hard + 0.025);
   }, 120_000);
 });

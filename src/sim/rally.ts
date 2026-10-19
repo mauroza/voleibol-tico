@@ -1,13 +1,13 @@
 import type { TeamDef } from '../data/teams';
-import { availableSetOptions, type AttackShot, type SetOption, type Zone } from './actions';
-import { chooseServe, chooseSet, chooseShot } from './ai';
+import { SET_LABELS, availableSetOptions, type AttackShot, type SetOption, type Zone } from './actions';
+import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
 import { judgeServe, judgeTiming, serveMeter, type Decision, type DecisionKind, type DecisionOption, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
-import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, RECEIVE_SPOTS, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, spot } from './formation';
+import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, RECEIVE_SPOTS, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
-import { attackContactHeight, blockReach, moveSpeed, type PlayerState, type Role } from './players';
+import { attackContactHeight, blockReach, moveSpeed, type PlayerState } from './players';
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
 import { createRng, type Rng } from './rng';
 import { TUNING } from './tuning';
@@ -19,14 +19,13 @@ export interface SimOptions {
   teamA: TeamDef;
   teamB: TeamDef;
   firstServer?: TeamId;
-  /** Jugador controlado por el usuario (siempre en el equipo A). */
-  user?: { role: Role };
-  /** Dificultad del rival (equipo B). Por defecto, normal. */
+  /** Equipo que controla el usuario: decide todas las jugadas de todos sus jugadores. */
+  control?: TeamId;
+  /** Dificultad del rival (el equipo que no controla el usuario). Por defecto, normal. */
   difficulty?: Difficulty;
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
-
 export type Phase = 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
 
 type BlockOutcome = 'stuff' | 'soft' | 'tool';
@@ -36,15 +35,6 @@ interface Control {
   option: UserOption | null;
   timing: Timing;
 }
-
-const USER_TEAM: TeamId = 'A';
-
-const SET_LABELS: Record<SetOption, string> = {
-  zone4: 'Punta (zona 4)',
-  zone2: 'Opuesto (zona 2)',
-  quick: 'Rápida al central',
-  pipe: 'Pipe (zaguero)',
-};
 
 interface Touch {
   key: string;
@@ -66,6 +56,18 @@ interface Plan {
   block?: BlockOutcome;
 }
 
+/** Bloqueo preparado contra el remate rival ya planificado. */
+export interface BlockSetup {
+  team: TeamId;
+  /** Cuántos bloquean (0 = sin bloqueo). */
+  scheme: number;
+  keys: string[];
+  /** Instante del remate rival. */
+  attackTime: number;
+  /** Lateral (z mundo) del punto de remate. */
+  z: number;
+}
+
 interface Reach {
   time: number;
   point: Vec3;
@@ -80,11 +82,11 @@ export class Simulation {
   readonly match: MatchState;
   readonly players = new Map<string, PlayerState>();
   readonly teams: Record<TeamId, TeamDef>;
+  readonly control: TeamId | null;
   phase: Phase = 'preServe';
   time = 0;
   ball: Trajectory = { p0: v3(), v0: v3(), t0: 0, g: GRAVITY };
   ballPos: Vec3 = v3();
-  readonly userKey: string | null;
   /** Decisión pendiente del usuario. La UI la lee y responde con `choose`, `setServeZone` y `press`. */
   decision: Decision | null = null;
 
@@ -98,14 +100,15 @@ export class Simulation {
   private touches = 0;
   /** Dificultad de la pelota entrante para quien la recibe (0..1). */
   private threat = 0;
-  private intent: { key: string } | null = null;
+  private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
   private lastShot: AttackShot = 'cross';
+  private blockSetup: BlockSetup | null = null;
 
   constructor(opts: SimOptions) {
     this.rng = createRng(opts.seed);
     this.difficulty = opts.difficulty ?? 'normal';
+    this.control = opts.control ?? null;
     this.teams = { A: opts.teamA, B: opts.teamB };
-    this.userKey = opts.user ? `${USER_TEAM}:${this.userPlayerId(opts.user.role)}` : null;
     for (const team of TEAM_IDS) {
       for (const def of this.teams[team].roster) {
         const key = `${team}:${def.id}`;
@@ -131,6 +134,16 @@ export class Simulation {
     return this.plan;
   }
 
+  /** Bloqueo preparado contra el próximo remate (solo lectura, para el render). */
+  get blockers(): Readonly<BlockSetup> | null {
+    return this.blockSetup;
+  }
+
+  /** Segundos hasta el saque de la IA (para animar el lanzamiento); null si no hay saque automático pendiente. */
+  get serveCountdown(): number | null {
+    return this.phase === 'preServe' && this.match.serving !== this.control ? Math.max(0, this.phaseTimer) : null;
+  }
+
   /**
    * Multiplicador de tiempo para el bucle en tiempo real. Con una decisión pendiente: casi detenido mientras el usuario
    * no elige, acercamiento cuando ya eligió y cámara lenta en los últimos instantes para el timing.
@@ -148,6 +161,12 @@ export class Simulation {
     const d = this.decision;
     if (!d || d.pressedAt !== null || index < 0 || index >= d.options.length) return;
     d.chosen = index;
+    const opt = d.options[index].option;
+    if (d.kind === 'block' && opt.id === 'block' && this.blockSetup) {
+      this.blockSetup.scheme = opt.n;
+      this.blockSetup.keys = this.pickBlockers(this.blockSetup.team, opt.n, this.blockSetup.z);
+      this.setFormations();
+    }
   }
 
   setServeZone(zone: Zone): void {
@@ -171,15 +190,17 @@ export class Simulation {
       this.ballPos = this.serverHand();
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
-        const server = this.court(this.match.serving)[0];
-        if (server !== this.userKey) this.serve();
-        else if (!this.decision) this.openDecision('serve', this.serveOptions(), null);
+        if (this.match.serving !== this.control) this.serve();
+        else if (!this.decision) this.openDecision('serve', this.serveOptions(), null, this.court(this.match.serving)[0]);
         else if (this.time - this.decision.startTime > TUNING.decision.serveTimeout) this.serve();
       }
     } else if (this.phase === 'inPlay') {
       this.ballPos = positionAt(this.ball, this.time);
       if (this.netFaultTime !== null) {
-        if (this.time >= this.netFaultTime) this.endRally(this.last!.team);
+        if (this.time >= this.netFaultTime) {
+          this.dropAtNet(this.netFaultTime);
+          this.endRally(this.last!.team);
+        }
       } else if (this.plan) {
         if (this.time >= this.plan.time) this.executeContact(this.plan);
       } else if (this.time >= landingTime(this.ball)) {
@@ -200,111 +221,7 @@ export class Simulation {
   private setup(team: TeamId): TeamSetup {
     const d = this.teams[team];
     const k = (id: string) => `${team}:${id}`;
-    // Si el usuario es central, el líbero no lo sustituye: siempre está en cancha.
-    const liberoReplaces = d.liberoReplaces.map(k).filter((key) => key !== this.userKey);
-    return { lineup: d.lineup.map(k), libero: k(d.libero), liberoReplaces };
-  }
-
-  private userPlayerId(role: Role): string {
-    const d = this.teams[USER_TEAM];
-    if (role === 'L') return d.libero;
-    const id = d.lineup.find((pid) => d.roster.find((p) => p.id === pid)!.role === role);
-    if (!id) throw new Error(`El lineup no tiene rol ${role}`);
-    return id;
-  }
-
-  // ---------- decisiones del usuario ----------
-
-  private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null): void {
-    this.decision = { kind, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null };
-    this.bus.emit({ type: 'decision', decision: this.decision });
-  }
-
-  private closeDecision(timing: Timing): void {
-    const d = this.decision!;
-    this.decision = null;
-    this.bus.emit({ type: 'decisionResolved', kind: d.kind, timing });
-  }
-
-  private serveOptions(): DecisionOption[] {
-    return [
-      { label: 'Saque flotado', option: { id: 'serve', type: 'float' } },
-      { label: 'Saque en salto', option: { id: 'serve', type: 'jump' } },
-      { label: 'Saque seguro', option: { id: 'serve', type: 'safe' } },
-    ];
-  }
-
-  /** Abre una decisión si el próximo contacto es del usuario, o si puede bloquear el remate rival. */
-  private openDecisionFor(plan: Plan | null): void {
-    if (!this.userKey || !plan || this.decision) return;
-    if (plan.key === this.userKey && plan.kind !== 'block') {
-      const options = this.contactOptions(plan);
-      const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
-      this.openDecision(kind, options, plan.time);
-    } else if (plan.kind === 'attack' && plan.team !== USER_TEAM && this.userCanBlock()) {
-      this.openDecision('block', [
-        { label: 'Bloquear', option: { id: 'block', jump: true } },
-        { label: 'No bloquear (cubrir)', option: { id: 'block', jump: false } },
-      ], plan.time);
-    }
-  }
-
-  private contactOptions(plan: Plan): DecisionOption[] {
-    const p = this.player(plan.key);
-    switch (plan.kind) {
-      case 'reception':
-      case 'dig':
-        return [
-          { label: 'Pase al colocador', option: { id: 'pass', high: false } },
-          { label: 'Pase alto seguro', option: { id: 'pass', high: true } },
-        ];
-      case 'set': {
-        const passQuality = this.last!.quality;
-        const specialist = p.def.role === 'S';
-        const court = this.court(p.team);
-        const options: DecisionOption[] = availableSetOptions(court, p.key, passQuality, specialist, this.players)
-          .map((choice) => ({ label: SET_LABELS[choice.option], option: { id: 'set', choice } }));
-        if (specialist && isFrontIndex(court.indexOf(p.key)) && passQuality >= 0.5) {
-          options.push({ label: 'Segunda (ataque directo)', option: { id: 'dump' } });
-        }
-        return options;
-      }
-      case 'attack':
-        return [
-          { label: 'Remate cruzado', option: { id: 'shot', shot: 'cross' } },
-          { label: 'Remate en línea', option: { id: 'shot', shot: 'line' } },
-          { label: 'Finta', option: { id: 'shot', shot: 'tip' } },
-          { label: 'Usar el bloqueo', option: { id: 'shot', shot: 'tool' } },
-        ];
-      default:
-        return [{ label: 'Mandar pelota', option: { id: 'free' } }];
-    }
-  }
-
-  private userCanBlock(): boolean {
-    const court = this.court(USER_TEAM);
-    const idx = court.indexOf(this.userKey!);
-    return idx >= 0 && isFrontIndex(idx) && this.player(this.userKey!).def.role !== 'L';
-  }
-
-  /** Timing de la IA: el rival (B) usa la distribución de su dificultad; el equipo A, la normal. */
-  private aiTiming(team: TeamId): Timing {
-    return rollTiming(this.rng, team === 'B' ? TUNING.difficulty[this.difficulty] : TUNING.timing);
-  }
-
-  /** Timing perfecto del usuario: bono de calidad. La IA (userTiming undefined) no lo recibe. */
-  private boosted(q: number, userTiming: Timing | undefined): number {
-    return userTiming === 'perfect' ? Math.min(1, q + TUNING.decision.perfectBonus) : q;
-  }
-
-  /** Consume la decisión del usuario para este contacto. */
-  private resolveDecision(plan: Plan): Control | undefined {
-    const d = this.decision;
-    if (!d || plan.key !== this.userKey || d.kind === 'block' || d.kind === 'serve') return undefined;
-    const option = d.chosen === null ? null : d.options[d.chosen].option;
-    const timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time);
-    this.closeDecision(timing);
-    return { option, timing };
+    return { lineup: d.lineup.map(k), libero: k(d.libero), liberoReplaces: d.liberoReplaces.map(k) };
   }
 
   private resetForServe(): void {
@@ -316,6 +233,7 @@ export class Simulation {
     this.intent = null;
     this.threat = 0;
     this.decision = null;
+    this.blockSetup = null;
     this.touchSide = this.match.serving;
     this.touches = 0;
     for (const team of TEAM_IDS) {
@@ -352,6 +270,98 @@ export class Simulation {
       p.pos.x += (dx / d) * len;
       p.pos.z += (dz / d) * len;
     }
+  }
+
+  // ---------- decisiones del usuario ----------
+
+  private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null, playerKey: string): void {
+    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null };
+    this.decision = decision;
+    this.bus.emit({ type: 'decision', decision });
+  }
+
+  private closeDecision(timing: Timing): void {
+    const d = this.decision!;
+    this.decision = null;
+    this.bus.emit({ type: 'decisionResolved', kind: d.kind, timing });
+  }
+
+  private serveOptions(): DecisionOption[] {
+    return [
+      { label: 'Saque flotado', option: { id: 'serve', type: 'float' } },
+      { label: 'Saque en salto', option: { id: 'serve', type: 'jump' } },
+      { label: 'Saque seguro', option: { id: 'serve', type: 'safe' } },
+    ];
+  }
+
+  /** Abre una decisión si el próximo contacto es del equipo controlado, o el esquema de bloqueo ante el remate rival. */
+  private openDecisionFor(plan: Plan | null): void {
+    if (!this.control || !plan || this.decision) return;
+    if (plan.team === this.control && plan.kind !== 'block') {
+      const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
+      this.openDecision(kind, this.contactOptions(plan), plan.time, plan.key);
+    } else if (plan.kind === 'attack' && plan.team !== this.control && this.blockSetup?.team === this.control) {
+      const front = this.frontPlayers(this.control);
+      if (front.length === 0) return;
+      const labels = ['Sin bloqueo (defender)', 'Bloqueo simple', 'Bloqueo doble', 'Bloqueo triple'];
+      const options: DecisionOption[] = [3, 2, 1, 0]
+        .filter((n) => n <= front.length)
+        .map((n) => ({ label: labels[n], option: { id: 'block', n } }));
+      this.openDecision('block', options, plan.time, this.blockSetup.keys[0] ?? front[0]);
+    }
+  }
+
+  private contactOptions(plan: Plan): DecisionOption[] {
+    const p = this.player(plan.key);
+    switch (plan.kind) {
+      case 'reception':
+      case 'dig':
+        return [
+          { label: 'Pase al colocador', option: { id: 'pass', high: false } },
+          { label: 'Pase alto seguro', option: { id: 'pass', high: true } },
+        ];
+      case 'set': {
+        const passQuality = this.last!.quality;
+        const specialist = p.def.role === 'S';
+        const court = this.court(p.team);
+        const options: DecisionOption[] = availableSetOptions(court, p.key, passQuality, specialist, this.players)
+          .map((choice) => ({ label: SET_LABELS[choice.option], option: { id: 'set', choice } }));
+        if (specialist && isFrontIndex(court.indexOf(p.key)) && passQuality >= 0.5) {
+          options.push({ label: 'Segunda (ataque del colocador)', option: { id: 'dump' } });
+        }
+        return options;
+      }
+      case 'attack':
+        return [
+          { label: 'Remate cruzado', option: { id: 'shot', shot: 'cross' } },
+          { label: 'Remate en línea', option: { id: 'shot', shot: 'line' } },
+          { label: 'Finta', option: { id: 'shot', shot: 'tip' } },
+          { label: 'Usar el bloqueo', option: { id: 'shot', shot: 'tool' } },
+        ];
+      default:
+        return [{ label: 'Mandar pelota', option: { id: 'free' } }];
+    }
+  }
+
+  /** Timing de la IA: el rival usa la distribución de su dificultad; el equipo controlado, la normal. */
+  private aiTiming(team: TeamId): Timing {
+    const rival = this.control ? team !== this.control : team === 'B';
+    return rollTiming(this.rng, rival ? TUNING.difficulty[this.difficulty] : TUNING.timing);
+  }
+
+  /** Timing perfecto del usuario: bono de calidad. La IA (userTiming undefined) no lo recibe. */
+  private boosted(q: number, userTiming: Timing | undefined): number {
+    return userTiming === 'perfect' ? Math.min(1, q + TUNING.decision.perfectBonus) : q;
+  }
+
+  /** Consume la decisión del usuario para este contacto. */
+  private resolveDecision(plan: Plan): Control | undefined {
+    const d = this.decision;
+    if (!d || d.kind === 'block' || d.kind === 'serve' || d.playerKey !== plan.key) return undefined;
+    const option = d.chosen === null ? null : d.options[d.chosen].option;
+    const timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time);
+    this.closeDecision(timing);
+    return { option, timing };
   }
 
   // ---------- contactos ----------
@@ -478,7 +488,7 @@ export class Simulation {
     const point = toWorld(p.team, outOfSystem ? Math.max(depth, 2.0) : depth, right, attackContactHeight(attacker.def) - 0.1);
     const target = this.keepOnSide(p.team, this.noisy(point, cfg.noise * (1 - q)));
     this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
-    this.intent = { key: attacker.key };
+    this.intent = { key: attacker.key, option: choice.option, outOfSystem };
     this.threat = 0;
   }
 
@@ -492,7 +502,7 @@ export class Simulation {
         prevQuality: this.last!.quality,
         timing: ctl?.timing ?? this.aiTiming(p.team),
         attribute: (p.def.attrs.attackPower + p.def.attrs.attackAccuracy) / 2,
-        pressure: this.blockPressure(opp, at),
+        pressure: this.blockPressure(at),
       },
       this.rng,
     );
@@ -557,14 +567,24 @@ export class Simulation {
     }
   }
 
+  /** La pelota pegó en la red (o la antena): cae junto a la red del lado de quien la tocó, sin atravesarla. */
+  private dropAtNet(time: number): void {
+    const hit = positionAt(this.ball, time);
+    const s = sideSign(this.last!.team);
+    const from = v3(s * 0.12, clamp(hit.y, 0.4, COURT.netHeight), clamp(hit.z, -COURT.halfWidth - 0.5, COURT.halfWidth + 0.5));
+    this.ball = launch(from, v3(s * 0.45, COURT.ballRadius, from.z), 0.35 + 0.12 * from.y, time);
+  }
+
   // ---------- planificación ----------
 
   private planNext(): void {
     this.plan = null;
     this.netFaultTime = null;
     const last = this.last!;
-    // Una decisión de bloqueo se consume con el remate rival, haya o no bloqueo.
+    // El bloqueo preparado (y la decisión del usuario sobre él) se consume con el remate rival.
     const blockDecision = last.kind === 'attack' && this.decision?.kind === 'block' ? this.decision : null;
+    const block = last.kind === 'attack' ? this.blockSetup : null;
+    if (last.kind === 'attack') this.blockSetup = null;
     const net = checkNet(this.ball);
     const crossTime = net.kind === 'none' ? Infinity : net.time;
     // Primero el lado donde está la pelota: un compañero puede jugarla antes de que llegue a la red.
@@ -575,15 +595,49 @@ export class Simulation {
     } else if (net.kind === 'fault') {
       this.netFaultTime = net.time;
     } else if (net.kind === 'clear') {
-      if (last.kind === 'attack' && this.lastShot !== 'tip') {
+      if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
         if (blockDecision && blockDecision.chosen !== null) blockTiming = judgeTiming(blockDecision.pressedAt, blockDecision.contactTime!);
-        this.plan = this.planBlock(otherTeam(last.team), net.time, blockDecision, blockTiming);
+        this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
       }
       this.plan ??= this.planTouch(otherTeam(sideOfX(this.ball.p0.x)));
     }
     if (blockDecision) this.closeDecision(blockTiming);
+    if (this.plan?.kind === 'attack') this.setupBlock(otherTeam(this.plan.team), this.plan);
     this.setFormations();
     this.openDecisionFor(this.plan);
+  }
+
+  /** Prepara el bloqueo del equipo que defiende contra el remate ya planificado (esquema de la IA por defecto). */
+  private setupBlock(team: TeamId, attack: Plan): void {
+    const scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
+    const n = Math.min(scheme, this.frontPlayers(team).length);
+    this.blockSetup = { team, scheme: n, keys: this.pickBlockers(team, n, attack.point.z), attackTime: attack.time, z: attack.point.z };
+  }
+
+  /** Delanteros que pueden bloquear (sin líbero). */
+  private frontPlayers(team: TeamId): string[] {
+    return this.court(team).filter((k, i) => isFrontIndex(i) && this.player(k).def.role !== 'L');
+  }
+
+  /** Los `n` delanteros cuya zona queda más cerca del punto de remate (el de esa zona, luego el central, luego el otro). */
+  private pickBlockers(team: TeamId, n: number, z: number): string[] {
+    const zoneZ = (k: string) => spot(team, zoneSpotFor(this.player(k).def.role, true)).z;
+    return this.frontPlayers(team)
+      .sort((a, b) => Math.abs(zoneZ(a) - z) - Math.abs(zoneZ(b) - z))
+      .slice(0, n);
+  }
+
+  /** Posiciones del bloqueo cerrado: los bloqueadores, juntos frente al atacante, en el orden de sus zonas. */
+  private blockSpots(block: BlockSetup): Map<string, Vec3> {
+    const team = block.team;
+    const zoneZ = (k: string) => spot(team, zoneSpotFor(this.player(k).def.role, true)).z;
+    const ordered = [...block.keys].sort((a, b) => zoneZ(a) - zoneZ(b));
+    const out = new Map<string, Vec3>();
+    ordered.forEach((k, i) => {
+      const offset = (i - (ordered.length - 1) / 2) * TUNING.block.spacing;
+      out.set(k, v3(sideSign(team) * 0.45, 0, clamp(block.z + offset, -COURT.halfWidth + 0.3, COURT.halfWidth - 0.3)));
+    });
+    return out;
   }
 
   private planTouch(team: TeamId): Plan | null {
@@ -647,34 +701,27 @@ export class Simulation {
     return null;
   }
 
-  private planBlock(team: TeamId, crossTime: number, userDecision: Decision | null, userTiming: Timing): Plan | null {
+  /** Resuelve el bloqueo al cruzar la red: cuenta solo a los bloqueadores que llegaron y alcanzan la altura. */
+  private planBlock(block: BlockSetup, crossTime: number, userTiming: Timing | null): Plan | null {
     const cfg = TUNING.block;
     const at = positionAt(this.ball, crossTime);
     const available = Math.max(0, crossTime - this.time - cfg.reactionTime);
-    const userOption = userDecision && userDecision.chosen !== null ? userDecision.options[userDecision.chosen].option : null;
-    const userStays = userOption?.id === 'block' && !userOption.jump;
-    const candidates = this.court(team)
-      .filter((_, i) => isFrontIndex(i))
+    const blockers = block.keys
       .map((k) => this.player(k))
-      .filter((p) => !(userStays && p.key === this.userKey))
-      .filter((p) => p.def.role !== 'L' && at.y <= blockReach(p.def))
+      .filter((p) => at.y <= blockReach(p.def))
       .filter((p) => Math.max(0, Math.abs(p.pos.z - at.z) - cfg.handWidth) <= cfg.lateralSpeed * available)
       .sort((a, b) => Math.abs(a.pos.z - at.z) - Math.abs(b.pos.z - at.z));
-    // Si el usuario decidió bloquear y llega, es el bloqueador principal.
-    const userIdx = userDecision ? candidates.findIndex((p) => p.key === this.userKey) : -1;
-    if (userIdx > 0) candidates.unshift(...candidates.splice(userIdx, 1));
-    const blockers = candidates.slice(0, 2);
-    if (blockers.length === 0) return null;
-    if (this.lastShot === 'tool' && this.rng.chance(TUNING.decision.toolBase + TUNING.decision.toolScale * this.last!.quality)) {
-      return { key: blockers[0].key, team, time: crossTime, point: at, kind: 'block', low: false, block: 'tool' };
-    }
-    const blockAttr = blockers.reduce((s, p) => s + p.def.attrs.block, 0) / blockers.length / 100;
-    const userFactor = userIdx >= 0 ? TUNING.decision.blockTiming[userTiming] : 1;
-    const stuff = clamp01((cfg.stuffBase + cfg.stuffScale * blockAttr * (1 - this.last!.quality)) * (blockers.length === 2 ? cfg.doubleBonus : 1) * userFactor);
+    const n = blockers.length;
+    if (n === 0) return null;
+    const plan = (outcome: BlockOutcome): Plan => ({ key: blockers[0].key, team: block.team, time: crossTime, point: at, kind: 'block', low: false, block: outcome });
+    if (this.lastShot === 'tool' && this.rng.chance(TUNING.decision.toolBase + TUNING.decision.toolScale * this.last!.quality)) return plan('tool');
+    const blockAttr = blockers.reduce((s, p) => s + p.def.attrs.block, 0) / n / 100;
+    const userFactor = userTiming ? TUNING.decision.blockTiming[userTiming] : 1;
+    const stuff = clamp01((cfg.stuffBase + cfg.stuffScale * blockAttr * (1 - this.last!.quality)) * cfg.nFactor[n] * userFactor);
     const r = this.rng.next();
-    const outcome: BlockOutcome | null = r < stuff ? 'stuff' : r < stuff + cfg.touchChance ? 'soft' : null;
-    if (!outcome) return null;
-    return { key: blockers[0].key, team, time: crossTime, point: at, kind: 'block', low: false, block: outcome };
+    if (r < stuff) return plan('stuff');
+    if (r < stuff + cfg.touchByN[n]) return plan('soft');
+    return null;
   }
 
   private setFormations(): void {
@@ -682,20 +729,34 @@ export class Simulation {
     for (const team of TEAM_IDS) {
       const building = plan !== null && plan.team === team && plan.kind !== 'block' && this.touchSide === team && this.touches >= 1;
       const receivingFirst = plan !== null && plan.team === team && !building;
+      const block = this.blockSetup && this.blockSetup.team === team ? this.blockSetup : null;
+      const blockSpots = block ? this.blockSpots(block) : null;
       this.court(team).forEach((key, idx) => {
         const p = this.player(key);
         if (plan && plan.key === key) p.target = v3(plan.point.x, 0, plan.point.z);
         else if (building) p.target = this.attackSpot(team, p, idx);
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
-        } else p.target = spot(team, DEFENSE_SPOTS[idx]);
+        } else if (blockSpots?.has(key)) p.target = blockSpots.get(key)!;
+        else p.target = this.zoneSpot(team, p, idx, !!block);
       });
     }
   }
 
+  /** Zona de defensa por especialidad; un delantero que no bloquea se retira a defender. */
+  private zoneSpot(team: TeamId, p: PlayerState, idx: number, blockActive: boolean): Vec3 {
+    const front = isFrontIndex(idx);
+    const [depth, right] = zoneSpotFor(p.def.role, front);
+    return spot(team, [front && blockActive ? 3.2 : depth, right]);
+  }
+
   private attackSpot(team: TeamId, p: PlayerState, idx: number): Vec3 {
     if (p.def.role === 'S') return spot(team, SETTER_SPOT);
-    if (!isFrontIndex(idx)) return spot(team, p.def.role === 'OH' ? APPROACH_SPOTS.pipe : DEFENSE_SPOTS[idx]);
+    if (!isFrontIndex(idx)) {
+      if (p.def.role === 'OH') return spot(team, APPROACH_SPOTS.pipe);
+      if (p.def.role === 'OP') return spot(team, APPROACH_SPOTS.back1);
+      return spot(team, zoneSpotFor(p.def.role, false));
+    }
     if (p.def.role === 'OH') return spot(team, APPROACH_SPOTS.zone4);
     if (p.def.role === 'MB') return spot(team, APPROACH_SPOTS.quick);
     return spot(team, APPROACH_SPOTS.zone2);
@@ -767,9 +828,12 @@ export class Simulation {
     return tr;
   }
 
-  private blockPressure(opp: TeamId, at: Vec3): number {
-    const near = this.court(opp).filter((k, i) => isFrontIndex(i) && Math.abs(this.player(k).pos.z - at.z) < 1.5).length;
-    return Math.min(0.6, 0.3 * near);
+  /** Presión del bloqueo preparado sobre el atacante: más bloqueadores cerca, más presión. */
+  private blockPressure(at: Vec3): number {
+    const block = this.blockSetup;
+    if (!block) return 0;
+    const near = block.keys.filter((k) => Math.abs(this.player(k).pos.z - at.z) < 1.5).length;
+    return Math.min(0.6, 0.22 * near);
   }
 
   private isNearlyIn(p: Vec3): boolean {
@@ -795,6 +859,7 @@ export class Simulation {
     this.phaseTimer = TUNING.pointPause;
     this.plan = null;
     this.netFaultTime = null;
+    this.blockSetup = null;
     if (this.decision) this.closeDecision('bad');
   }
 

@@ -96,6 +96,8 @@ export class Simulation {
   private phaseTimer = 0;
   private plan: Plan | null = null;
   private netFaultTime: number | null = null;
+  /** Rebotes de la pelota en el piso después del punto. */
+  private bounces = 0;
   private last: Touch | null = null;
   private touchSide: TeamId = 'A';
   private touches = 0;
@@ -223,6 +225,7 @@ export class Simulation {
         this.ballLanded();
       }
     } else {
+      this.bounceBall();
       this.ballPos = positionAt(this.ball, Math.min(this.time, landingTime(this.ball)));
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
@@ -296,6 +299,31 @@ export class Simulation {
       p.pos.z += (dz / d) * len;
     }
     this.separatePlayers();
+    // Nadie cruza la línea central (el cuerpo se queda en su campo).
+    for (const team of TEAM_IDS) {
+      const s = sideSign(team);
+      for (const k of this.court(team)) {
+        const p = this.player(k).pos;
+        if (s * p.x < TUNING.minNetGap) p.x = s * TUNING.minNetGap;
+      }
+    }
+  }
+
+  /** Cuando la pelota toca el piso después del punto, rebota perdiendo energía (hasta que casi no sube). */
+  private bounceBall(): void {
+    const land = landingTime(this.ball);
+    if (this.time < land || this.bounces >= TUNING.bounce.max) return;
+    const dt = land - this.ball.t0;
+    const vy = this.ball.v0.y - this.ball.g * dt;
+    if (-vy * TUNING.bounce.restitution < TUNING.bounce.minUp) return;
+    const p = positionAt(this.ball, land);
+    this.ball = {
+      p0: v3(p.x, COURT.ballRadius, p.z),
+      v0: v3(this.ball.v0.x * TUNING.bounce.friction, -vy * TUNING.bounce.restitution, this.ball.v0.z * TUNING.bounce.friction),
+      t0: land,
+      g: GRAVITY,
+    };
+    this.bounces += 1;
   }
 
   /** Nadie ocupa el lugar de un compañero: separación mínima entre los jugadores en cancha de cada equipo. */
@@ -951,6 +979,7 @@ export class Simulation {
     if (out.matchWinner) this.bus.emit({ type: 'matchEnd', winner: out.matchWinner });
     this.phase = 'pointOver';
     this.phaseTimer = TUNING.pointPause;
+    this.bounces = 0;
     this.plan = null;
     this.netFaultTime = null;
     this.blockSetup = null;

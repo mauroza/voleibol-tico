@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { TEAMS } from '../../src/data/teams';
-import type { TeamId } from '../../src/sim/court';
+import { COURT, type TeamId } from '../../src/sim/court';
 import { runMatch } from '../../src/sim/headless';
-import type { SimOptions } from '../../src/sim/rally';
+import { Simulation, type SimOptions } from '../../src/sim/rally';
+import { TUNING } from '../../src/sim/tuning';
 
 const opts = (seed: number): SimOptions => ({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] });
 
@@ -117,6 +118,42 @@ describe('Simulation', () => {
       });
     }
     expect(minDist).toBeGreaterThan(0.45);
+  }, 60_000);
+
+  it('la pelota rebota en el piso después de caer', () => {
+    const sim = new Simulation(opts(8));
+    let bounced = 0;
+    let landedAt: number | null = null;
+    let maxAfter = 0;
+    while (sim.phase !== 'matchOver' && bounced < 5) {
+      sim.step(TUNING.dt);
+      if (sim.phase === 'pointOver') {
+        if (landedAt === null && sim.ballPos.y <= COURT.ballRadius + 0.02) landedAt = sim.time;
+        if (landedAt !== null) maxAfter = Math.max(maxAfter, sim.ballPos.y);
+      } else if (landedAt !== null) {
+        if (maxAfter > 0.3) bounced += 1;
+        landedAt = null;
+        maxAfter = 0;
+      }
+    }
+    expect(bounced).toBeGreaterThanOrEqual(5);
+  });
+
+  it('ningún jugador cruza la línea central', () => {
+    let worst = Infinity;
+    for (let seed = 1; seed <= 3; seed++) {
+      runMatch(opts(seed), (sim) => {
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          for (const team of ['A', 'B'] as const) {
+            const s = team === 'A' ? -1 : 1;
+            for (const k of sim.court(team)) worst = Math.min(worst, s * sim.player(k).pos.x);
+          }
+        };
+      });
+    }
+    expect(worst).toBeGreaterThanOrEqual(0.19);
   }, 60_000);
 
   it('cada rally termina en menos de 60 s de simulación', () => {

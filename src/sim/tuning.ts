@@ -9,9 +9,13 @@ export const TUNING = {
   letDropMargin: 0.25,
   pointPause: 1.5,
   /** Separación cuerpo–pelota en cada contacto (m): la pelota queda donde llegan los brazos. */
-  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22, blockDepth: 0.3 },
+  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22, blockDepth: 0.42 },
   /** Distancia mínima entre compañeros en cancha (m). */
   minSeparation: 0.55,
+  /** El cuerpo no se acerca a la red a menos de esto (m): nadie cruza la línea central. */
+  minNetGap: 0.2,
+  /** Rebotes de la pelota tras el punto: pierde energía vertical y horizontal en cada pique. */
+  bounce: { max: 4, restitution: 0.55, friction: 0.78, minUp: 0.8 },
   servePause: 1.0,
   passHeight: 0.9,
   setHeight: 2.3,

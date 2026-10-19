@@ -128,7 +128,7 @@ export class Animator {
       if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - apex) > 0.05) this.action = { track: TRACKS.block, at: apex };
       active = this.action;
       // Manos a la altura por donde cruzará el remate (un poco por debajo del punto de golpe).
-      if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', up.point.y - 0.3, 0.2, 1.0));
+      if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', Math.max(up.point.y - 0.3, 2.65), 0.25, 1.0));
     } else if (sim.phase === 'preServe' && court[0] === this.key && sim.match.serving === p.team) {
       // Sacador: lanzamiento sincronizado con el saque de la IA; con el usuario, pelota en la mano hasta que decida.
       const countdown = sim.serveCountdown;
@@ -183,7 +183,7 @@ export class Animator {
     this.rig.root.rotation.y = this.yaw;
 
     // El bloqueador principal lleva las manos a la pelota justo al cruzar la red.
-    if (up && inPlay && up.kind === 'block' && up.key === this.key) {
+    if (up && inPlay && up.kind === 'block' && up.key === this.key && up.point.y > 2.55) {
       aim = { target: new THREE.Vector3(up.point.x, up.point.y, up.point.z), arms: 'both', weight: ease(1 - (up.time - now) / 0.12) * 0.8 };
     }
     if (!aim && this.contactAim) {

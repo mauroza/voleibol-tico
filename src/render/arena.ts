@@ -53,8 +53,8 @@ interface Fan {
   yaw: number;
 }
 
-const FAN_BODY = new THREE.CapsuleGeometry(0.2, 0.42, 3, 8);
-const FAN_HEAD = new THREE.SphereGeometry(0.15, 10, 8);
+const FAN_BODY = new THREE.CapsuleGeometry(0.2, 0.42, 2, 6);
+const FAN_HEAD = new THREE.SphereGeometry(0.15, 7, 5);
 const SHIRT_EXTRA = ['#ffffff', '#ffffff', '#1d2b4f', '#e8e8e8'];
 const SKINS = ['#f6d3b3', '#eebf98', '#d9a477', '#b97f55', '#8a5a3b'];
 
@@ -72,6 +72,8 @@ export class Arena {
   private readonly m = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly up = new THREE.Vector3(0, 1, 0);
+  private readonly p = new THREE.Vector3();
+  private readonly one = new THREE.Vector3(1, 1, 1);
 
   constructor(teams: Record<TeamId, TeamDef>) {
     this.buildHall();
@@ -108,9 +110,9 @@ export class Arena {
       const bounce = Math.abs(Math.sin(t * (4 + e * 5) + f.phase)) * 0.35 * e * e;
       const sway = Math.sin(t * 1.3 + f.phase) * 0.05;
       this.q.setFromAxisAngle(this.up, f.yaw);
-      this.m.compose(new THREE.Vector3(f.x + sway, f.y + 0.42 + bounce, f.z), this.q, new THREE.Vector3(1, 1, 1));
+      this.m.compose(this.p.set(f.x + sway, f.y + 0.42 + bounce, f.z), this.q, this.one);
       this.bodies.setMatrixAt(i, this.m);
-      this.m.compose(new THREE.Vector3(f.x + sway, f.y + 0.88 + bounce, f.z), this.q, new THREE.Vector3(1, 1, 1));
+      this.m.compose(this.p.set(f.x + sway, f.y + 0.88 + bounce, f.z), this.q, this.one);
       this.heads.setMatrixAt(i, this.m);
     });
     this.bodies.instanceMatrix.needsUpdate = true;

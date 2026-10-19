@@ -55,23 +55,26 @@ describe('jugador del usuario', () => {
     });
   });
 
-  it('cámara lenta solo cerca del contacto con decisión pendiente', () => {
-    let slow = 0;
-    let normal = 0;
-    play('S', 4, 'idle', (sim) => {
-      sim.bus.on(() => {
-        const d = sim.decision;
-        if (!d || d.contactTime === null) {
-          expect(sim.timeScale).toBe(1);
-          return;
-        }
-        const near = d.contactTime - sim.time <= TUNING.decision.slowWindow;
-        expect(sim.timeScale).toBe(near ? TUNING.decision.slowScale : 1);
-        if (near) slow += 1;
-        else normal += 1;
-      });
-    });
-    expect(slow + normal).toBeGreaterThan(0);
+  it('tiempo casi detenido mientras no elige; acercamiento y cámara lenta después', () => {
+    const cfg = TUNING.decision;
+    const seen = new Set<number>();
+    const sim = new Simulation({ seed: 4, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], user: { role: 'S' } });
+    for (let i = 0; i < 200000 && sim.phase !== 'matchOver' && seen.size < 3; i++) {
+      const d = sim.decision;
+      if (!d || d.contactTime === null) {
+        expect(sim.timeScale).toBe(1);
+      } else if (d.chosen === null) {
+        expect(sim.timeScale).toBe(cfg.thinkScale);
+        seen.add(cfg.thinkScale);
+        if (d.contactTime - sim.time < 0.9) sim.choose(0);
+      } else {
+        const near = d.contactTime - sim.time <= cfg.slowWindow;
+        expect(sim.timeScale).toBe(near ? cfg.slowScale : cfg.approachScale);
+        seen.add(near ? cfg.slowScale : cfg.approachScale);
+      }
+      sim.step(TUNING.dt);
+    }
+    expect(seen).toEqual(new Set([cfg.thinkScale, cfg.approachScale, cfg.slowScale]));
   });
 
   it('jugar perfecto gana más puntos que no hacer nada', () => {

@@ -10,6 +10,7 @@ import { buildCharacter, lookFor } from './character';
 import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
+import { TUNING } from '../sim/tuning';
 import { toon } from './toon';
 
 /** Floats por personaje en un cuadro de repetición: raíz x/z, giro, salto, cadera y un cuaternión por articulación. */
@@ -50,9 +51,12 @@ export class MatchView {
   private pendingReplay: { at: number; focus: THREE.Vector3 } | null = null;
   private replay: { playhead: number; to: number } | null = null;
   private replayPointTime = 0;
+  /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
+  private pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+  private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.pixelRatio);
     container.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color('#141a26');
     this.scene.fog = new THREE.Fog('#141a26', 30, 60);
@@ -98,6 +102,8 @@ export class MatchView {
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // Compilar los shaders ahora (también los de efectos aún invisibles) para evitar tirones la primera vez que aparecen.
+    this.renderer.compile(this.scene, this.camera);
   }
 
   get replaying(): boolean {
@@ -110,6 +116,7 @@ export class MatchView {
 
   render(dtReal: number): void {
     const now = performance.now() / 1000;
+    this.adaptResolution(dtReal);
     const ballPos = new THREE.Vector3();
     if (this.replay) {
       this.replay.playhead += dtReal * REPLAY_SPEED;
@@ -136,7 +143,7 @@ export class MatchView {
     this.prevBall.copy(ballPos);
     this.arena.update(now, dtReal);
     this.fx.update(ballPos, ballSpeed, now);
-    this.speedLines.update(dtReal, !this.replay && this.sim.timeScale < 1 ? 0.3 : 0);
+    this.speedLines.update(dtReal, !this.replay && this.sim.timeScale <= TUNING.decision.slowScale && this.sim.decision?.chosen != null ? 0.25 : 0);
     this.director.update(dtReal, ballPos);
     this.badge.style.opacity = this.replay ? '1' : '0';
     this.renderer.render(this.scene, this.camera);
@@ -190,6 +197,17 @@ export class MatchView {
         }
       }
     });
+  }
+
+  /** Más de ~1 s seguido por debajo de 45 fps: baja la resolución un paso (hasta 0.75). */
+  private adaptResolution(dtReal: number): void {
+    if (dtReal <= 0) return;
+    this.slowFrames = dtReal > 1 / 45 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 2);
+    if (this.slowFrames > 60 && this.pixelRatio > 0.75) {
+      this.pixelRatio = Math.max(0.75, this.pixelRatio - 0.25);
+      this.renderer.setPixelRatio(this.pixelRatio);
+      this.slowFrames = 0;
+    }
   }
 
   private startReplay(): void {

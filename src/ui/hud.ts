@@ -6,6 +6,7 @@ export class Hud {
   private readonly el = document.createElement('div');
   private message = '';
   private readonly narrator = new Narrator();
+  private shown = '';
 
   constructor(root: HTMLElement, private readonly sim: Simulation) {
     this.el.className = 'hud';
@@ -20,7 +21,12 @@ export class Hud {
   update(): void {
     const { points, sets } = this.sim.match;
     const { A, B } = this.sim.teams;
-    this.el.textContent = `${A.name}  ${sets.A}  |  ${points.A} – ${points.B}  |  ${sets.B}  ${B.name}\n${this.userLine()}${this.message}`;
+    const text = `${A.name}  ${sets.A}  |  ${points.A} – ${points.B}  |  ${sets.B}  ${B.name}\n${this.userLine()}${this.message}`;
+    // Reescribir el DOM solo si cambió: evita recalcular estilos y layout en cada cuadro.
+    if (text !== this.shown) {
+      this.el.textContent = text;
+      this.shown = text;
+    }
   }
 
   private userLine(): string {

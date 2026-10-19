@@ -2,12 +2,19 @@ import { TEAMS } from '../data/teams';
 import type { Role } from '../sim/players';
 import type { Difficulty } from '../sim/rally';
 
+export type Pace = 'calm' | 'normal' | 'real';
+
+/** Velocidad del reloj del juego respecto del tiempo real. */
+export const PACE_SPEED: Record<Pace, number> = { calm: 0.6, normal: 0.8, real: 1 };
+const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Normal', real: 'Real' };
+
 export interface MatchSetup {
   team: number;
   rival: number;
   role: Role;
   setsToWin: 1 | 2;
   difficulty: Difficulty;
+  pace: Pace;
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -61,13 +68,13 @@ function loadSetup(): { setup: MatchSetup; autostart: boolean } | null {
   }
 }
 
-const DEFAULT: MatchSetup = { team: 0, rival: 2, role: 'OH', setsToWin: 1, difficulty: 'normal' };
+const DEFAULT: MatchSetup = { team: 0, rival: 2, role: 'OH', setsToWin: 1, difficulty: 'normal', pace: 'normal' };
 
 /** Menú principal. Resuelve con la configuración elegida (o al instante si hay una revancha pendiente). */
 export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const saved = loadSetup();
-  if (saved?.autostart) return Promise.resolve(saved.setup);
-  const setup: MatchSetup = { ...(saved?.setup ?? DEFAULT) };
+  if (saved?.autostart) return Promise.resolve({ ...DEFAULT, ...saved.setup });
+  const setup: MatchSetup = { ...DEFAULT, ...saved?.setup };
 
   const el = document.createElement('div');
   el.className = 'menu';
@@ -104,6 +111,9 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       section('Dificultad', segmented((Object.keys(DIFFICULTY_LABELS) as Difficulty[]).map((d) => ({
         label: DIFFICULTY_LABELS[d], active: setup.difficulty === d, pick: () => { setup.difficulty = d; render(); },
       })))),
+      section('Ritmo', segmented((Object.keys(PACE_LABELS) as Pace[]).map((p) => ({
+        label: PACE_LABELS[p], active: setup.pace === p, pick: () => { setup.pace = p; render(); },
+      })))),
     );
     el.append(row);
 
@@ -111,7 +121,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     how.className = 'menu-how';
     how.innerHTML = `<summary>Cómo jugar</summary>
       <ul>
-        <li>Cuando la pelota viene a tu jugador, el tiempo se ralentiza y aparecen opciones.</li>
+        <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
         <li>Elige con <b>1–4</b> (o clic). En el saque, después eliges la zona con <b>1–6</b>.</li>
         <li>Presiona <b>ESPACIO</b> justo cuando la pelota llegue: zona verde = <b>¡Perfecto!</b></li>
         <li><b>Esc</b> pausa · <b>M</b> silencio · <b>F</b> acelera x4 · Gamepad: cruceta elige, <b>A</b> timing, <b>Start</b> pausa.</li>

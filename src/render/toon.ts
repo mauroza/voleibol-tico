@@ -25,6 +25,14 @@ export function toon(color: THREE.ColorRepresentation, map?: THREE.Texture): THR
   return m;
 }
 
+let vertexToon: THREE.MeshToonMaterial | null = null;
+
+/** Material toon único con color por vértice: lo comparten todas las mallas fusionadas de los personajes. */
+export function toonVertexColors(): THREE.MeshToonMaterial {
+  vertexToon ??= new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: gradientMap() });
+  return vertexToon;
+}
+
 /** Contorno por "inverted hull": la misma geometría inflada por la normal, solo caras traseras. */
 export const OUTLINE = new THREE.ShaderMaterial({
   // Grosor proporcional a la distancia a la cámara: el contorno se ve parecido de cerca y en la vista de transmisión.

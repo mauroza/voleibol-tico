@@ -121,7 +121,7 @@ export class DecisionPanel {
     this.perfectZone.style.width = `${(perfect * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${(good * 100).toFixed(1)}%`;
     this.hint.textContent = d.chosen === null
-      ? `Elige con 1–${d.options.length} o clic`
+      ? `Tiempo detenido: elige con 1–${d.options.length} o clic`
       : d.kind === 'serve'
         ? 'Zona con 1–6 · ESPACIO cuando el marcador llegue al verde'
         : 'ESPACIO justo cuando la pelota llegue (zona verde)';

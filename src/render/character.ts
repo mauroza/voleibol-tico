@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { JointName } from './pose';
-import { toon, toonMesh } from './toon';
+import { mergeParts, placed, type Part } from './merge';
+import { OUTLINE, toon, toonVertexColors } from './toon';
 
 /** Medidas del personaje (metros). Proporciones anime: piernas largas, cabeza algo grande. */
 export const DIMS = {
@@ -121,43 +122,67 @@ function contrast(hex: string): string {
   return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.55 ? '#141414' : '#ffffff';
 }
 
-// ---------- geometrías compartidas ----------
+// ---------- geometrías compartidas (pocos segmentos: estilo low-poly y menos triángulos) ----------
 
-const geo = {
-  limb: (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 10),
-  sphere: (r: number) => new THREE.SphereGeometry(r, 20, 14),
-};
+const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 3, 8);
 const shared = {
-  upperArm: geo.limb(0.06, DIMS.upperArm - 0.08),
-  sleeve: new THREE.CylinderGeometry(0.078, 0.072, 0.15, 12),
-  forearm: geo.limb(0.052, DIMS.forearm - 0.07),
-  hand: geo.sphere(0.058),
-  thigh: geo.limb(0.088, DIMS.thigh - 0.1),
-  shortsLeg: new THREE.CylinderGeometry(0.105, 0.098, 0.2, 12),
-  shin: geo.limb(0.066, DIMS.shin - 0.1),
-  kneepad: new THREE.CylinderGeometry(0.08, 0.076, 0.11, 12),
-  sock: new THREE.CylinderGeometry(0.068, 0.064, 0.12, 10),
+  upperArm: limb(0.06, DIMS.upperArm - 0.08),
+  sleeve: new THREE.CylinderGeometry(0.078, 0.072, 0.15, 10),
+  forearm: limb(0.052, DIMS.forearm - 0.07),
+  hand: new THREE.SphereGeometry(0.058, 8, 6),
+  thigh: limb(0.088, DIMS.thigh - 0.1),
+  shortsLeg: new THREE.CylinderGeometry(0.105, 0.098, 0.2, 10),
+  shin: limb(0.066, DIMS.shin - 0.1),
+  kneepad: new THREE.CylinderGeometry(0.08, 0.076, 0.11, 10),
+  sock: new THREE.CylinderGeometry(0.068, 0.064, 0.12, 8),
   shoe: new THREE.BoxGeometry(0.12, 0.075, 0.26),
-  pelvis: geo.limb(0.13, 0.08),
-  chest: geo.limb(0.15, 0.26),
-  neck: new THREE.CylinderGeometry(0.052, 0.058, 0.1, 10),
-  head: geo.sphere(0.135),
-  hairCap: new THREE.SphereGeometry(0.15, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.58),
-  spike: new THREE.ConeGeometry(0.05, 0.16, 6),
-  eye: new THREE.PlaneGeometry(0.074, 0.094),
+  pelvis: limb(0.13, 0.08),
+  chest: limb(0.15, 0.26),
+  neck: new THREE.CylinderGeometry(0.052, 0.058, 0.1, 8),
+  head: new THREE.SphereGeometry(0.135, 16, 12),
+  hairCap: new THREE.SphereGeometry(0.15, 16, 9, 0, Math.PI * 2, 0, Math.PI * 0.58),
+  spike: new THREE.ConeGeometry(0.05, 0.16, 5),
   mouth: new THREE.PlaneGeometry(0.035, 0.008),
-  number: new THREE.PlaneGeometry(0.2, 0.2),
 };
 
-const at = (o: THREE.Object3D, x: number, y: number, z: number) => {
-  o.position.set(x, y, z);
-  return o;
-};
+/** Dos ojos en una sola geometría (mismo material con la textura del ojo). */
+const EYES_GEO = (() => {
+  const g = new THREE.PlaneGeometry(0.074, 0.094);
+  return mergeParts([-1, 1].map((side) => ({ geometry: g, color: '#ffffff', matrix: placed(side * 0.045, -0.012, 0.126, [0, side * 0.24, 0]) })));
+})();
+
+/** Número de espalda (grande) y de pecho (chico) en una sola geometría. */
+const NUMBERS_GEO = (() => {
+  const g = new THREE.PlaneGeometry(0.2, 0.2);
+  return mergeParts([
+    { geometry: g, color: '#ffffff', matrix: placed(0, 0.24, -0.125, [0, Math.PI, 0]) },
+    { geometry: g, color: '#ffffff', matrix: placed(0.07, 0.3, 0.125, [0, 0, 0], [0.45, 0.45, 0.45]) },
+  ]);
+})();
+
+const texturedCache = new Map<string, THREE.MeshToonMaterial>();
+function texturedToon(key: string, make: () => THREE.Texture): THREE.MeshToonMaterial {
+  let m = texturedCache.get(key);
+  if (!m) {
+    m = toon('#fff', make());
+    texturedCache.set(key, m);
+  }
+  return m;
+}
 
 function joint(parent: THREE.Object3D, x: number, y: number, z: number): THREE.Object3D {
-  const j = at(new THREE.Object3D(), x, y, z);
+  const j = new THREE.Object3D();
+  j.position.set(x, y, z);
   parent.add(j);
   return j;
+}
+
+/** Fusiona las piezas de una articulación en una malla toon con contorno. */
+function attach(parent: THREE.Object3D, parts: Part[]): void {
+  const geometry = mergeParts(parts);
+  const mesh = new THREE.Mesh(geometry, toonVertexColors());
+  mesh.add(new THREE.Mesh(geometry, OUTLINE));
+  parent.add(mesh);
 }
 
 /** Peinados: posiciones (en la cabeza) y orientación de los mechones puntiagudos. */
@@ -168,56 +193,48 @@ const HAIR_SPIKES: [number, number, number, number, number][][] = [
   [[0, 0.16, 0.0, 0, 0], [0.06, 0.15, 0.02, 0.2, -0.4], [-0.06, 0.15, 0.02, 0.2, 0.4], [0.04, 0.13, -0.08, -0.5, -0.2], [-0.04, 0.13, -0.08, -0.5, 0.2], [0, 0.1, 0.11, 1.3, 0]],
 ];
 
+/**
+ * Personaje anime: una malla fusionada (color por vértice) por articulación, más ojos y números texturizados.
+ * Unas 26 llamadas de dibujo por personaje en lugar de ~65.
+ */
 export function buildCharacter(look: Look): Rig {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const hipsY = DIMS.thigh + DIMS.shin + DIMS.foot;
-  const hips = joint(body, 0, hipsY, 0);
-  hips.add(at(toonMesh(shared.pelvis, look.secondary), 0, 0.02, 0)).scale.set(1.1, 1, 0.8);
+  const hips = joint(body, 0, DIMS.thigh + DIMS.shin + DIMS.foot, 0);
+  attach(hips, [{ geometry: shared.pelvis, color: look.secondary, matrix: placed(0, 0.02, 0, [0, 0, 0], [1.1, 1, 0.8]) }]);
 
-  // Torso
+  // Torso con números
   const spine = joint(hips, 0, 0.08, 0);
-  const chest = at(toonMesh(shared.chest, look.primary), 0, 0.2, 0);
-  chest.scale.set(1.25, 1, 0.78);
-  spine.add(chest);
-  const back = new THREE.Mesh(shared.number, toon('#fff', numberTexture(look.number, contrast(look.primary))));
-  back.rotation.y = Math.PI;
-  spine.add(at(back, 0, 0.24, -0.125));
-  const front = new THREE.Mesh(shared.number, toon('#fff', numberTexture(look.number, contrast(look.primary))));
-  front.scale.setScalar(0.45);
-  spine.add(at(front, 0.07, 0.3, 0.125));
+  attach(spine, [{ geometry: shared.chest, color: look.primary, matrix: placed(0, 0.2, 0, [0, 0, 0], [1.25, 1, 0.78]) }]);
+  const ink = contrast(look.primary);
+  spine.add(new THREE.Mesh(NUMBERS_GEO, texturedToon(`num:${look.number}:${ink}`, () => numberTexture(look.number, ink))));
 
-  // Cabeza
+  // Cuello y cabeza (la cabeza va algo escalada: más alta que ancha)
   const neck = joint(spine, 0, 0.47, 0);
-  neck.add(at(toonMesh(shared.neck, look.skin), 0, 0.03, 0));
-  const head = at(toonMesh(shared.head, look.skin), 0, 0.16, 0.01);
+  attach(neck, [{ geometry: shared.neck, color: look.skin, matrix: placed(0, 0.03, 0) }]);
+  const head = joint(neck, 0, 0.16, 0.01);
   head.scale.set(0.96, 1.08, 1);
-  neck.add(head);
-  const hair = toonMesh(shared.hairCap, look.hair);
-  hair.rotation.x = -0.35;
-  head.add(at(hair, 0, 0.012, -0.012));
-  for (const [x, y, z, rx, rz] of HAIR_SPIKES[look.hairStyle]) {
-    const s = toonMesh(shared.spike, look.hair);
-    s.rotation.set(rx, 0, rz);
-    head.add(at(s, x, y, z));
-  }
-  const eyeMat = toon('#fff', eyeTexture(look.eyes));
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(shared.eye, eyeMat);
-    eye.rotation.y = side * 0.24;
-    head.add(at(eye, side * 0.045, -0.012, 0.126));
-  }
-  head.add(at(new THREE.Mesh(shared.mouth, toon('#5a2a2a')), 0, -0.07, 0.129));
+  attach(head, [
+    { geometry: shared.head, color: look.skin, matrix: new THREE.Matrix4() },
+    { geometry: shared.hairCap, color: look.hair, matrix: placed(0, 0.012, -0.012, [-0.35, 0, 0]) },
+    ...HAIR_SPIKES[look.hairStyle].map(([x, y, z, rx, rz]): Part => ({ geometry: shared.spike, color: look.hair, matrix: placed(x, y, z, [rx, 0, rz]) })),
+    { geometry: shared.mouth, color: '#5a2a2a', matrix: placed(0, -0.07, 0.129) },
+  ]);
+  head.add(new THREE.Mesh(EYES_GEO, texturedToon(`eye:${look.eyes}`, () => eyeTexture(look.eyes))));
 
   // Brazos (L = +x)
   const arm = (side: 1 | -1) => {
     const shoulder = joint(spine, side * 0.2, 0.38, 0);
-    shoulder.add(at(toonMesh(shared.sleeve, look.primary), 0, -0.05, 0));
-    shoulder.add(at(toonMesh(shared.upperArm, look.skin), 0, -DIMS.upperArm / 2, 0));
+    attach(shoulder, [
+      { geometry: shared.sleeve, color: look.primary, matrix: placed(0, -0.05, 0) },
+      { geometry: shared.upperArm, color: look.skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
+    ]);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
-    elbow.add(at(toonMesh(shared.forearm, look.skin), 0, -DIMS.forearm / 2, 0));
-    elbow.add(at(toonMesh(shared.hand, look.skin), 0, -DIMS.forearm, 0));
+    attach(elbow, [
+      { geometry: shared.forearm, color: look.skin, matrix: placed(0, -DIMS.forearm / 2, 0) },
+      { geometry: shared.hand, color: look.skin, matrix: placed(0, -DIMS.forearm, 0) },
+    ]);
     return { shoulder, elbow };
   };
   const L = arm(1);
@@ -226,19 +243,22 @@ export function buildCharacter(look: Look): Rig {
   // Piernas
   const leg = (side: 1 | -1) => {
     const hip = joint(hips, side * 0.1, -0.02, 0);
-    hip.add(at(toonMesh(shared.shortsLeg, look.secondary), 0, -0.08, 0));
-    hip.add(at(toonMesh(shared.thigh, look.skin), 0, -DIMS.thigh / 2, 0));
+    attach(hip, [
+      { geometry: shared.shortsLeg, color: look.secondary, matrix: placed(0, -0.08, 0) },
+      { geometry: shared.thigh, color: look.skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
+    ]);
     const knee = joint(hip, 0, -DIMS.thigh, 0);
-    knee.add(at(toonMesh(shared.kneepad, '#f2f2f2'), 0, -0.02, 0.012));
-    knee.add(at(toonMesh(shared.shin, look.skin), 0, -DIMS.shin / 2, 0));
-    knee.add(at(toonMesh(shared.sock, '#f2f2f2'), 0, -DIMS.shin + 0.06, 0));
-    knee.add(at(toonMesh(shared.shoe, '#22252e'), 0, -DIMS.shin - DIMS.foot / 2 + 0.01, 0.05));
+    attach(knee, [
+      { geometry: shared.kneepad, color: '#f2f2f2', matrix: placed(0, -0.02, 0.012) },
+      { geometry: shared.shin, color: look.skin, matrix: placed(0, -DIMS.shin / 2, 0) },
+      { geometry: shared.sock, color: '#f2f2f2', matrix: placed(0, -DIMS.shin + 0.06, 0) },
+      { geometry: shared.shoe, color: '#22252e', matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.01, 0.05) },
+    ]);
     return { hip, knee };
   };
   const LL = leg(1);
   const RL = leg(-1);
 
-  root.traverse((o) => { o.castShadow = false; });
   return {
     root,
     body,

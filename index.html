@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voleibol Tico</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2333; font-family: system-ui, sans-serif; }
+      .hud { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); color: #fff; background: rgba(0, 0, 0, 0.55);
+             padding: 8px 16px; border-radius: 8px; white-space: pre; text-align: center; font-size: 16px; }
+      #help { position: fixed; bottom: 10px; left: 12px; color: #ccd; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud"></div>
+    <div id="help">F: velocidad x4</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -21,7 +21,11 @@ export interface SimOptions {
   firstServer?: TeamId;
   /** Jugador controlado por el usuario (siempre en el equipo A). */
   user?: { role: Role };
+  /** Dificultad del rival (equipo B). Por defecto, normal. */
+  difficulty?: Difficulty;
 }
+
+export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export type Phase = 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
 
@@ -85,6 +89,7 @@ export class Simulation {
   decision: Decision | null = null;
 
   private readonly rng: Rng;
+  private readonly difficulty: Difficulty;
   private phaseTimer = 0;
   private plan: Plan | null = null;
   private netFaultTime: number | null = null;
@@ -98,6 +103,7 @@ export class Simulation {
 
   constructor(opts: SimOptions) {
     this.rng = createRng(opts.seed);
+    this.difficulty = opts.difficulty ?? 'normal';
     this.teams = { A: opts.teamA, B: opts.teamB };
     this.userKey = opts.user ? `${USER_TEAM}:${this.userPlayerId(opts.user.role)}` : null;
     for (const team of TEAM_IDS) {
@@ -276,6 +282,11 @@ export class Simulation {
     return idx >= 0 && isFrontIndex(idx) && this.player(this.userKey!).def.role !== 'L';
   }
 
+  /** Timing de la IA: el rival (B) usa la distribución de su dificultad; el equipo A, la normal. */
+  private aiTiming(team: TeamId): Timing {
+    return rollTiming(this.rng, team === 'B' ? TUNING.difficulty[this.difficulty] : TUNING.timing);
+  }
+
   /** Timing perfecto del usuario: bono de calidad. La IA (userTiming undefined) no lo recibe. */
   private boosted(q: number, userTiming: Timing | undefined): number {
     return userTiming === 'perfect' ? Math.min(1, q + TUNING.decision.perfectBonus) : q;
@@ -366,7 +377,7 @@ export class Simulation {
       timing = d.pressedAt === null ? 'bad' : judgeServe(serveMeter(d.pressedAt - d.startTime));
       this.closeDecision(timing);
     } else {
-      timing = rollTiming(this.rng);
+      timing = this.aiTiming(team);
     }
     const cfg = TUNING.serve[choice.type];
     const from = v3(server.pos.x, cfg.contactHeight, server.pos.z);
@@ -422,7 +433,7 @@ export class Simulation {
     const hp = TUNING.decision.highPass;
     const attribute = kind === 'reception' ? p.def.attrs.reception : p.def.attrs.defense;
     let q = computeQuality(
-      { base: low ? cfg.lowContactBase : cfg.base, prevQuality: 1, timing: ctl?.timing ?? rollTiming(this.rng), attribute, pressure: this.threat },
+      { base: low ? cfg.lowContactBase : cfg.base, prevQuality: 1, timing: ctl?.timing ?? this.aiTiming(p.team), attribute, pressure: this.threat },
       this.rng,
     );
     q = this.boosted(q, ctl?.timing);
@@ -452,7 +463,7 @@ export class Simulation {
       : chooseSet(this.rng, availableSetOptions(this.court(p.team), p.key, passQuality, specialist, this.players));
     const attacker = this.player(choice.attackerKey);
     let q = computeQuality(
-      { base: low ? TUNING.pass.lowContactBase : cfg.base, prevQuality: passQuality, timing: ctl?.timing ?? rollTiming(this.rng), attribute: p.def.attrs.setting, pressure: 0 },
+      { base: low ? TUNING.pass.lowContactBase : cfg.base, prevQuality: passQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: p.def.attrs.setting, pressure: 0 },
       this.rng,
     );
     q = this.boosted(q, ctl?.timing);
@@ -474,7 +485,7 @@ export class Simulation {
       {
         base: cfg.base,
         prevQuality: this.last!.quality,
-        timing: ctl?.timing ?? rollTiming(this.rng),
+        timing: ctl?.timing ?? this.aiTiming(p.team),
         attribute: (p.def.attrs.attackPower + p.def.attrs.attackAccuracy) / 2,
         pressure: this.blockPressure(opp, at),
       },
@@ -502,7 +513,7 @@ export class Simulation {
     const last = this.last;
     const prevQuality = last && last.team === p.team ? last.quality : 0.5;
     let q = computeQuality(
-      { base: 0.9, prevQuality, timing: ctl?.timing ?? rollTiming(this.rng), attribute: p.def.attrs.reception, pressure: this.threat },
+      { base: 0.9, prevQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: p.def.attrs.reception, pressure: this.threat },
       this.rng,
     );
     q = this.boosted(q, ctl?.timing);

@@ -13,6 +13,12 @@ export const TUNING = {
   setHeight: 2.3,
   diveHeight: 0.4,
   timing: { perfect: 0.3, good: 0.5, bad: 0.2 },
+  /** Timing de la IA rival según la dificultad (normal = `timing`). */
+  difficulty: {
+    easy: { perfect: 0.15, good: 0.45, bad: 0.4 },
+    normal: { perfect: 0.3, good: 0.5, bad: 0.2 },
+    hard: { perfect: 0.5, good: 0.42, bad: 0.08 },
+  },
   serve: {
     float: { base: 1.0, risk: 0.15, speed: 15, gravityBonus: 0, contactHeight: 2.6, noise: 1.5 },
     jump: { base: 1.05, risk: 0.32, speed: 21, gravityBonus: 6, contactHeight: 3.1, noise: 2.0 },

@@ -30,8 +30,13 @@ export function errorChance(risk: number, quality: number): number {
   return clamp01(risk * 2 * (1 - quality));
 }
 
-export function rollTiming(rng: Rng): Timing {
-  const t = TUNING.timing;
+export interface TimingWeights {
+  perfect: number;
+  good: number;
+  bad: number;
+}
+
+export function rollTiming(rng: Rng, t: TimingWeights = TUNING.timing): Timing {
   return rng.weighted<Timing>([
     { item: 'perfect', weight: t.perfect },
     { item: 'good', weight: t.good },

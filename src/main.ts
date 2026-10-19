@@ -8,7 +8,7 @@ import { TUNING } from './sim/tuning';
 import { DecisionPanel } from './ui/decision';
 import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
-import { saveSetup, showMenu, type MatchSetup } from './ui/menu';
+import { PACE_SPEED, saveSetup, showMenu, type MatchSetup } from './ui/menu';
 import { PauseMenu, showResult } from './ui/overlays';
 
 const ui = document.getElementById('hud')!;
@@ -69,18 +69,20 @@ function start(setup: MatchSetup): void {
     view.skipReplay();
   });
 
+  const pace = PACE_SPEED[setup.pace];
   let last = performance.now();
-  let acc = 0;
   function frame(now: number): void {
-    const dtReal = Math.min(0.25, (now - last) / 1000);
+    const dtReal = Math.min(0.1, (now - last) / 1000);
     last = now;
     gamepad.update();
-    // En pausa o repetición la simulación espera; la cámara lenta de decisión ignora la aceleración x4.
+    // Paso variable: la simulación avanza exactamente lo que duró el cuadro (fluido a 60, 144 o 165 Hz).
+    // En pausa o repetición espera; la cámara lenta de decisión ignora la aceleración x4.
     if (!view.replaying && !pause.open) {
-      acc += dtReal * (sim.timeScale < 1 ? sim.timeScale : speed);
-      while (acc >= TUNING.dt) {
-        sim.step(TUNING.dt);
-        acc -= TUNING.dt;
+      let remaining = dtReal * pace * (sim.timeScale < 1 ? sim.timeScale : speed);
+      while (remaining > 1e-6) {
+        const h = Math.min(remaining, TUNING.dt);
+        sim.step(h);
+        remaining -= h;
       }
     }
     view.render(pause.open ? 0 : dtReal);

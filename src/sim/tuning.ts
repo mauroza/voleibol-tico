@@ -45,8 +45,13 @@ export const TUNING = {
   },
   free: { flightTime: 1.6, risk: 0.03 },
   decision: {
-    slowScale: 0.2,
-    /** Segundos de simulación antes del contacto en que se activa la cámara lenta. */
+    /** Sin opción elegida el tiempo casi se detiene: tiempo para pensar. */
+    thinkScale: 0.1,
+    /** Opción elegida, aún lejos del contacto: acercamiento. */
+    approachScale: 0.6,
+    /** Opción elegida, últimos `slowWindow` segundos: cámara lenta para el timing. */
+    slowScale: 0.3,
+    /** Segundos de simulación antes del contacto en que corre el medidor de timing. */
     slowWindow: 0.4,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
     perfectBonus: 0.15,

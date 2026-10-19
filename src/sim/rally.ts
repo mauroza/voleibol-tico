@@ -131,11 +131,16 @@ export class Simulation {
     return this.plan;
   }
 
-  /** Multiplicador de tiempo para el bucle en tiempo real: cámara lenta cerca de un contacto con decisión. */
+  /**
+   * Multiplicador de tiempo para el bucle en tiempo real. Con una decisión pendiente: casi detenido mientras el usuario
+   * no elige, acercamiento cuando ya eligió y cámara lenta en los últimos instantes para el timing.
+   */
   get timeScale(): number {
     const d = this.decision;
     if (!d || d.contactTime === null) return 1;
-    return d.contactTime - this.time <= TUNING.decision.slowWindow ? TUNING.decision.slowScale : 1;
+    const cfg = TUNING.decision;
+    if (d.chosen === null) return cfg.thinkScale;
+    return d.contactTime - this.time <= cfg.slowWindow ? cfg.slowScale : cfg.approachScale;
   }
 
   /** Elige una opción. Se puede cambiar mientras no se haya presionado el timing. */

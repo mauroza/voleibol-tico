@@ -3,6 +3,7 @@ export class SpeedLines {
   private readonly canvas = document.createElement('canvas');
   private readonly g = this.canvas.getContext('2d')!;
   private burst = 0;
+  private drawn = false;
 
   constructor(root: HTMLElement) {
     this.canvas.className = 'speedlines';
@@ -24,8 +25,14 @@ export class SpeedLines {
       this.canvas.width = w;
       this.canvas.height = h;
     }
+    if (intensity < 0.02) {
+      // Ya vacío: no tocar el canvas (limpiar a pantalla completa cada cuadro también cuesta).
+      if (this.drawn) this.g.clearRect(0, 0, w, h);
+      this.drawn = false;
+      return;
+    }
     this.g.clearRect(0, 0, w, h);
-    if (intensity < 0.02) return;
+    this.drawn = true;
     const cx = w / 2;
     const cy = h / 2;
     const outer = Math.hypot(cx, cy);

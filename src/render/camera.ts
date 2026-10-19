@@ -57,10 +57,10 @@ export class CameraDirector {
       targetPos.set(this.replayFocus.x + Math.sin(this.replayAngle) * r, 3.2, this.replayFocus.z + Math.cos(this.replayAngle) * r);
       targetLook.set(this.replayFocus.x, 1.8, this.replayFocus.z);
       rate = 6;
-    } else if (d && d.contactTime !== null && this.sim.timeScale < 1 && this.sim.userKey) {
+    } else if (d && d.contactTime !== null && this.sim.timeScale < 1) {
       // Decisión: plano cercano detrás y al costado del jugador del usuario, mirando la pelota.
       this.mode = 'decision';
-      const u = this.sim.player(this.sim.userKey).pos;
+      const u = this.sim.player(d.playerKey).pos;
       const side = Math.sign(u.x) || -1;
       targetPos.set(u.x + side * 4.2, 3.1, u.z + 5.5);
       targetLook.set((u.x + ballPos.x) / 2, Math.max(1.4, ballPos.y * 0.7), (u.z + ballPos.z) / 2);

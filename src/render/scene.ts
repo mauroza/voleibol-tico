@@ -87,7 +87,7 @@ export class MatchView {
     this.ballShadow.rotation.x = -Math.PI / 2;
     this.scene.add(this.ball, this.ballShadow);
     this.userRing.rotation.x = -Math.PI / 2;
-    this.userRing.visible = sim.userKey !== null;
+    this.userRing.visible = false;
     this.scene.add(this.userRing);
     this.fx = new Effects(this.camera);
     this.scene.add(this.fx.group);
@@ -131,8 +131,11 @@ export class MatchView {
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
     }
 
-    if (this.sim.userKey) {
-      const u = this.byKey.get(this.sim.userKey)!.rig.root.position;
+    // Anillo bajo el jugador que está decidiendo.
+    const deciding = this.replay ? null : this.sim.decision?.playerKey;
+    this.userRing.visible = !!deciding;
+    if (deciding) {
+      const u = this.byKey.get(deciding)!.rig.root.position;
       this.userRing.position.set(u.x, 0.02, u.z);
     }
     this.ball.position.copy(ballPos);
@@ -168,12 +171,12 @@ export class MatchView {
           this.lastAttackQuality = e.quality;
           this.lastAttackAt.copy(at);
           if (e.quality > 0.7) {
-            this.director.punch(0.12);
+            this.director.punch(0.03);
             this.speedLines.flash(0.8);
           }
         }
         if (e.kind === 'block') {
-          this.director.punch(0.15);
+          this.director.punch(0.035);
           this.speedLines.flash(0.6);
         }
       } else if (e.type === 'decisionResolved') {
@@ -182,12 +185,12 @@ export class MatchView {
         for (const a of this.animators) a.onPoint(this.sim.player(a.key).team === e.winner, this.sim.time);
         const big = e.reason === 'ace' || e.reason === 'kill' || e.reason === 'blockKill';
         this.arena.cheer(e.winner, big);
-        if (big) this.director.punch(0.2, 0.4);
+        if (big) this.director.punch(0.05, 0.3);
         const replay = this.policy.shouldReplay({
           reason: e.reason,
           attackQuality: this.lastAttackQuality,
           userPerfect: this.lastUserTiming === 'perfect',
-          userWon: this.sim.userKey !== null && e.winner === 'A',
+          userWon: this.sim.control !== null && e.winner === this.sim.control,
         });
         if (replay) {
           const b = this.sim.ballPos;
@@ -318,7 +321,7 @@ export class MatchView {
   private buildPlayers(): void {
     for (const p of this.sim.players.values()) {
       const team = this.sim.teams[p.team];
-      const rig = buildCharacter(lookFor(p.key, p.def.number, team.primary, team.secondary, p.def.role === 'L'));
+      const rig = buildCharacter(lookFor(p.def.number, team.primary, team.secondary, p.def.role === 'L'));
       const a = new Animator(p.key, rig, this.sim);
       this.animators.push(a);
       this.byKey.set(p.key, a);

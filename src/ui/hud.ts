@@ -30,10 +30,10 @@ export class Hud {
   }
 
   private userLine(): string {
-    const key = this.sim.userKey;
-    if (!key) return '';
-    const p = this.sim.player(key);
-    const bench = this.sim.court(p.team).includes(key) ? '' : ' (en la banca)';
-    return `Tú: ${ROLE_LABELS[p.def.role]} #${p.def.number}${bench}\n`;
+    const d = this.sim.decision;
+    if (!this.sim.control) return '';
+    if (!d) return `Controlas a ${this.sim.teams[this.sim.control].name}\n`;
+    const p = this.sim.player(d.playerKey);
+    return d.kind === 'block' ? 'Decide tu bloqueo\n' : `Decide: #${p.def.number} ${ROLE_LABELS[p.def.role]}\n`;
   }
 }

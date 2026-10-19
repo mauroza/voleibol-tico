@@ -75,6 +75,31 @@ describe('Simulation', () => {
     expect(checked).toBeGreaterThan(50);
   });
 
+  it('hay bloqueos simples, dobles y triples; el bloqueador simple es el de la zona del remate', () => {
+    const sizes = new Set<number>();
+    let zoneChecks = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      runMatch(opts(seed), (sim) => {
+        let seen: unknown = null;
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          const b = sim.blockers;
+          if (!b || b === seen) return;
+          seen = b;
+          sizes.add(b.keys.length);
+          if (b.keys.length === 1 && Math.abs(b.z) > 2.8) {
+            // Con remate por un extremo, bloquea el delantero cuya zona es ese extremo (nunca el central).
+            expect(sim.player(b.keys[0]).def.role).not.toBe('MB');
+            zoneChecks += 1;
+          }
+        };
+      });
+    }
+    expect(sizes).toEqual(new Set([1, 2, 3]));
+    expect(zoneChecks).toBeGreaterThan(0);
+  });
+
   it('cada rally termina en menos de 60 s de simulación', () => {
     runMatch(opts(3), (sim) => {
       let start = 0;

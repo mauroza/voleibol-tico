@@ -11,7 +11,6 @@ const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Normal',
 export interface MatchSetup {
   team: number;
   rival: number;
-  role: Role;
   setsToWin: 1 | 2;
   difficulty: Difficulty;
   pace: Pace;
@@ -23,14 +22,6 @@ export const ROLE_LABELS: Record<Role, string> = {
   MB: 'Central',
   OP: 'Opuesto',
   L: 'Líbero',
-};
-
-const ROLE_HINT: Record<Role, string> = {
-  S: 'Decides a quién va cada pelota',
-  OH: 'Recibes y rematas por zona 4',
-  MB: 'Rápidas y bloqueo',
-  OP: 'Potencia por zona 2',
-  L: 'Recepción y defensa',
 };
 
 const DIFFICULTY_LABELS: Record<Difficulty, string> = { easy: 'Fácil', normal: 'Normal', hard: 'Difícil' };
@@ -68,7 +59,7 @@ function loadSetup(): { setup: MatchSetup; autostart: boolean } | null {
   }
 }
 
-const DEFAULT: MatchSetup = { team: 0, rival: 2, role: 'OH', setsToWin: 1, difficulty: 'normal', pace: 'normal' };
+const DEFAULT: MatchSetup = { team: 0, rival: 2, setsToWin: 1, difficulty: 'normal', pace: 'normal' };
 
 /** Menú principal. Resuelve con la configuración elegida (o al instante si hay una revancha pendiente). */
 export function showMenu(root: HTMLElement): Promise<MatchSetup> {
@@ -98,9 +89,10 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       if (i !== setup.team) setup.rival = i;
       render();
     }, setup.team)));
-    el.append(section('Tu posición', segmented((Object.keys(ROLE_LABELS) as Role[]).map((r) => ({
-      label: ROLE_LABELS[r], hint: ROLE_HINT[r], active: setup.role === r, pick: () => { setup.role = r; render(); },
-    })))));
+    const coach = document.createElement('p');
+    coach.className = 'menu-coach';
+    coach.textContent = 'Controlas a todo tu equipo: el saque de cada sacador, los pases, a dónde coloca el colocador, cada remate y el bloqueo.';
+    el.append(coach);
     const row = document.createElement('div');
     row.className = 'menu-row';
     row.append(

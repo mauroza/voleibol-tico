@@ -3,6 +3,7 @@ import { serveMeter, type Decision, type DecisionKind } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
+import { ROLE_LABELS } from './menu';
 
 const TITLES: Record<DecisionKind, string> = {
   serve: 'Saque',
@@ -91,7 +92,8 @@ export class DecisionPanel {
     this.shown = d;
     this.shownChosen = d.chosen;
     this.shownZone = d.zone;
-    this.title.textContent = TITLES[d.kind];
+    const p = this.sim.player(d.playerKey);
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');

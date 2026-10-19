@@ -16,7 +16,7 @@ const options = (setter: string, pass: number, specialist: boolean) =>
 
 describe('availableSetOptions', () => {
   it('pase bueno con colocador en zaga: todas las opciones', () => {
-    expect(options(court[0], 0.8, true)).toEqual(['pipe@4', 'quick@2', 'zone2@3', 'zone4@1']);
+    expect(options(court[0], 0.8, true)).toEqual(['pipe@4', 'quick@2', 'semi@2', 'zone2@3', 'zone4@1', 'zone4fast@1']);
   });
 
   it('pase malo: solo pelotas altas a los extremos', () => {

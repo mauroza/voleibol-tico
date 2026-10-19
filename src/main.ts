@@ -5,6 +5,7 @@ import { MatchView } from './render/scene';
 import { Simulation } from './sim/rally';
 import { attachStats } from './sim/stats';
 import { TUNING } from './sim/tuning';
+import { AimInput } from './ui/aim';
 import { DecisionPanel } from './ui/decision';
 import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
@@ -49,6 +50,7 @@ function start(setup: MatchSetup): void {
     panel.paused = p;
   };
   const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
+  const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open);
 
   sim.bus.on((e) => {
     if (e.type !== 'matchEnd') return;
@@ -79,6 +81,7 @@ function start(setup: MatchSetup): void {
     const dtReal = Math.min(0.1, (now - last) / 1000);
     last = now;
     gamepad.update();
+    aim.update(dtReal);
     // Paso variable: la simulación avanza exactamente lo que duró el cuadro (fluido a 60, 144 o 165 Hz).
     // En pausa o repetición espera; la cámara lenta de decisión ignora la aceleración x4.
     if (!view.replaying && !pause.open) {

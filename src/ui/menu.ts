@@ -116,6 +116,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
         <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
         <li>Elige con <b>1–4</b> (o clic). En el saque, después eliges la zona con <b>1–6</b>.</li>
         <li>Presiona <b>ESPACIO</b> justo cuando la pelota llegue: zona verde = <b>¡Perfecto!</b></li>
+        <li><b>Remate apuntado:</b> la cámara se pone detrás del rematador; apunta con el mouse o flechas/WASD (cerca de la red = finta) y remata con clic o <b>ESPACIO</b> en la zona verde.</li>
         <li><b>Esc</b> pausa · <b>M</b> silencio · <b>F</b> acelera x4 · Gamepad: cruceta elige, <b>A</b> timing, <b>Start</b> pausa.</li>
       </ul>`;
     el.append(how);

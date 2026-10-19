@@ -94,7 +94,7 @@ export class DecisionPanel {
     this.shownChosen = d.chosen;
     this.shownZone = d.zone;
     const p = this.sim.player(d.playerKey);
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${d.aim ? 'Remate apuntado' : TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
@@ -123,7 +123,11 @@ export class DecisionPanel {
       : [TUNING.decision.perfectWindow / TUNING.decision.slowWindow, TUNING.decision.goodWindow / TUNING.decision.slowWindow];
     this.perfectZone.style.width = `${(perfect * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${(good * 100).toFixed(1)}%`;
-    this.hint.textContent = d.chosen === null
+    // Remate apuntado: no hay botones, se apunta en la cancha.
+    this.buttons.style.display = d.aim ? 'none' : 'grid';
+    this.hint.textContent = d.aim
+      ? 'Apunta con el mouse o flechas/WASD · clic o ESPACIO para rematar cuando el marcador llegue al verde · cerca de la red = finta'
+      : d.chosen === null
       ? `Tiempo detenido: elige con 1–${d.options.length} o clic`
       : d.kind === 'serve'
         ? 'Zona con 1–6 · ESPACIO cuando el marcador llegue al verde'

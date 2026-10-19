@@ -33,6 +33,7 @@ type BlockOutcome = 'stuff' | 'soft' | 'tool';
 /** Decisión del usuario ya resuelta para un contacto: opción (null = la IA decide) y timing. */
 interface Control {
   option: UserOption | null;
+  aim?: { x: number; z: number } | null;
   timing: Timing;
 }
 
@@ -155,7 +156,9 @@ export class Simulation {
     if (!d || d.contactTime === null) return 1;
     const cfg = TUNING.decision;
     if (d.chosen === null) return cfg.thinkScale;
-    return d.contactTime - this.time <= cfg.slowWindow ? cfg.slowScale : cfg.approachScale;
+    const near = d.contactTime - this.time <= cfg.slowWindow;
+    if (d.aim) return near ? cfg.aimSlowScale : cfg.aimApproachScale;
+    return near ? cfg.slowScale : cfg.approachScale;
   }
 
   /** Elige una opción. Se puede cambiar mientras no se haya presionado el timing. */
@@ -169,6 +172,14 @@ export class Simulation {
       this.blockSetup.keys = this.pickBlockers(this.blockSetup.team, opt.n, this.blockSetup.z);
       this.setFormations();
     }
+  }
+
+  /** Mueve la mira del remate apuntado (limitada al campo rival y sus alrededores). */
+  setAim(x: number, z: number): void {
+    const d = this.decision;
+    if (!d || !d.aim || d.pressedAt !== null) return;
+    const s = sideSign(otherTeam(this.player(d.playerKey).team));
+    d.aim = { x: s * clamp(s * x, 0.3, COURT.halfLength + 2), z: clamp(z, -COURT.halfWidth - 1.5, COURT.halfWidth + 1.5) };
   }
 
   setServeZone(zone: Zone): void {
@@ -320,7 +331,7 @@ export class Simulation {
   // ---------- decisiones del usuario ----------
 
   private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null, playerKey: string): void {
-    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null };
+    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null, aim: null };
     this.decision = decision;
     this.bus.emit({ type: 'decision', decision });
   }
@@ -345,6 +356,13 @@ export class Simulation {
     if (plan.team === this.control && plan.kind !== 'block') {
       const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
       this.openDecision(kind, this.contactOptions(plan), plan.time, plan.key);
+      const opened = this.decision as Decision | null;
+      if (kind === 'attack' && plan.kind === 'attack' && opened) {
+        // Remate apuntado: ya "elegido"; la mira empieza en el mejor hueco y el usuario la mueve.
+        const t = this.pickAttackTarget(otherTeam(plan.team), plan.point, 'cross');
+        opened.aim = { x: t.x, z: t.z };
+        opened.chosen = 0;
+      }
     } else if (plan.kind === 'attack' && plan.team !== this.control && this.blockSetup?.team === this.control) {
       const front = this.frontPlayers(this.control);
       if (front.length === 0) return;
@@ -377,12 +395,7 @@ export class Simulation {
         return options;
       }
       case 'attack':
-        return [
-          { label: 'Remate cruzado', option: { id: 'shot', shot: 'cross' } },
-          { label: 'Remate en línea', option: { id: 'shot', shot: 'line' } },
-          { label: 'Finta', option: { id: 'shot', shot: 'tip' } },
-          { label: 'Usar el bloqueo', option: { id: 'shot', shot: 'tool' } },
-        ];
+        return [{ label: 'Remate apuntado', option: { id: 'aim' } }];
       default:
         return [{ label: 'Mandar pelota', option: { id: 'free' } }];
     }
@@ -405,8 +418,9 @@ export class Simulation {
     if (!d || d.kind === 'block' || d.kind === 'serve' || d.playerKey !== plan.key) return undefined;
     const option = d.chosen === null ? null : d.options[d.chosen].option;
     const timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time);
+    const aim = d.aim;
     this.closeDecision(timing);
-    return { option, timing };
+    return { option, timing, aim };
   }
 
   // ---------- contactos ----------
@@ -541,7 +555,11 @@ export class Simulation {
   private doAttack(p: PlayerState, at: Vec3, t: number, ctl?: Control): void {
     const cfg = TUNING.attack;
     const opp = otherTeam(p.team);
-    const shot = ctl?.option?.id === 'shot' ? ctl.option.shot : chooseShot(this.rng);
+    const aim = ctl?.option?.id === 'aim' && ctl.aim ? ctl.aim : null;
+    // Con mira: cerca de la red es finta; si no, remate. Sin mira, la IA (o la opción elegida) decide el tiro.
+    const shot: AttackShot = aim
+      ? (Math.abs(aim.x) < cfg.tipDepth ? 'tip' : 'cross')
+      : ctl?.option?.id === 'shot' ? ctl.option.shot : chooseShot(this.rng);
     let q = computeQuality(
       {
         base: cfg.base,
@@ -556,10 +574,9 @@ export class Simulation {
     this.registerTouch(p, 'attack', q);
     this.lastShot = shot;
     this.intent = null;
-    const isError = this.rng.chance(errorChance(cfg.shots[shot].risk, q));
-    const target = isError
-      ? this.errorTarget(opp, at)
-      : this.keepOnSide(opp, this.noisy(this.pickAttackTarget(opp, at, shot), cfg.noise * (1 - q)));
+    const isError = this.rng.chance(errorChance(cfg.shots[shot].risk * (aim ? TUNING.decision.aimRiskFactor : 1), q));
+    const aimed = aim ? v3(aim.x, COURT.ballRadius, aim.z) : this.pickAttackTarget(opp, at, shot);
+    const target = isError ? this.errorTarget(opp, at) : this.keepOnSide(opp, this.noisy(aimed, cfg.noise * (1 - q)));
     if (shot === 'tip') {
       this.ball = this.launchClearing(at, target, cfg.tipFlightTime, GRAVITY, t, !isError);
       this.threat = 0.3 * q;

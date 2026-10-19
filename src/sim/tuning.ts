@@ -45,6 +45,8 @@ export const TUNING = {
     speedRange: 12,
     gravityBonus: 4,
     tipFlightTime: 0.9,
+    /** Apuntar a menos de esta distancia de la red (m) es una finta. */
+    tipDepth: 3.0,
     noise: 2.0,
     targetSamples: 8,
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
@@ -69,6 +71,11 @@ export const TUNING = {
     toolBase: 0.35,
     toolScale: 0.4,
     highPass: { flightTime: 1.8, noiseFactor: 0.5, riskFactor: 0.5 },
+    /** Remate apuntado: el tiempo corre más lento para mover la mira y golpear a tiempo. */
+    aimApproachScale: 0.35,
+    aimSlowScale: 0.22,
+    /** Los errores al azar pesan menos: el usuario ya puede mandarla afuera apuntando mal. */
+    aimRiskFactor: 0.6,
   },
   block: {
     reactionTime: 0.3,

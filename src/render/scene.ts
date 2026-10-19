@@ -6,7 +6,7 @@ import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
 import { Arena } from './arena';
 import { CameraDirector } from './camera';
-import { buildCharacter, lookFor } from './character';
+import { DIMS, buildCharacter, lookFor } from './character';
 import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
@@ -19,6 +19,8 @@ const PER_RIG = 5 + JOINTS.length * 4;
 const REPLAY_BEFORE = 1.6;
 const REPLAY_AFTER = 0.4;
 const REPLAY_SPEED = 0.45;
+/** Segundos antes del saque de la IA en que la pelota sale de la mano (lanzamiento). */
+const SERVE_TOSS = 0.55;
 
 /**
  * Vista del partido: personajes, gimnasio con público, efectos anime, cámara dramática y repeticiones.
@@ -127,6 +129,7 @@ export class MatchView {
       for (const a of this.animators) a.update();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
+      this.serveBall(ballPos);
       this.captureFrame(ballPos);
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
     }
@@ -200,6 +203,31 @@ export class MatchView {
         }
       }
     });
+  }
+
+  /**
+   * Antes del saque la pelota va en la mano izquierda del sacador (la simulación solo sabe dónde está el jugador).
+   * En el último tramo del saque de la IA, la pelota sube desde la mano y baja al punto de golpe.
+   */
+  private serveBall(out: THREE.Vector3): void {
+    if (this.sim.phase !== 'preServe') return;
+    const key = this.sim.court(this.sim.match.serving)[0];
+    const rig = this.byKey.get(key)!.rig;
+    rig.root.updateMatrixWorld(true);
+    const hand = rig.joints.elbowL.localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.09, 0.05));
+    const countdown = this.sim.serveCountdown;
+    if (countdown === null || countdown > SERVE_TOSS) {
+      out.copy(hand);
+      return;
+    }
+    const k = 1 - countdown / SERVE_TOSS;
+    const p = this.sim.player(key).pos;
+    const apex = 3.4;
+    const contact = 2.7;
+    const y = k < 0.65
+      ? hand.y + (apex - hand.y) * (1 - (1 - k / 0.65) ** 2)
+      : apex - (apex - contact) * ((k - 0.65) / 0.35) ** 2;
+    out.set(hand.x + (p.x - hand.x) * k, y, hand.z + (p.z - hand.z) * k);
   }
 
   /** Más de ~1 s seguido por debajo de 45 fps: baja la resolución un paso (hasta 0.75). */

@@ -416,6 +416,7 @@ export class Simulation {
       ? this.errorTarget(opp, from)
       : this.keepOnSide(opp, this.noisy(spot(opp, ZONE_SPOTS[choice.zone], COURT.ballRadius), cfg.noise * (1 - q)));
     this.ball = this.launchClearing(from, target, distXZ(from, target) / cfg.speed, GRAVITY + cfg.gravityBonus, this.time, !isError);
+    this.ballPos = clone(from);
     this.threat = q * clamp01(cfg.speed / 22);
     this.planNext();
   }

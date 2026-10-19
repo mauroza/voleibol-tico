@@ -35,8 +35,23 @@ export const TUNING = {
     tipFlightTime: 0.9,
     noise: 2.0,
     targetSamples: 8,
-    shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 } },
+    shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
   },
   free: { flightTime: 1.6, risk: 0.03 },
+  decision: {
+    slowScale: 0.2,
+    /** Segundos de simulación antes del contacto en que se activa la cámara lenta. */
+    slowWindow: 0.4,
+    /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
+    perfectBonus: 0.15,
+    perfectWindow: 0.06,
+    goodWindow: 0.16,
+    servePeriod: 1.6,
+    serveTimeout: 10,
+    blockTiming: { perfect: 1.5, good: 1, bad: 0.5 },
+    toolBase: 0.35,
+    toolScale: 0.4,
+    highPass: { flightTime: 1.8, noiseFactor: 0.5, riskFactor: 0.5 },
+  },
   block: { reactionTime: 0.3, lateralSpeed: 3.0, handWidth: 0.6, stuffBase: 0.08, stuffScale: 0.3, touchChance: 0.25, doubleBonus: 1.25 },
 } as const;

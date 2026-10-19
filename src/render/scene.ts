@@ -13,6 +13,11 @@ export class MatchView {
   private readonly playerMeshes = new Map<string, THREE.Mesh>();
   private readonly ball: THREE.Mesh;
   private readonly ballShadow: THREE.Mesh;
+  /** Anillo bajo el jugador del usuario. */
+  private readonly userRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.45, 0.6, 32),
+    new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide }),
+  );
 
   constructor(container: HTMLElement, private readonly sim: Simulation) {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -33,6 +38,9 @@ export class MatchView {
     );
     this.ballShadow.rotation.x = -Math.PI / 2;
     this.scene.add(this.ball, this.ballShadow);
+    this.userRing.rotation.x = -Math.PI / 2;
+    this.userRing.visible = sim.userKey !== null;
+    this.scene.add(this.userRing);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -40,6 +48,10 @@ export class MatchView {
   render(): void {
     for (const p of this.sim.players.values()) {
       this.playerMeshes.get(p.key)!.position.set(p.pos.x, PLAYER_HEIGHT / 2, p.pos.z);
+    }
+    if (this.sim.userKey) {
+      const u = this.sim.player(this.sim.userKey).pos;
+      this.userRing.position.set(u.x, 0.02, u.z);
     }
     const b = this.sim.ballPos;
     this.ball.position.set(b.x, b.y, b.z);

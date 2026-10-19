@@ -41,10 +41,11 @@ export class MatchView {
   private readonly aimGroup = new THREE.Group();
   private readonly aimSpread = new THREE.Mesh(
     new THREE.RingGeometry(0.92, 1, 40),
-    new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
   );
   private readonly aimCross = new THREE.Group();
-  private readonly aimMat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false });
+  /** Sin prueba de profundidad: la mira se ve aunque quede detrás de un jugador o de la red. */
+  private readonly aimMat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false, depthTest: false });
   private readonly aimPath = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(Array.from({ length: 24 }, () => new THREE.Vector3())),
     new THREE.LineDashedMaterial({ color: '#ffe14d', dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.9 }),
@@ -281,6 +282,8 @@ export class MatchView {
     this.aimCross.add(ring, barX, barZ);
     this.aimCross.rotation.x = -Math.PI / 2;
     this.aimSpread.rotation.x = -Math.PI / 2;
+    for (const k of this.aimCross.children) k.renderOrder = 10;
+    this.aimSpread.renderOrder = 10;
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
     this.scene.add(this.aimGroup);

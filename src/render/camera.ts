@@ -62,9 +62,22 @@ export class CameraDirector {
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
       const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
-      targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + d.aim.z * 0.15);
-      targetLook.set(u.x + (d.aim.x - u.x) * 0.6, 0.2, u.z + (d.aim.z - u.z) * 0.6);
+      if (d.kind === 'serve') {
+        // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
+        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + d.aim.z * 0.2);
+        targetLook.set(u.x + (d.aim.x - u.x) * 0.78, 0, u.z + (d.aim.z - u.z) * 0.78);
+      } else {
+        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + d.aim.z * 0.15);
+        targetLook.set(u.x + (d.aim.x - u.x) * 0.6, 0.2, u.z + (d.aim.z - u.z) * 0.6);
+      }
       rate = 5;
+    } else if (d?.kind === 'block' && d.aim) {
+      // Bloqueo y marca de defensa: desde atrás y arriba del propio campo, para ver la cancha, la red y al rematador.
+      this.mode = 'decision';
+      const own = this.sim.player(d.playerKey).team === 'A' ? -1 : 1;
+      targetPos.set(own * 14, 11, d.aim.z * 0.2);
+      targetLook.set(own * 3.2, 0, d.aim.z * 0.3);
+      rate = 4;
     } else if (d && d.contactTime !== null && this.sim.timeScale < 1) {
       // Decisión: plano cercano detrás y al costado del jugador del usuario, mirando la pelota.
       this.mode = 'decision';

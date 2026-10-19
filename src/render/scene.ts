@@ -11,7 +11,10 @@ import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
+import { contactMeter, powerZone, serveMeter, type Power } from '../sim/decision';
 import { toon } from './toon';
+
+const POWER_COLORS: Record<Power, string> = { soft: '#5dff8f', medium: '#ffd23f', strong: '#ff3b3b' };
 
 /** Floats por personaje en un cuadro de repetición: raíz x/z, giro, salto, cadera y un cuaternión por articulación. */
 const PER_RIG = 5 + JOINTS.length * 4;
@@ -41,6 +44,7 @@ export class MatchView {
     new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
   );
   private readonly aimCross = new THREE.Group();
+  private readonly aimMat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false });
   private readonly aimPath = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(Array.from({ length: 24 }, () => new THREE.Vector3())),
     new THREE.LineDashedMaterial({ color: '#ffe14d', dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.9 }),
@@ -60,6 +64,7 @@ export class MatchView {
   private readonly frame: Float32Array;
   private readonly policy = new ReplayPolicy(3);
   private readonly prevBall = new THREE.Vector3();
+  private lastPower: Power | null = null;
   private lastAttackQuality = 0;
   private lastAttackAt = new THREE.Vector3();
   private lastUserTiming: Timing | null = null;
@@ -196,8 +201,17 @@ export class MatchView {
         }
         const b = this.sim.ballPos;
         const at = new THREE.Vector3(b.x, b.y, b.z);
-        const strong = (e.kind === 'attack' || e.kind === 'serve') && e.quality > 0.6;
-        this.fx.impact(at, e.quality, strong || e.kind === 'block', now);
+        const hit = e.kind === 'attack' || e.kind === 'serve';
+        // Golpe en rojo de la barra de fuerza: destello rojo, estela de fuego, sacudida y líneas de velocidad.
+        const fire = hit && this.lastPower === 'strong';
+        this.lastPower = null;
+        const strong = hit && e.quality > 0.6;
+        this.fx.impact(at, e.quality, strong || fire || e.kind === 'block', now, fire ? '#ff3b3b' : undefined);
+        if (fire) {
+          this.fx.fire(now + 1.2);
+          this.director.punch(0.06, 0.3);
+          this.speedLines.flash(1);
+        }
         if (e.kind === 'attack') {
           this.lastAttackQuality = e.quality;
           this.lastAttackAt.copy(at);
@@ -212,6 +226,7 @@ export class MatchView {
         }
       } else if (e.type === 'decisionResolved') {
         this.lastUserTiming = e.timing;
+        this.lastPower = e.power ?? null;
       } else if (e.type === 'point') {
         for (const a of this.animators) a.onPoint(this.sim.player(a.key).team === e.winner, this.sim.time);
         const big = e.reason === 'ace' || e.reason === 'kill' || e.reason === 'blockKill';
@@ -259,7 +274,7 @@ export class MatchView {
   }
 
   private buildAim(): void {
-    const mat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false });
+    const mat = this.aimMat;
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), mat);
     const barX = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.09), mat);
     const barZ = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 1.4), mat);
@@ -271,11 +286,15 @@ export class MatchView {
     this.scene.add(this.aimGroup);
   }
 
-  /** Muestra la mira, el círculo donde puede caer la pelota y la trayectoria desde el punto de golpe. */
+  /**
+   * Mira del usuario: cruz, círculo de dispersión y trayectoria punteada desde el punto de golpe.
+   * Saque y remate: la cruz toma el color de la fuerza actual de la barra. Pase: amarillo. Defensa: solo la marca, azul.
+   */
   private updateAim(): void {
     const d = this.replay ? null : this.sim.decision;
     const up = this.sim.upcoming;
-    if (!d?.aim || !up || up.key !== d.playerKey || up.kind !== 'attack') {
+    const ready = d?.aim && (d.kind === 'serve' || d.kind === 'block' || (up && up.key === d.playerKey));
+    if (!d?.aim || !ready) {
       this.aimGroup.visible = false;
       return;
     }
@@ -283,18 +302,50 @@ export class MatchView {
     const { x, z } = d.aim;
     const inCourt = Math.abs(x) <= COURT.halfLength && Math.abs(z) <= COURT.halfWidth;
     this.aimCross.position.set(x, 0.03, z);
-    // Dispersión aproximada para un golpe de calidad media: TUNING.attack.noise × (1 − 0.65).
-    const spread = TUNING.attack.noise * 0.35;
     this.aimSpread.position.set(x, 0.025, z);
-    this.aimSpread.scale.setScalar(spread);
     (this.aimSpread.material as THREE.MeshBasicMaterial).color.set(inCourt ? '#ffffff' : '#ff5a5a');
-    // Trayectoria: remate fuerte (tenso, con efecto) o finta (globo corto).
-    const tip = Math.abs(x) < TUNING.attack.tipDepth;
-    const from = up.point;
-    const dist = Math.hypot(x - from.x, z - from.z);
-    const T = tip ? TUNING.attack.tipFlightTime : Math.max(0.2, dist / 22);
-    const g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus;
-    const vy = (COURT.ballRadius - from.y + 0.5 * g * T * T) / T;
+    const pathMat = this.aimPath.material as THREE.LineDashedMaterial;
+    if (d.kind === 'block') {
+      this.aimMat.color.set('#4dc3ff');
+      this.aimSpread.scale.setScalar(TUNING.defense.focusRadius);
+      (this.aimSpread.material as THREE.MeshBasicMaterial).color.set('#4dc3ff');
+      this.aimPath.visible = false;
+      return;
+    }
+    this.aimPath.visible = true;
+    let color = '#ffe14d';
+    if (d.meter === 'power') {
+      const m = d.kind === 'serve' ? serveMeter(this.sim.time - d.startTime) : contactMeter(this.sim.time, d.contactTime!);
+      color = POWER_COLORS[powerZone(m)];
+    }
+    this.aimMat.color.set(color);
+    pathMat.color.set(color);
+    // Origen, gravedad, duración y altura final de la trayectoria según la acción.
+    const from = new THREE.Vector3();
+    let T: number;
+    let g = 9.81;
+    let endY: number = COURT.ballRadius;
+    let spread: number;
+    if (d.kind === 'serve') {
+      const p = this.sim.player(d.playerKey).pos;
+      from.set(p.x, TUNING.serve.float.contactHeight, p.z);
+      T = Math.max(0.6, Math.hypot(x - from.x, z - from.z) / TUNING.serve.float.speed);
+      spread = TUNING.serve.float.noise * 0.35;
+    } else if (d.kind === 'pass') {
+      from.set(up!.point.x, up!.point.y, up!.point.z);
+      T = Math.min(1.9, Math.max(1.0, 0.9 + Math.hypot(x - from.x, z - from.z) * 0.09));
+      endY = TUNING.setHeight;
+      spread = 0.6;
+    } else {
+      // Remate fuerte (tenso, con efecto) o finta (globo corto).
+      const tip = Math.abs(x) < TUNING.attack.tipDepth;
+      from.set(up!.point.x, up!.point.y, up!.point.z);
+      T = tip ? TUNING.attack.tipFlightTime : Math.max(0.2, Math.hypot(x - from.x, z - from.z) / 22);
+      g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus;
+      spread = TUNING.attack.noise * 0.35;
+    }
+    this.aimSpread.scale.setScalar(spread);
+    const vy = (endY - from.y + 0.5 * g * T * T) / T;
     const pos = this.aimPath.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
       const t = (i / (pos.count - 1)) * T;

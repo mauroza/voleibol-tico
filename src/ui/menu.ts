@@ -114,9 +114,10 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     how.innerHTML = `<summary>Cómo jugar</summary>
       <ul>
         <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
-        <li>Elige con <b>1–4</b> (o clic). En el saque, después eliges la zona con <b>1–6</b>.</li>
-        <li>Presiona <b>ESPACIO</b> justo cuando la pelota llegue: zona verde = <b>¡Perfecto!</b></li>
-        <li><b>Remate apuntado:</b> la cámara se pone detrás del rematador; apunta con el mouse o flechas/WASD (cerca de la red = finta) y remata con clic o <b>ESPACIO</b> en la zona verde.</li>
+        <li>Colocación y bloqueo: elige con <b>1–4</b> (o clic) y presiona <b>ESPACIO</b> justo cuando la pelota llegue: zona verde = <b>¡Perfecto!</b></li>
+        <li><b>Saque, recepción y remate se apuntan:</b> la cámara se pone detrás del jugador; mueve la mira con el mouse o flechas/WASD y golpea con clic o <b>ESPACIO</b>.</li>
+        <li>En saque y remate la barra es la <b>fuerza</b>: <span style="color:#5dff8f">verde suave</span>, <span style="color:#ffd23f">amarillo fuerte</span>, <span style="color:#ff3b3b">rojo potente</span> (más riesgo). Remate cerca de la red = finta.</li>
+        <li>Cuando te rematan: elige el bloqueo y pon la <b style="color:#4dc3ff">marca de defensa</b> donde esperas el remate; un compañero la cubre y llega mejor.</li>
         <li><b>Esc</b> pausa · <b>M</b> silencio · <b>F</b> acelera x4 · Gamepad: cruceta elige, <b>A</b> timing, <b>Start</b> pausa.</li>
       </ul>`;
     el.append(how);

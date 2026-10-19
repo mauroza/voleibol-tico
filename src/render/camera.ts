@@ -57,13 +57,13 @@ export class CameraDirector {
       targetPos.set(this.replayFocus.x + Math.sin(this.replayAngle) * r, 3.2, this.replayFocus.z + Math.cos(this.replayAngle) * r);
       targetLook.set(this.replayFocus.x, 1.8, this.replayFocus.z);
       rate = 6;
-    } else if (d?.aim && d.contactTime !== null) {
-      // Remate apuntado: tercera persona, detrás y arriba del rematador, mirando hacia la mira en el campo rival.
+    } else if (d?.aim && d.kind !== 'block') {
+      // Saque, pase o remate apuntado: tercera persona, detrás y arriba del jugador, mirando hacia la mira.
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
       const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
       targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + d.aim.z * 0.15);
-      targetLook.set(d.aim.x * 0.6, 0.2, d.aim.z * 0.6 + u.z * 0.25);
+      targetLook.set(u.x + (d.aim.x - u.x) * 0.6, 0.2, u.z + (d.aim.z - u.z) * 0.6);
       rate = 5;
     } else if (d && d.contactTime !== null && this.sim.timeScale < 1) {
       // Decisión: plano cercano detrás y al costado del jugador del usuario, mirando la pelota.

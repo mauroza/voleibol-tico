@@ -378,10 +378,10 @@ export class Simulation {
     this.bus.emit({ type: 'decision', decision });
   }
 
-  private closeDecision(timing: Timing): void {
+  private closeDecision(timing: Timing, power?: Power): void {
     const d = this.decision!;
     this.decision = null;
-    this.bus.emit({ type: 'decisionResolved', kind: d.kind, timing });
+    this.bus.emit({ type: 'decisionResolved', kind: d.kind, timing, power });
   }
 
   /** Saque apuntado: la mira empieza en la zona 1 rival; la fuerza (verde, amarillo, rojo) decide el tipo de saque. */
@@ -486,7 +486,7 @@ export class Simulation {
       timing = d.pressedAt === null ? 'bad' : powerTiming(power);
     }
     const aim = d.aim;
-    this.closeDecision(timing);
+    this.closeDecision(timing, power);
     return { option, timing, aim, power };
   }
 
@@ -519,7 +519,7 @@ export class Simulation {
       choice = { type: TUNING.power.serveType[power], zone: choice.zone };
       timing = d.pressedAt === null ? 'bad' : powerTiming(power);
       serveAim = d.aim;
-      this.closeDecision(timing);
+      this.closeDecision(timing, power);
     } else {
       timing = this.aiTiming(team);
     }

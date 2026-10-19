@@ -171,9 +171,9 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'serve
     {
       t: 0,
       pose: {
-        spine: [0.3, -0.3, 0], neck: [-0.3, 0, 0],
+        spine: [0.12, -0.3, 0], neck: [-0.3, 0, 0],
         shoulderL: [-0.9, 0, 0.3], elbowL: [-1.0, 0, 0],
-        shoulderR: [-2.75, 0, -0.15], elbowR: [-0.05, 0, 0],
+        shoulderR: [-2.95, 0, -0.12], elbowR: [-0.03, 0, 0],
         ...legs(-0.45, 0.9),
       },
     },
@@ -214,7 +214,7 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'serve
   // Defensa baja: zancada profunda y brazos estirados hacia el piso.
   dive: [
     { t: -0.45, pose: { spine: [0.55, 0, 0], neck: [-0.5, 0, 0], ...both(-1.0, -0.3, 0), hipL: [-1.15, 0, 0.25], kneeL: [1.7, 0, 0], hipR: [-0.5, 0, -0.2], kneeR: [1.3, 0, 0] } },
-    { t: 0, pose: { spine: [0.8, 0, 0], neck: [-0.65, 0, 0], ...both(-1.35, -0.3, 0), hipL: [-1.3, 0, 0.25], kneeL: [1.8, 0, 0], hipR: [-0.6, 0, -0.2], kneeR: [1.45, 0, 0] } },
+    { t: 0, pose: { spine: [0.9, 0, 0], neck: [-0.7, 0, 0], ...both(0.4, -0.3, 0), hipL: [-1.4, 0, 0.25], kneeL: [2.1, 0, 0], hipR: [-1.0, 0, -0.2], kneeR: [1.9, 0, 0] } },
     { t: 0.4, pose: { spine: [0.5, 0, 0], neck: [-0.4, 0, 0], ...both(-0.9, 0.1, -0.3), ...legs(-0.9, 1.4, 0.18) } },
     { t: 0.8, pose: POSES.ready },
   ],

@@ -40,6 +40,8 @@ export class Animator {
   private vx = 0;
   private vz = 0;
   private action: Action | null = null;
+  /** Pelota en el instante del contacto: los brazos la siguen unos cuadros después del golpe. */
+  private contactAim: { target: THREE.Vector3; arms: 'both' | 'right'; at: number } | null = null;
   private mood: { pose: Pose; until: number } | null = null;
   private jump: { apex: number; air: number; peak: number } | null = null;
 
@@ -54,6 +56,8 @@ export class Animator {
   }
 
   onContact(kind: ContactKind, time: number): void {
+    const b = this.sim.ballPos;
+    if (kind !== 'serve') this.contactAim = { target: new THREE.Vector3(b.x, b.y, b.z), arms: kind === 'attack' ? 'right' : 'both', at: time };
     this.action = { track: trackFor(kind, this.sim.ballPos.y < 0.6), at: time };
   }
 
@@ -96,21 +100,35 @@ export class Animator {
     }
 
     // ---- Gesto técnico ----
-    const peak = 0.5 + 0.35 * (p.def.attrs.jump / 100);
     const up = sim.upcoming;
     const block = sim.blockers;
     let active: Action | null = null;
-    let aim: THREE.Vector3 | null = null;
+    let aim: { target: THREE.Vector3; arms: 'both' | 'right'; weight: number } | null = null;
     if (up && inPlay && up.key === this.key && up.kind !== 'block') {
       active = { track: trackFor(up.kind, up.point.y < 0.6), at: up.time };
-      if (up.kind === 'attack') this.startJump(up.time + 0.01, SPIKE_AIR, peak);
-      if (up.kind === 'reception' || up.kind === 'dig' || up.kind === 'free') aim = new THREE.Vector3(up.point.x, up.point.y, up.point.z);
+      const target = new THREE.Vector3(up.point.x, up.point.y, up.point.z);
+      const lead = up.time - now;
+      if (up.kind === 'attack') {
+        // Salto justo para que la mano llegue a la pelota en el punto más alto.
+        if (!this.jump) this.startJump(up.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.3));
+        aim = { target, arms: 'right', weight: ease(1 - lead / 0.14) * 0.9 };
+      } else if (up.kind === 'set') {
+        // Colocación en salto corto si la pelota viene más alta de lo que alcanzan las manos.
+        if (!this.jump) {
+          const lift = this.liftToReach(TRACKS.set, 'L', up.point.y, 0, 0.45);
+          if (lift > 0.05) this.startJump(up.time, 0.55, lift);
+        }
+        aim = { target, arms: 'both', weight: ease(1 - lead / 0.3) * 0.85 };
+      } else {
+        aim = { target, arms: 'both', weight: ease(1 - lead / 0.35) * 0.95 };
+      }
     } else if (block && inPlay && block.keys.includes(this.key)) {
       const apex = block.attackTime + BLOCK_DELAY;
       // Se guarda como gesto propio: la simulación libera el bloqueo al rematar, pero el salto debe terminar.
       if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - apex) > 0.05) this.action = { track: TRACKS.block, at: apex };
       active = this.action;
-      this.startJump(apex, BLOCK_AIR, peak * 0.7);
+      // Manos a la altura por donde cruzará el remate (un poco por debajo del punto de golpe).
+      if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', up.point.y - 0.3, 0.2, 1.0));
     } else if (sim.phase === 'preServe' && court[0] === this.key && sim.match.serving === p.team) {
       // Sacador: lanzamiento sincronizado con el saque de la IA; con el usuario, pelota en la mano hasta que decida.
       const countdown = sim.serveCountdown;
@@ -155,6 +173,7 @@ export class Animator {
       // Antes del saque: el equipo que saca mira a la red; el que recibe mira al sacador.
       targetYaw = sim.match.serving === p.team ? this.netYaw() : Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     } else if (block && block.keys.includes(this.key)) targetYaw = this.netYaw();
+    else if (up && up.key === this.key && up.kind === 'attack') targetYaw = this.netYaw();
     else if (this.speed > 2.6 && !(up && up.key === this.key && up.kind === 'attack')) targetYaw = Math.atan2(this.vx, this.vz);
     else targetYaw = Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     let diff = targetYaw - this.yaw;
@@ -163,7 +182,28 @@ export class Animator {
     this.rig.root.position.set(p.pos.x, 0, p.pos.z);
     this.rig.root.rotation.y = this.yaw;
 
-    if (aim && up) this.aimArms(aim, ease(1 - (up.time - now) / 0.4) * 0.5);
+    // El bloqueador principal lleva las manos a la pelota justo al cruzar la red.
+    if (up && inPlay && up.kind === 'block' && up.key === this.key) {
+      aim = { target: new THREE.Vector3(up.point.x, up.point.y, up.point.z), arms: 'both', weight: ease(1 - (up.time - now) / 0.12) * 0.8 };
+    }
+    if (!aim && this.contactAim) {
+      const since = now - this.contactAim.at;
+      if (since < 0.12) aim = { target: this.contactAim.target, arms: this.contactAim.arms, weight: (1 - since / 0.12) * 0.9 };
+      else this.contactAim = null;
+    }
+    if (aim) this.aimArms(aim.target, aim.arms, aim.weight);
+  }
+
+  /**
+   * Cuánto hay que saltar para que la mano (L o R) llegue a `height` en la pose del momento clave de la pista.
+   * Aplica esa pose un instante para medir con cinemática directa; la pose real se aplica después en el cuadro.
+   */
+  private liftToReach(track: readonly Key[], side: 'L' | 'R', height: number, min: number, max: number): number {
+    this.applyPose(sampleTrack(track, 0));
+    this.rig.body.position.y = 0;
+    this.rig.root.updateMatrixWorld(true);
+    const hand = this.rig.joints[`elbow${side}`].localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.05, 0));
+    return Math.min(max, Math.max(min, height - hand.y));
   }
 
   /** Mirando a la red: el equipo A hacia +x, el B hacia −x. */
@@ -189,11 +229,11 @@ export class Animator {
     this.rig.hips.position.y = DIMS.foot + Math.max(legL, legR);
   }
 
-  /** Lleva la plataforma de los brazos hacia la pelota en la recepción. */
-  private aimArms(target: THREE.Vector3, weight: number): void {
+  /** Apunta el brazo (o ambos) hacia la pelota en el contacto: plataforma en la recepción, mano en el remate. */
+  private aimArms(target: THREE.Vector3, arms: 'both' | 'right', weight: number): void {
     if (weight <= 0) return;
     this.rig.root.updateMatrixWorld(true);
-    for (const s of ['L', 'R'] as const) {
+    for (const s of arms === 'both' ? (['L', 'R'] as const) : (['R'] as const)) {
       const shoulder = this.rig.joints[`shoulder${s}`];
       const local = shoulder.parent!.worldToLocal(target.clone()).sub(shoulder.position);
       if (local.lengthSq() < 1e-6) continue;

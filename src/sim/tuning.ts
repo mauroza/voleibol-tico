@@ -8,6 +8,8 @@ export const TUNING = {
   /** Si la pelota rival va a caer fuera por más de esto, se deja caer. */
   letDropMargin: 0.25,
   pointPause: 1.5,
+  /** Separación cuerpo–pelota en cada contacto (m): la pelota queda donde llegan los brazos. */
+  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22 },
   servePause: 1.0,
   passHeight: 0.9,
   setHeight: 2.3,

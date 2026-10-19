@@ -265,8 +265,9 @@ export class Simulation {
     const plan = this.plan;
     if (plan?.kind === 'attack') {
       const p = this.player(plan.key);
-      const runTime = distXZ(p.pos, plan.point) / moveSpeed(p.def) + 0.15;
-      p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : v3(plan.point.x, 0, plan.point.z);
+      const stand = this.standPoint(plan);
+      const runTime = distXZ(p.pos, stand) / moveSpeed(p.def) + 0.15;
+      p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
     }
     for (const p of this.players.values()) {
       const dx = p.target.x - p.pos.x;
@@ -741,13 +742,42 @@ export class Simulation {
       const blockSpots = block ? this.blockSpots(block) : null;
       this.court(team).forEach((key, idx) => {
         const p = this.player(key);
-        if (plan && plan.key === key) p.target = v3(plan.point.x, 0, plan.point.z);
+        if (plan && plan.key === key) p.target = this.standPoint(plan);
         else if (building) p.target = this.attackSpot(team, p, idx);
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
         } else if (blockSpots?.has(key)) p.target = blockSpots.get(key)!;
         else p.target = this.zoneSpot(team, p, idx, !!block);
       });
+    }
+  }
+
+  /**
+   * Dónde se para quien va a tocar para que la pelota quede en sus manos y no atraviese el cuerpo:
+   * en recepción y defensa, delante de la trayectoria (la pelota llega a los brazos estirados);
+   * en la colocación, casi debajo con la pelota apenas hacia la red; en el remate, detrás y a la izquierda
+   * de la pelota (queda arriba del brazo derecho); en el bloqueo, pegado a la red.
+   */
+  private standPoint(plan: Plan): Vec3 {
+    const pt = plan.point;
+    const toNet = -sideSign(plan.team); // signo de x hacia la red
+    const right = -sideSign(plan.team); // signo de z del lado derecho mirando la red
+    const c = TUNING.contactStance;
+    switch (plan.kind) {
+      case 'attack':
+        return v3(pt.x - toNet * c.spikeBehind, 0, pt.z - right * c.spikeSide);
+      case 'set':
+        return v3(pt.x - toNet * c.setBehind, 0, pt.z);
+      case 'block':
+        return v3(sideSign(plan.team) * 0.45, 0, pt.z);
+      default: {
+        const reach = plan.low ? c.diveReach : c.bumpReach;
+        const vx = this.ball.v0.x;
+        const vz = this.ball.v0.z;
+        const len = Math.hypot(vx, vz);
+        if (len < 0.5) return v3(pt.x - toNet * reach, 0, pt.z);
+        return v3(pt.x + (vx / len) * reach, 0, pt.z + (vz / len) * reach);
+      }
     }
   }
 

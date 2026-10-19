@@ -33,6 +33,8 @@ export class DecisionPanel {
   private shownChosen: number | null = null;
   private shownZone: Zone | null = null;
   private feedbackUntil = 0;
+  /** En pausa no se aceptan elecciones ni timing. */
+  paused = false;
 
   constructor(root: HTMLElement, private readonly sim: Simulation) {
     this.el.className = 'decision';
@@ -44,7 +46,7 @@ export class DecisionPanel {
     this.hint.className = 'decision-hint';
     this.feedback.className = 'feedback';
     this.meter.append(this.goodZone, this.perfectZone, this.marker);
-    this.meter.addEventListener('click', () => sim.press());
+    this.meter.addEventListener('click', () => { if (!this.paused) sim.press(); });
     this.el.append(this.title, this.buttons, this.zones, this.meter, this.hint);
     root.append(this.el, this.feedback);
 
@@ -73,7 +75,7 @@ export class DecisionPanel {
 
   private onKey(e: KeyboardEvent): void {
     const d = this.sim.decision;
-    if (!d) return;
+    if (!d || this.paused) return;
     if (e.code === 'Space') {
       e.preventDefault();
       this.sim.press();

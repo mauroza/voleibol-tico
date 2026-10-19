@@ -1,4 +1,5 @@
 import type { AttackShot, ServeType, SetChoice, Zone } from './actions';
+import type { TeamId } from './court';
 import type { Timing } from './resolver';
 import { TUNING } from './tuning';
 
@@ -33,8 +34,12 @@ export interface Decision {
   pressedAt: number | null;
   /** Solo saque: zona elegida (si no, la IA elige). */
   zone: Zone | null;
-  /** Solo remate apuntado: punto del piso rival (x, z en coordenadas del mundo) al que apunta la mira. */
+  /** Mira: punto del piso (x, z del mundo). Remate y saque apuntan al campo rival; pase y marca de defensa, al propio. */
   aim: { x: number; z: number } | null;
+  /** Campo donde vive la mira (para limitarla). */
+  aimSide: TeamId | null;
+  /** 'timing': acertar el verde; 'power': la posición de la barra al presionar es la fuerza (verde, amarillo, rojo). */
+  meter: 'timing' | 'power';
 }
 
 /** El usuario presiona antes del contacto; después del contacto ya es tarde. */
@@ -59,3 +64,18 @@ export function judgeServe(meter: number): Timing {
   if (miss <= 0.32) return 'good';
   return 'bad';
 }
+
+export type Power = 'soft' | 'medium' | 'strong';
+
+/** Zona de fuerza según la posición de la barra (0..1): verde suave, amarillo medio, rojo muy fuerte. */
+export function powerZone(meter: number): Power {
+  return meter >= TUNING.power.strong ? 'strong' : meter >= TUNING.power.medium ? 'medium' : 'soft';
+}
+
+/** Posición de la barra de un contacto (0..1) en el instante en que se presionó: llega a 1 justo en el contacto. */
+export function contactMeter(pressedAt: number, contactTime: number): number {
+  return Math.min(1, Math.max(0, 1 - (contactTime - pressedAt) / TUNING.decision.slowWindow));
+}
+
+/** El rojo es lo más difícil de acertar (cuenta como timing perfecto); amarillo y verde, como bueno. */
+export const powerTiming = (p: Power): Timing => (p === 'strong' ? 'perfect' : 'good');

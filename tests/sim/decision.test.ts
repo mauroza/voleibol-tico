@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { judgeServe, judgeTiming, serveMeter } from '../../src/sim/decision';
+import { contactMeter, judgeServe, judgeTiming, powerZone, serveMeter } from '../../src/sim/decision';
 
 describe('judgeTiming', () => {
   it('perfecto justo antes del contacto', () => {
@@ -29,5 +29,19 @@ describe('serveMeter', () => {
     expect(judgeServe(0.95)).toBe('perfect');
     expect(judgeServe(0.75)).toBe('good');
     expect(judgeServe(0.3)).toBe('bad');
+  });
+});
+
+describe('barra de fuerza', () => {
+  it('zonas: verde suave, amarillo medio, rojo fuerte', () => {
+    expect(powerZone(0.2)).toBe('soft');
+    expect(powerZone(0.6)).toBe('medium');
+    expect(powerZone(0.9)).toBe('strong');
+  });
+
+  it('la barra del contacto llega a 1 justo en el contacto', () => {
+    expect(contactMeter(10, 10)).toBeCloseTo(1);
+    expect(contactMeter(9.8, 10)).toBeCloseTo(0.5);
+    expect(contactMeter(9, 10)).toBe(0);
   });
 });

@@ -9,9 +9,13 @@ export const TUNING = {
   letDropMargin: 0.25,
   pointPause: 1.5,
   /** Separación cuerpo–pelota en cada contacto (m): la pelota queda donde llegan los brazos. */
-  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22, blockDepth: 0.3 },
+  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22, blockDepth: 0.42 },
   /** Distancia mínima entre compañeros en cancha (m). */
   minSeparation: 0.55,
+  /** El cuerpo no se acerca a la red a menos de esto (m): nadie cruza la línea central. */
+  minNetGap: 0.2,
+  /** Rebotes de la pelota tras el punto: pierde energía vertical y horizontal en cada pique. */
+  bounce: { max: 4, restitution: 0.55, friction: 0.78, minUp: 0.8 },
   servePause: 1.0,
   passHeight: 0.9,
   setHeight: 2.3,
@@ -52,6 +56,19 @@ export const TUNING = {
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
   },
   free: { flightTime: 1.6, risk: 0.03 },
+  /** Barra de fuerza (remate y saque): umbrales y efecto de cada zona. */
+  power: {
+    medium: 0.5,
+    strong: 0.82,
+    spike: {
+      soft: { speed: 0.75, risk: 0.6, noise: 0.7 },
+      medium: { speed: 1, risk: 1, noise: 1 },
+      strong: { speed: 1.25, risk: 1.35, noise: 1.15 },
+    },
+    serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
+  },
+  /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */
+  defense: { focusRadius: 1.8, reachBonus: 0.7, reactionBonus: 0.1 },
   decision: {
     /** Sin opción elegida el tiempo casi se detiene: tiempo para pensar. */
     thinkScale: 0.1,

@@ -1,5 +1,5 @@
 import type { TeamId } from './court';
-import type { Decision, DecisionKind } from './decision';
+import type { Decision, DecisionKind, Power } from './decision';
 import type { Score } from './match';
 import type { Timing } from './resolver';
 
@@ -10,7 +10,7 @@ export type PointReason = 'ace' | 'kill' | 'blockKill' | 'blockOut' | 'landed' |
 export type SimEvent =
   | { type: 'contact'; time: number; playerKey: string; team: TeamId; kind: ContactKind; quality: number }
   | { type: 'decision'; decision: Decision }
-  | { type: 'decisionResolved'; kind: DecisionKind; timing: Timing }
+  | { type: 'decisionResolved'; kind: DecisionKind; timing: Timing; power?: Power }
   | { type: 'point'; winner: TeamId; reason: PointReason; points: Score; sets: Score }
   | { type: 'rotation'; team: TeamId }
   | { type: 'setEnd'; winner: TeamId; sets: Score }

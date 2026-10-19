@@ -11,6 +11,7 @@ export class Effects {
   private readonly trail: THREE.InstancedMesh;
   private readonly bursts: { mesh: THREE.Mesh; born: number; size: number }[] = [];
   private readonly m = new THREE.Matrix4();
+  private fireUntil = 0;
 
   constructor(private readonly camera: THREE.Camera) {
     this.trail = new THREE.InstancedMesh(
@@ -32,13 +33,18 @@ export class Effects {
   }
 
   /** Destello en el punto de contacto; más grande y dorado con más calidad o potencia. */
-  impact(at: THREE.Vector3, quality: number, strong: boolean, now: number): void {
+  impact(at: THREE.Vector3, quality: number, strong: boolean, now: number, color?: string): void {
     const b = this.bursts.reduce((oldest, x) => (x.born < oldest.born ? x : oldest));
     b.born = now;
     b.size = (strong ? 1.6 : 0.9) * (0.6 + quality * 0.6);
     b.mesh.position.copy(at);
-    (b.mesh.material as THREE.MeshBasicMaterial).color.set(quality > 0.8 ? '#ffd23f' : '#ffffff');
+    (b.mesh.material as THREE.MeshBasicMaterial).color.set(color ?? (quality > 0.8 ? '#ffd23f' : '#ffffff'));
     b.mesh.visible = true;
+  }
+
+  /** Golpe rojo (máxima fuerza): estela roja y más gruesa hasta `until` (segundos reales). */
+  fire(until: number): void {
+    this.fireUntil = until;
   }
 
   /** `now` en segundos reales: los efectos de pantalla no se ralentizan con la cámara lenta. */
@@ -46,9 +52,12 @@ export class Effects {
     this.history.unshift(ball.clone());
     if (this.history.length > TRAIL) this.history.pop();
     const show = ballSpeed > 11;
+    const fire = now < this.fireUntil;
+    (this.trail.material as THREE.MeshBasicMaterial).color.set(fire ? '#ff4a2a' : '#fff3b0');
+    (this.trail.material as THREE.MeshBasicMaterial).opacity = fire ? 0.7 : 0.45;
     for (let i = 0; i < TRAIL; i++) {
       const p = this.history[i] ?? ball;
-      const s = show ? (1 - i / TRAIL) * 0.9 : 0;
+      const s = show ? (1 - i / TRAIL) * (fire ? 1.5 : 0.9) : 0;
       this.m.makeScale(s, s, s).setPosition(p);
       this.trail.setMatrixAt(i, this.m);
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TEAMS } from '../../src/data/teams';
-import { landingTime, positionAt } from '../../src/sim/ball';
+import { landingTime, positionAt, timeAtHeightDescending } from '../../src/sim/ball';
 import { isInCourt, sideOfX } from '../../src/sim/court';
 import { serveMeter, type DecisionKind } from '../../src/sim/decision';
 import { Simulation } from '../../src/sim/rally';
@@ -78,7 +78,7 @@ describe('control del equipo completo', () => {
     const cfg = TUNING.decision;
     const seen = new Set<number>();
     const sim = new Simulation({ seed: 4, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
-    for (let i = 0; i < 200000 && sim.phase !== 'matchOver' && seen.size < 3; i++) {
+    for (let i = 0; i < 200000 && sim.phase !== 'matchOver' && seen.size < 5; i++) {
       const d = sim.decision;
       if (!d || d.contactTime === null) {
         expect(sim.timeScale).toBe(1);
@@ -87,13 +87,17 @@ describe('control del equipo completo', () => {
         seen.add(cfg.thinkScale);
         if (d.contactTime - sim.time < 0.9) sim.choose(0);
       } else {
+        // Con mira (remate, pase) el tiempo corre más lento para apuntar; sin mira, el ritmo normal de la decisión.
         const near = d.contactTime - sim.time <= cfg.slowWindow;
-        expect(sim.timeScale).toBe(near ? cfg.slowScale : cfg.approachScale);
-        seen.add(near ? cfg.slowScale : cfg.approachScale);
+        const aiming = !!d.aim && d.kind !== 'block';
+        const expected = aiming ? (near ? cfg.aimSlowScale : cfg.aimApproachScale) : near ? cfg.slowScale : cfg.approachScale;
+        expect(sim.timeScale).toBe(expected);
+        seen.add(expected);
       }
       sim.step(TUNING.dt);
     }
-    expect(seen).toEqual(new Set([cfg.thinkScale, cfg.approachScale, cfg.slowScale]));
+    expect(seen.has(cfg.thinkScale)).toBe(true);
+    expect(seen.size).toBeGreaterThanOrEqual(3);
   });
 
   it('press(at) juzga el timing con el instante exacto de la tecla, no con el del último cuadro', () => {
@@ -102,8 +106,7 @@ describe('control del equipo completo', () => {
     sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind === 'pass') timing = e.timing; });
     while (sim.phase !== 'matchOver' && timing === null) {
       const d = sim.decision;
-      if (d && d.kind === 'pass' && d.chosen === null && d.contactTime! - sim.time > 0.2) {
-        sim.choose(0);
+      if (d && d.kind === 'pass' && d.pressedAt === null && d.contactTime! - sim.time > 0.2) {
         // El cuadro va 0.2 s antes del contacto, pero la tecla se presionó 0.03 s antes del contacto.
         sim.press(d.contactTime! - 0.03);
       } else if (d && d.chosen === null) {
@@ -168,6 +171,87 @@ describe('remate apuntado', () => {
   it('apuntar cerca de la red es una finta (pelota lenta)', () => {
     const { flight } = aimedAttack(2, () => ({ x: 1.8, z: 1 }));
     expect(flight).toBeGreaterThan(0.6);
+  });
+});
+
+describe('fuerza, saque, pase dirigido y defensa', () => {
+  const fresh = (seed: number) => new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+  const horizontalSpeed = (sim: Simulation) => Math.hypot(sim.ball.v0.x, sim.ball.v0.z);
+
+  /** Avanza hasta la decisión pedida respondiendo el resto con la primera opción. */
+  function until(sim: Simulation, want: (d: NonNullable<Simulation['decision']>) => boolean) {
+    while (sim.phase !== 'matchOver') {
+      const d = sim.decision;
+      if (d && want(d)) return d;
+      if (d && d.chosen === null) sim.choose(0);
+      if (d && d.pressedAt === null && (d.kind === 'serve' || (d.contactTime !== null && d.contactTime - sim.time < 0.03))) sim.press();
+      sim.step(TUNING.dt);
+    }
+    throw new Error('No apareció la decisión');
+  }
+
+  it('saque apuntado: rojo es saque en salto (rápido), verde es seguro (lento) y van hacia la mira', () => {
+    const speeds: Record<string, number[]> = { strong: [], soft: [] };
+    let near = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      for (const zone of ['strong', 'soft'] as const) {
+        const sim = fresh(seed);
+        const d = until(sim, (x) => x.kind === 'serve');
+        expect(d.meter).toBe('power');
+        sim.setAim(6, -2);
+        // Medidor triangular: arriba (≈1) = rojo; al inicio (≈0.3) = verde.
+        while (serveMeter(sim.time - d.startTime) < (zone === 'strong' ? 0.95 : 0.3)) sim.step(TUNING.dt);
+        sim.press();
+        speeds[zone].push(horizontalSpeed(sim));
+        if (zone === 'strong') {
+          const land = positionAt(sim.ball, landingTime(sim.ball));
+          if (Math.hypot(land.x - 6, land.z + 2) < 2.5) near += 1;
+        }
+      }
+    }
+    const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+    expect(avg(speeds.strong)).toBeGreaterThan(avg(speeds.soft) * 1.3);
+    expect(near).toBeGreaterThanOrEqual(4);
+  });
+
+  it('remate: rojo pega más fuerte que verde', () => {
+    const speed = (late: boolean) => {
+      const sim = fresh(5);
+      const d = until(sim, (x) => x.kind === 'attack' && !!x.aim);
+      // Rojo: al final de la barra; verde: apenas entra la barra.
+      sim.press(late ? d.contactTime! - 0.02 : d.contactTime! - 0.35);
+      while (sim.decision === d) sim.step(TUNING.dt);
+      return horizontalSpeed(sim);
+    };
+    expect(speed(true)).toBeGreaterThan(speed(false) * 1.25);
+  });
+
+  it('pase dirigido: la pelota va al punto elegido del propio campo', () => {
+    let near = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const sim = fresh(seed);
+      const d = until(sim, (x) => x.kind === 'pass');
+      expect(d.aimSide).toBe('A');
+      sim.setAim(-2.5, -2);
+      sim.press(d.contactTime! - 0.03);
+      while (sim.decision === d) sim.step(TUNING.dt);
+      const t = timeAtHeightDescending(sim.ball, TUNING.setHeight);
+      if (t !== null) {
+        const p = positionAt(sim.ball, t);
+        if (Math.hypot(p.x + 2.5, p.z + 2) < 1.3) near += 1;
+      }
+    }
+    expect(near).toBeGreaterThanOrEqual(4);
+  });
+
+  it('marca de defensa: un defensor (que no bloquea) va hacia la marca', () => {
+    const sim = fresh(6);
+    const d = until(sim, (x) => x.kind === 'block');
+    expect(d.aimSide).toBe('A');
+    sim.setAim(-5, 3);
+    const covering = sim.court('A').map((k) => sim.player(k)).filter((p) => Math.hypot(p.target.x + 5, p.target.z - 3) < 0.05);
+    expect(covering).toHaveLength(1);
+    expect(sim.blockers?.keys).not.toContain(covering[0].key);
   });
 });
 

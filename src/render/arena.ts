@@ -49,6 +49,8 @@ interface Fan {
   z: number;
   side: TeamId;
   phase: number;
+  /** Ritmo propio de cada persona: así la tribuna no salta toda junta. */
+  rate: number;
   /** Fans que miran hacia la cancha: rotación en y. */
   yaw: number;
 }
@@ -107,7 +109,8 @@ export class Arena {
     for (const s of ['A', 'B'] as const) this.excitement[s] = Math.max(0.15, this.excitement[s] - dt * 0.35);
     this.fans.forEach((f, i) => {
       const e = this.excitement[f.side];
-      const bounce = Math.abs(Math.sin(t * (4 + e * 5) + f.phase)) * 0.35 * e * e;
+      // Solo los más emocionados saltan, cada uno a su ritmo; el resto se mueve poco.
+      const bounce = Math.max(0, Math.sin(t * f.rate * (0.8 + e) + f.phase)) * 0.16 * e * e;
       const sway = Math.sin(t * 1.3 + f.phase) * 0.05;
       this.q.setFromAxisAngle(this.up, f.yaw);
       this.m.compose(this.p.set(f.x + sway, f.y + 0.42 + bounce, f.z), this.q, this.one);
@@ -166,6 +169,7 @@ export class Arena {
           z,
           side: x < 0 ? 'A' : 'B',
           phase: (x * 12.9898 + r * 78.233) % (Math.PI * 2),
+          rate: 3 + (Math.abs(Math.sin(x * 4.7 + r * 1.3)) * 3),
           yaw: dir === -1 ? 0 : Math.PI,
         });
       }

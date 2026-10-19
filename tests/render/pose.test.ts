@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blendPose, hipHeight, jumpOffset, twoBoneIK } from '../../src/render/pose';
+import { TRACKS, blendPose, hipHeight, jumpOffset, sampleTrack, twoBoneIK } from '../../src/render/pose';
 
 describe('twoBoneIK', () => {
   it('el extremo llega a la distancia pedida', () => {
@@ -36,6 +36,30 @@ describe('blendPose', () => {
     const p = blendPose({ spine: [1, 0, 0] }, { neck: [0, 2, 0] }, 0.5);
     expect(p.spine).toEqual([0.5, 0, 0]);
     expect(p.neck).toEqual([0, 1, 0]);
+  });
+});
+
+describe('sampleTrack', () => {
+  const track = [
+    { t: -1, pose: { spine: [0, 0, 0] as const } },
+    { t: 0, pose: { spine: [1, 0, 0] as const } },
+    { t: 1, pose: { spine: [3, 0, 0] as const } },
+  ];
+
+  it('en un keyframe devuelve su pose exacta', () => {
+    expect(sampleTrack(track, 0).spine![0]).toBeCloseTo(1);
+  });
+
+  it('entre keyframes interpola (con suavizado) y fuera del rango se queda en los extremos', () => {
+    const mid = sampleTrack(track, 0.5).spine![0];
+    expect(mid).toBeGreaterThan(1);
+    expect(mid).toBeLessThan(3);
+    expect(sampleTrack(track, -5).spine![0]).toBeCloseTo(0);
+    expect(sampleTrack(track, 5).spine![0]).toBeCloseTo(3);
+  });
+
+  it('las pistas de remate tienen el contacto con el brazo derecho arriba', () => {
+    expect(sampleTrack(TRACKS.spike, 0).shoulderR![0]).toBeLessThan(-2.4);
   });
 });
 

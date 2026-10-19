@@ -261,6 +261,13 @@ export class Simulation {
   }
 
   private movePlayers(dt: number): void {
+    // El atacante espera en su punto de partida y arranca la carrera justo a tiempo para llegar al salto.
+    const plan = this.plan;
+    if (plan?.kind === 'attack') {
+      const p = this.player(plan.key);
+      const runTime = distXZ(p.pos, plan.point) / moveSpeed(p.def) + 0.15;
+      p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : v3(plan.point.x, 0, plan.point.z);
+    }
     for (const p of this.players.values()) {
       const dx = p.target.x - p.pos.x;
       const dz = p.target.z - p.pos.z;

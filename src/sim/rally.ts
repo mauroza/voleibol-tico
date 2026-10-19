@@ -255,7 +255,7 @@ export class Simulation {
       const wild = v3(at.x + this.rng.range(-6, 6), COURT.ballRadius, at.z + this.rng.range(-6, 6));
       this.ball = launch(at, wild, 1.0, t);
     } else {
-      const target = this.noisy(spot(p.team, SETTER_SPOT, TUNING.setHeight), cfg.noise * (1 - q));
+      const target = this.keepOnSide(p.team, this.noisy(spot(p.team, SETTER_SPOT, TUNING.setHeight), cfg.noise * (1 - q)));
       this.ball = launch(at, target, cfg.flightTime, t);
     }
     this.threat = 0;
@@ -275,7 +275,7 @@ export class Simulation {
     const outOfSystem = low || passQuality < cfg.outOfSystemPass;
     const [depth, right] = ATTACK_POINTS[choice.option];
     const point = toWorld(p.team, outOfSystem ? Math.max(depth, 2.0) : depth, right, attackContactHeight(attacker.def) - 0.1);
-    const target = this.noisy(point, cfg.noise * (1 - q));
+    const target = this.keepOnSide(p.team, this.noisy(point, cfg.noise * (1 - q)));
     this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
     this.intent = { key: attacker.key };
     this.threat = 0;
@@ -353,18 +353,17 @@ export class Simulation {
     this.plan = null;
     this.netFaultTime = null;
     const net = checkNet(this.ball);
-    if (net.kind === 'fault') {
+    const crossTime = net.kind === 'none' ? Infinity : net.time;
+    // Primero el lado donde está la pelota: un compañero puede jugarla antes de que llegue a la red.
+    const here = this.planTouch(sideOfX(this.ball.p0.x));
+    if (here && here.time < crossTime) {
+      this.plan = here;
+    } else if (net.kind === 'fault') {
       this.netFaultTime = net.time;
-      this.setFormations();
-      return;
-    }
-    const last = this.last!;
-    if (net.kind === 'clear' && last.kind === 'attack' && this.lastShot !== 'tip') {
-      this.plan = this.planBlock(otherTeam(last.team), net.time);
-    }
-    if (!this.plan) {
-      const team = sideOfX(positionAt(this.ball, landingTime(this.ball)).x);
-      this.plan = this.planTouch(team);
+    } else if (net.kind === 'clear') {
+      const last = this.last!;
+      if (last.kind === 'attack' && this.lastShot !== 'tip') this.plan = this.planBlock(otherTeam(last.team), net.time);
+      this.plan ??= this.planTouch(otherTeam(sideOfX(this.ball.p0.x)));
     }
     this.setFormations();
   }
@@ -507,7 +506,7 @@ export class Simulation {
 
   private errorTarget(opp: TeamId, from: Vec3): Vec3 {
     const s = sideSign(opp);
-    if (this.rng.chance(0.5)) return v3(s * 0.8, COURT.ballRadius, from.z); // a la red
+    if (this.rng.chance(0.5)) return v3(s * 0.05, 1.0, from.z); // a la red
     if (this.rng.chance(0.6)) {
       const z = clamp(from.z + this.rng.range(-2, 2), -COURT.halfWidth, COURT.halfWidth);
       return v3(s * (COURT.halfLength + this.rng.range(0.5, 2.5)), COURT.ballRadius, z); // larga

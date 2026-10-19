@@ -6,16 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:artifact": "tsc && vite build --mode artifact",
     "typecheck": "tsc",
     "test": "vitest run",
     "sim": "tsx scripts/simulate.ts"
   },
   "dependencies": {
-    "three": "^0.186.1"
+    "three": "0.170.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "@types/three": "^0.186.0",
+    "@types/three": "0.170.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

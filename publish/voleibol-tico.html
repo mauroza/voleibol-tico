@@ -1,0 +1,14 @@
+<title>Voleibol Tico</title>
+<link rel="stylesheet" href="assets/game.css">
+<style>
+  /* Página de juego a pantalla completa con un solo aspecto (oscuro): fondo explícito y color-scheme oscuro. */
+  :root { color-scheme: dark; }
+  html, body { height: 100%; background: #1b2333; color: #fff; }
+</style>
+<div id="app"></div>
+<div id="hud"></div>
+<div id="help">1–6: elegir · ESPACIO: timing · Esc: pausa · M: sonido · F: x4</div>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+<script type="module" src="assets/game.js"></script>

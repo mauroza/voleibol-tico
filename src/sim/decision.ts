@@ -9,6 +9,8 @@ export type UserOption =
   | { id: 'dump' }
   | { id: 'shot'; shot: AttackShot }
   | { id: 'free' }
+  /** Remate apuntado: la pelota va al punto de la mira (`Decision.aim`). */
+  | { id: 'aim' }
   /** Esquema de bloqueo: cuántos delanteros saltan (0 = sin bloqueo). */
   | { id: 'block'; n: number };
 
@@ -31,6 +33,8 @@ export interface Decision {
   pressedAt: number | null;
   /** Solo saque: zona elegida (si no, la IA elige). */
   zone: Zone | null;
+  /** Solo remate apuntado: punto del piso rival (x, z en coordenadas del mundo) al que apunta la mira. */
+  aim: { x: number; z: number } | null;
 }
 
 /** El usuario presiona antes del contacto; después del contacto ya es tarde. */

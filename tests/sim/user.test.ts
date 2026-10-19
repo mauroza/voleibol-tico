@@ -96,6 +96,24 @@ describe('control del equipo completo', () => {
     expect(seen).toEqual(new Set([cfg.thinkScale, cfg.approachScale, cfg.slowScale]));
   });
 
+  it('press(at) juzga el timing con el instante exacto de la tecla, no con el del último cuadro', () => {
+    const sim = new Simulation({ seed: 7, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let timing: Timing | null = null;
+    sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind === 'pass') timing = e.timing; });
+    while (sim.phase !== 'matchOver' && timing === null) {
+      const d = sim.decision;
+      if (d && d.kind === 'pass' && d.chosen === null && d.contactTime! - sim.time > 0.2) {
+        sim.choose(0);
+        // El cuadro va 0.2 s antes del contacto, pero la tecla se presionó 0.03 s antes del contacto.
+        sim.press(d.contactTime! - 0.03);
+      } else if (d && d.chosen === null) {
+        sim.choose(0);
+      }
+      sim.step(TUNING.dt);
+    }
+    expect(timing).toBe('perfect');
+  });
+
   it('jugar perfecto gana más puntos que no hacer nada', () => {
     const share = (bot: Bot) => {
       let a = 0;
@@ -109,6 +127,48 @@ describe('control del equipo completo', () => {
     };
     expect(share('perfect')).toBeGreaterThan(share('idle') + 0.05);
   }, 180_000);
+});
+
+describe('remate apuntado', () => {
+  /** Avanza hasta el próximo remate propio; `aim` decide a dónde apuntar. Devuelve dónde cae la pelota tras el golpe. */
+  function aimedAttack(seed: number, aim: (d: NonNullable<Simulation['decision']>) => { x: number; z: number }) {
+    const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let target: { x: number; z: number } | null = null;
+    let justHit = false;
+    sim.bus.on((e) => { if (e.type === 'contact' && e.kind === 'attack' && e.team === 'A' && target) justHit = true; });
+    while (sim.phase !== 'matchOver') {
+      const d = sim.decision;
+      if (d?.kind === 'attack' && !target) {
+        expect(d.aim).not.toBeNull();
+        expect(d.chosen).toBe(0);
+        target = aim(d);
+        sim.setAim(target.x, target.z);
+      } else if (d && d.kind !== 'attack' && d.chosen === null) sim.choose(0);
+      if (d && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
+      if (d?.kind === 'serve' && serveMeter(sim.time - d.startTime) >= 0.97) sim.press();
+      sim.step(TUNING.dt);
+      if (justHit) {
+        const land = positionAt(sim.ball, landingTime(sim.ball));
+        const flight = landingTime(sim.ball) - sim.ball.t0;
+        return { target: target!, land, flight };
+      }
+    }
+    throw new Error('No hubo remate propio');
+  }
+
+  it('la pelota cae cerca del punto apuntado con buen timing', () => {
+    let near = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const { target, land } = aimedAttack(seed, () => ({ x: 6, z: -2.5 }));
+      if (Math.hypot(land.x - target.x, land.z - target.z) < 1.5) near += 1;
+    }
+    expect(near).toBeGreaterThanOrEqual(4);
+  });
+
+  it('apuntar cerca de la red es una finta (pelota lenta)', () => {
+    const { flight } = aimedAttack(2, () => ({ x: 1.8, z: 1 }));
+    expect(flight).toBeGreaterThan(0.6);
+  });
 });
 
 describe('pelota en la red', () => {

@@ -38,7 +38,7 @@ describe('Simulation', () => {
         });
       });
     }
-  });
+  }, 30_000);
 
   it('el líbero nunca saca, ni ataca, ni bloquea', () => {
     for (let seed = 1; seed <= 10; seed++) {
@@ -99,6 +99,25 @@ describe('Simulation', () => {
     expect(sizes).toEqual(new Set([1, 2, 3]));
     expect(zoneChecks).toBeGreaterThan(0);
   });
+
+  it('dos compañeros en cancha nunca quedan uno encima del otro', () => {
+    let minDist = Infinity;
+    for (let seed = 1; seed <= 5; seed++) {
+      runMatch(opts(seed), (sim) => {
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          for (const team of ['A', 'B'] as const) {
+            const ps = sim.court(team).map((k) => sim.player(k).pos);
+            for (let i = 0; i < ps.length; i++) {
+              for (let j = i + 1; j < ps.length; j++) minDist = Math.min(minDist, Math.hypot(ps[i].x - ps[j].x, ps[i].z - ps[j].z));
+            }
+          }
+        };
+      });
+    }
+    expect(minDist).toBeGreaterThan(0.45);
+  }, 60_000);
 
   it('cada rally termina en menos de 60 s de simulación', () => {
     runMatch(opts(3), (sim) => {

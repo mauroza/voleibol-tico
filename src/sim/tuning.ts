@@ -9,7 +9,9 @@ export const TUNING = {
   letDropMargin: 0.25,
   pointPause: 1.5,
   /** Separación cuerpo–pelota en cada contacto (m): la pelota queda donde llegan los brazos. */
-  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22 },
+  contactStance: { bumpReach: 0.62, diveReach: 0.6, setBehind: 0.15, spikeBehind: 0.3, spikeSide: 0.22, blockDepth: 0.3 },
+  /** Distancia mínima entre compañeros en cancha (m). */
+  minSeparation: 0.55,
   servePause: 1.0,
   passHeight: 0.9,
   setHeight: 2.3,
@@ -43,6 +45,8 @@ export const TUNING = {
     speedRange: 12,
     gravityBonus: 4,
     tipFlightTime: 0.9,
+    /** Apuntar a menos de esta distancia de la red (m) es una finta. */
+    tipDepth: 3.0,
     noise: 2.0,
     targetSamples: 8,
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
@@ -59,14 +63,19 @@ export const TUNING = {
     slowWindow: 0.4,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
     perfectBonus: 0.15,
-    perfectWindow: 0.06,
-    goodWindow: 0.16,
+    perfectWindow: 0.08,
+    goodWindow: 0.2,
     servePeriod: 1.6,
     serveTimeout: 10,
     blockTiming: { perfect: 1.5, good: 1, bad: 0.5 },
     toolBase: 0.35,
     toolScale: 0.4,
     highPass: { flightTime: 1.8, noiseFactor: 0.5, riskFactor: 0.5 },
+    /** Remate apuntado: el tiempo corre más lento para mover la mira y golpear a tiempo. */
+    aimApproachScale: 0.35,
+    aimSlowScale: 0.22,
+    /** Los errores al azar pesan menos: el usuario ya puede mandarla afuera apuntando mal. */
+    aimRiskFactor: 0.6,
   },
   block: {
     reactionTime: 0.3,

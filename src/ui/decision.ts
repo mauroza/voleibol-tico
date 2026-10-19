@@ -37,7 +37,8 @@ export class DecisionPanel {
   /** En pausa no se aceptan elecciones ni timing. */
   paused = false;
 
-  constructor(root: HTMLElement, private readonly sim: Simulation) {
+  /** `clock(eventTimeStamp)` traduce el instante real de un evento al tiempo de simulación (entre cuadros). */
+  constructor(root: HTMLElement, private readonly sim: Simulation, private readonly clock: (stamp: number) => number = () => sim.time) {
     this.el.className = 'decision';
     this.title.className = 'decision-title';
     this.buttons.className = 'decision-buttons';
@@ -47,7 +48,7 @@ export class DecisionPanel {
     this.hint.className = 'decision-hint';
     this.feedback.className = 'feedback';
     this.meter.append(this.goodZone, this.perfectZone, this.marker);
-    this.meter.addEventListener('click', () => { if (!this.paused) sim.press(); });
+    this.meter.addEventListener('click', (e) => { if (!this.paused) sim.press(this.clock(e.timeStamp)); });
     this.el.append(this.title, this.buttons, this.zones, this.meter, this.hint);
     root.append(this.el, this.feedback);
 
@@ -79,7 +80,7 @@ export class DecisionPanel {
     if (!d || this.paused) return;
     if (e.code === 'Space') {
       e.preventDefault();
-      this.sim.press();
+      this.sim.press(this.clock(e.timeStamp));
       return;
     }
     const n = Number(e.key);
@@ -93,7 +94,7 @@ export class DecisionPanel {
     this.shownChosen = d.chosen;
     this.shownZone = d.zone;
     const p = this.sim.player(d.playerKey);
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${d.aim ? 'Remate apuntado' : TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
@@ -122,7 +123,11 @@ export class DecisionPanel {
       : [TUNING.decision.perfectWindow / TUNING.decision.slowWindow, TUNING.decision.goodWindow / TUNING.decision.slowWindow];
     this.perfectZone.style.width = `${(perfect * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${(good * 100).toFixed(1)}%`;
-    this.hint.textContent = d.chosen === null
+    // Remate apuntado: no hay botones, se apunta en la cancha.
+    this.buttons.style.display = d.aim ? 'none' : 'grid';
+    this.hint.textContent = d.aim
+      ? 'Apunta con el mouse o flechas/WASD · clic o ESPACIO para rematar cuando el marcador llegue al verde · cerca de la red = finta'
+      : d.chosen === null
       ? `Tiempo detenido: elige con 1–${d.options.length} o clic`
       : d.kind === 'serve'
         ? 'Zona con 1–6 · ESPACIO cuando el marcador llegue al verde'

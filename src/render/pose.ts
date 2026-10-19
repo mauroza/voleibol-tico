@@ -192,8 +192,9 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'serve
   // Piernas flexionadas con manos a la altura de los hombros, salto y brazos que pasan sobre la red, caída flexionada.
   block: [
     { t: -0.55, pose: { spine: [0.15, 0, 0], neck: [-0.2, 0, 0], ...both(-1.5, 0.1, -1.7), ...legs(-0.75, 1.25, 0.14) } },
-    { t: -0.32, pose: { spine: [0.05, 0, 0], neck: [-0.15, 0, 0], ...both(-2.4, 0.12, -0.6), ...legs(-0.2, 0.3) } },
-    { t: 0, pose: { spine: [0.12, 0, 0], neck: [-0.1, 0, 0], ...both(-2.85, 0.12, -0.05), ...legs(-0.2, 0.35) } },
+    { t: -0.32, pose: { spine: [0.08, 0, 0], neck: [-0.15, 0, 0], ...both(-2.35, 0.12, -0.6), ...legs(-0.2, 0.3) } },
+    // Ápice: manos que pasan al campo rival por encima de la red (bloqueo invasivo).
+    { t: 0, pose: { spine: [0.22, 0, 0], neck: [-0.2, 0, 0], ...both(-2.5, 0.1, -0.05), ...legs(-0.25, 0.4) } },
     { t: 0.3, pose: { spine: [0.2, 0, 0], neck: [-0.2, 0, 0], ...both(-1.8, 0.15, -1.0), ...legs(-0.8, 1.3, 0.14) } },
     { t: 0.6, pose: POSES.ready },
   ],

@@ -34,6 +34,19 @@ export class MatchView {
   private readonly byKey = new Map<string, Animator>();
   private readonly ball: THREE.Mesh;
   private readonly ballShadow: THREE.Mesh;
+  /** Mira del remate apuntado: cruz, círculo de dispersión (dónde puede caer) y trayectoria punteada. */
+  private readonly aimGroup = new THREE.Group();
+  private readonly aimSpread = new THREE.Mesh(
+    new THREE.RingGeometry(0.92, 1, 40),
+    new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  private readonly aimCross = new THREE.Group();
+  private readonly aimPath = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(Array.from({ length: 24 }, () => new THREE.Vector3())),
+    new THREE.LineDashedMaterial({ color: '#ffe14d', dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.9 }),
+  );
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly userRing = new THREE.Mesh(
     new THREE.RingGeometry(0.45, 0.6, 32),
     new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide }),
@@ -91,6 +104,7 @@ export class MatchView {
     this.userRing.rotation.x = -Math.PI / 2;
     this.userRing.visible = false;
     this.scene.add(this.userRing);
+    this.buildAim();
     this.fx = new Effects(this.camera);
     this.scene.add(this.fx.group);
 
@@ -106,6 +120,19 @@ export class MatchView {
     window.addEventListener('resize', () => this.resize());
     // Compilar los shaders ahora (también los de efectos aún invisibles) para evitar tirones la primera vez que aparecen.
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  /** Punto del piso (y = 0) bajo el cursor, en coordenadas del mundo. */
+  pickGround(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = this.raycaster.ray.intersectPlane(this.ground, new THREE.Vector3());
+    return hit ? { x: hit.x, z: hit.z } : null;
+  }
+
+  get canvas(): HTMLCanvasElement {
+    return this.renderer.domElement;
   }
 
   get replaying(): boolean {
@@ -142,6 +169,7 @@ export class MatchView {
       this.userRing.position.set(u.x, 0.02, u.z);
     }
     this.ball.position.copy(ballPos);
+    this.updateAim();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
 
     const scale = this.replay ? REPLAY_SPEED : this.sim.timeScale;
@@ -228,6 +256,52 @@ export class MatchView {
       ? hand.y + (apex - hand.y) * (1 - (1 - k / 0.65) ** 2)
       : apex - (apex - contact) * ((k - 0.65) / 0.35) ** 2;
     out.set(hand.x + (p.x - hand.x) * k, y, hand.z + (p.z - hand.z) * k);
+  }
+
+  private buildAim(): void {
+    const mat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), mat);
+    const barX = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.09), mat);
+    const barZ = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 1.4), mat);
+    this.aimCross.add(ring, barX, barZ);
+    this.aimCross.rotation.x = -Math.PI / 2;
+    this.aimSpread.rotation.x = -Math.PI / 2;
+    this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
+    this.aimGroup.visible = false;
+    this.scene.add(this.aimGroup);
+  }
+
+  /** Muestra la mira, el círculo donde puede caer la pelota y la trayectoria desde el punto de golpe. */
+  private updateAim(): void {
+    const d = this.replay ? null : this.sim.decision;
+    const up = this.sim.upcoming;
+    if (!d?.aim || !up || up.key !== d.playerKey || up.kind !== 'attack') {
+      this.aimGroup.visible = false;
+      return;
+    }
+    this.aimGroup.visible = true;
+    const { x, z } = d.aim;
+    const inCourt = Math.abs(x) <= COURT.halfLength && Math.abs(z) <= COURT.halfWidth;
+    this.aimCross.position.set(x, 0.03, z);
+    // Dispersión aproximada para un golpe de calidad media: TUNING.attack.noise × (1 − 0.65).
+    const spread = TUNING.attack.noise * 0.35;
+    this.aimSpread.position.set(x, 0.025, z);
+    this.aimSpread.scale.setScalar(spread);
+    (this.aimSpread.material as THREE.MeshBasicMaterial).color.set(inCourt ? '#ffffff' : '#ff5a5a');
+    // Trayectoria: remate fuerte (tenso, con efecto) o finta (globo corto).
+    const tip = Math.abs(x) < TUNING.attack.tipDepth;
+    const from = up.point;
+    const dist = Math.hypot(x - from.x, z - from.z);
+    const T = tip ? TUNING.attack.tipFlightTime : Math.max(0.2, dist / 22);
+    const g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus;
+    const vy = (COURT.ballRadius - from.y + 0.5 * g * T * T) / T;
+    const pos = this.aimPath.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const t = (i / (pos.count - 1)) * T;
+      pos.setXYZ(i, from.x + ((x - from.x) * t) / T, from.y + vy * t - 0.5 * g * t * t, from.z + ((z - from.z) * t) / T);
+    }
+    pos.needsUpdate = true;
+    this.aimPath.computeLineDistances();
   }
 
   /** Más de ~1 s seguido por debajo de 45 fps: baja la resolución un paso (hasta 0.75). */

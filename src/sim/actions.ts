@@ -4,7 +4,8 @@ import { TUNING } from './tuning';
 
 export type ServeType = 'float' | 'jump' | 'safe';
 export type SetOption = 'zone4' | 'zone2' | 'quick' | 'pipe';
-export type AttackShot = 'cross' | 'line' | 'tip';
+/** 'tool' (usar el bloqueo) solo lo elige el usuario. */
+export type AttackShot = 'cross' | 'line' | 'tip' | 'tool';
 export type Zone = 1 | 2 | 3 | 4 | 5 | 6;
 
 export const SERVE_TYPES: readonly ServeType[] = ['float', 'jump', 'safe'];

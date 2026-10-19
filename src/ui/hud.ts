@@ -5,6 +5,7 @@ const REASON_LABEL: Record<PointReason, string> = {
   ace: '¡Ace!',
   kill: '¡Remate ganador!',
   blockKill: '¡Qué tapa!',
+  blockOut: '¡Remate tras el bloqueo!',
   landed: 'Pelota al piso',
   serviceError: 'Error de saque',
   attackError: 'Error de ataque',

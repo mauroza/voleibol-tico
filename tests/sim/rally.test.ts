@@ -53,6 +53,28 @@ describe('Simulation', () => {
     }
   });
 
+  it('upcoming anticipa al jugador del próximo contacto', () => {
+    let checked = 0;
+    runMatch(opts(6), (sim) => {
+      let expected: { key: string; time: number } | null = null;
+      sim.bus.on((e) => {
+        if (e.type !== 'contact') return;
+        if (expected && e.kind !== 'serve') {
+          expect(e.playerKey).toBe(expected.key);
+          expect(e.time).toBeGreaterThanOrEqual(expected.time - 1e-9);
+          checked += 1;
+        }
+      });
+      const origStep = sim.step.bind(sim);
+      sim.step = (dt: number) => {
+        const up = sim.upcoming;
+        expected = up ? { key: up.key, time: up.time } : null;
+        origStep(dt);
+      };
+    });
+    expect(checked).toBeGreaterThan(50);
+  });
+
   it('cada rally termina en menos de 60 s de simulación', () => {
     runMatch(opts(3), (sim) => {
       let start = 0;

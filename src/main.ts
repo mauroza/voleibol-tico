@@ -21,6 +21,9 @@ function start(setup: MatchSetup): void {
   const hud = new Hud(ui, sim);
   const panel = new DecisionPanel(ui, sim);
 
+  // Solo en desarrollo: permite avanzar y renderizar a mano desde la consola o las pruebas visuales.
+  if (import.meta.env.DEV) Object.assign(window, { __game: { sim, view, hud, panel } });
+
   let speed = 1;
   window.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'f') speed = speed === 1 ? 4 : 1;

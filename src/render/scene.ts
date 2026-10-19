@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 import { COURT } from '../sim/court';
 import type { Simulation } from '../sim/rally';
+import { Animator } from './animator';
+import { buildCharacter, lookFor } from './character';
 
-const PLAYER_RADIUS = 0.3;
-const PLAYER_HEIGHT = 1.85;
-
-/** Vista de fase 1: cápsulas, esfera y cancha plana. Solo lee la simulación. */
+/** Vista del partido: personajes anime, pelota y cancha. Solo lee la simulación. */
 export class MatchView {
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
-  private readonly playerMeshes = new Map<string, THREE.Mesh>();
+  private readonly animators = new Map<string, Animator>();
   private readonly ball: THREE.Mesh;
   private readonly ballShadow: THREE.Mesh;
   /** Anillo bajo el jugador del usuario. */
@@ -25,8 +24,14 @@ export class MatchView {
     this.scene.background = new THREE.Color('#1b2333');
     this.camera.position.set(0, 11, 19);
     this.camera.lookAt(0, 0.5, 0);
-    this.scene.add(new THREE.HemisphereLight('#ffffff', '#445566', 1.2));
-    const sun = new THREE.DirectionalLight('#ffffff', 1.5);
+    // Desarrollo: ?cam=x,y,z,lx,ly,lz ubica la cámara (para revisar personajes de cerca).
+    const cam = new URLSearchParams(location.search).get('cam')?.split(',').map(Number);
+    if (cam?.length === 6 && cam.every(Number.isFinite)) {
+      this.camera.position.set(cam[0], cam[1], cam[2]);
+      this.camera.lookAt(cam[3], cam[4], cam[5]);
+    }
+    this.scene.add(new THREE.HemisphereLight('#ffffff', '#445566', 0.7));
+    const sun = new THREE.DirectionalLight('#ffffff', 2.2);
     sun.position.set(5, 15, 8);
     this.scene.add(sun);
     this.buildCourt();
@@ -46,9 +51,7 @@ export class MatchView {
   }
 
   render(): void {
-    for (const p of this.sim.players.values()) {
-      this.playerMeshes.get(p.key)!.position.set(p.pos.x, PLAYER_HEIGHT / 2, p.pos.z);
-    }
+    for (const a of this.animators.values()) a.update();
     if (this.sim.userKey) {
       const u = this.sim.player(this.sim.userKey).pos;
       this.userRing.position.set(u.x, 0.02, u.z);
@@ -114,13 +117,15 @@ export class MatchView {
   }
 
   private buildPlayers(): void {
-    const geo = new THREE.CapsuleGeometry(PLAYER_RADIUS, PLAYER_HEIGHT - 2 * PLAYER_RADIUS, 4, 10);
     for (const p of this.sim.players.values()) {
       const team = this.sim.teams[p.team];
-      const color = p.def.role === 'L' ? team.secondary : team.primary;
-      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color }));
-      this.playerMeshes.set(p.key, mesh);
-      this.scene.add(mesh);
+      const rig = buildCharacter(lookFor(p.key, p.def.number, team.primary, team.secondary, p.def.role === 'L'));
+      this.animators.set(p.key, new Animator(p.key, rig, this.sim));
+      this.scene.add(rig.root);
     }
+    this.sim.bus.on((e) => {
+      if (e.type === 'contact') this.animators.get(e.playerKey)?.onContact(e.kind, e.time);
+      if (e.type === 'point') for (const a of this.animators.values()) a.onPoint(this.sim.player(a.key).team === e.winner, this.sim.time);
+    });
   }
 }

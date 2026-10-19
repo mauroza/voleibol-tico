@@ -49,6 +49,8 @@ interface Touch {
   quality: number;
 }
 
+export type PlannedContact = Plan;
+
 interface Plan {
   key: string;
   team: TeamId;
@@ -116,6 +118,11 @@ export class Simulation {
     const p = this.players.get(key);
     if (!p) throw new Error(`Jugador desconocido: ${key}`);
     return p;
+  }
+
+  /** Próximo contacto planificado (solo lectura): el render lo usa para anticipar saltos y gestos. */
+  get upcoming(): Readonly<PlannedContact> | null {
+    return this.plan;
   }
 
   /** Multiplicador de tiempo para el bucle en tiempo real: cámara lenta cerca de un contacto con decisión. */

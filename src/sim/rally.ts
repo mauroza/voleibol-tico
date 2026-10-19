@@ -103,6 +103,8 @@ export class Simulation {
   private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
+  /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
+  private blockHold: BlockSetup | null = null;
 
   constructor(opts: SimOptions) {
     this.rng = createRng(opts.seed);
@@ -237,6 +239,7 @@ export class Simulation {
     this.threat = 0;
     this.decision = null;
     this.blockSetup = null;
+    this.blockHold = null;
     this.touchSide = this.match.serving;
     this.touches = 0;
     for (const team of TEAM_IDS) {
@@ -280,6 +283,37 @@ export class Simulation {
       const len = Math.min(d, moveSpeed(p.def) * dt);
       p.pos.x += (dx / d) * len;
       p.pos.z += (dz / d) * len;
+    }
+    this.separatePlayers();
+  }
+
+  /** Nadie ocupa el lugar de un compañero: separación mínima entre los jugadores en cancha de cada equipo. */
+  private separatePlayers(): void {
+    const min = TUNING.minSeparation;
+    for (const team of TEAM_IDS) {
+      const ps = this.court(team).map((k) => this.player(k));
+      for (let i = 0; i < ps.length; i++) {
+        for (let j = i + 1; j < ps.length; j++) {
+          const a = ps[i].pos;
+          const b = ps[j].pos;
+          let dx = b.x - a.x;
+          let dz = b.z - a.z;
+          let d = Math.hypot(dx, dz);
+          if (d >= min) continue;
+          if (d < 1e-6) {
+            dx = 0;
+            dz = 1;
+            d = 1;
+          }
+          const push = (min - Math.min(d, min)) / 2;
+          const nx = dx / d;
+          const nz = dz / d;
+          a.x -= nx * push;
+          a.z -= nz * push;
+          b.x += nx * push;
+          b.z += nz * push;
+        }
+      }
     }
   }
 
@@ -596,6 +630,7 @@ export class Simulation {
     // El bloqueo preparado (y la decisión del usuario sobre él) se consume con el remate rival.
     const blockDecision = last.kind === 'attack' && this.decision?.kind === 'block' ? this.decision : null;
     const block = last.kind === 'attack' ? this.blockSetup : null;
+    this.blockHold = last.kind === 'attack' ? block : null;
     if (last.kind === 'attack') this.blockSetup = null;
     const net = checkNet(this.ball);
     const crossTime = net.kind === 'none' ? Infinity : net.time;
@@ -647,7 +682,7 @@ export class Simulation {
     const out = new Map<string, Vec3>();
     ordered.forEach((k, i) => {
       const offset = (i - (ordered.length - 1) / 2) * TUNING.block.spacing;
-      out.set(k, v3(sideSign(team) * 0.45, 0, clamp(block.z + offset, -COURT.halfWidth + 0.3, COURT.halfWidth - 0.3)));
+      out.set(k, v3(sideSign(team) * TUNING.contactStance.blockDepth, 0, clamp(block.z + offset, -COURT.halfWidth + 0.3, COURT.halfWidth - 0.3)));
     });
     return out;
   }
@@ -741,11 +776,12 @@ export class Simulation {
     for (const team of TEAM_IDS) {
       const building = plan !== null && plan.team === team && plan.kind !== 'block' && this.touchSide === team && this.touches >= 1;
       const receivingFirst = plan !== null && plan.team === team && !building;
-      const block = this.blockSetup && this.blockSetup.team === team ? this.blockSetup : null;
+      const block = [this.blockSetup, this.blockHold].find((b) => b?.team === team) ?? null;
       const blockSpots = block ? this.blockSpots(block) : null;
       this.court(team).forEach((key, idx) => {
         const p = this.player(key);
-        if (plan && plan.key === key) p.target = this.standPoint(plan);
+        // El bloqueador principal no corre al punto de cruce: sigue en su lugar del bloqueo cerrado.
+        if (plan && plan.key === key) p.target = plan.kind === 'block' && blockSpots?.has(key) ? blockSpots.get(key)! : this.standPoint(plan);
         else if (building) p.target = this.attackSpot(team, p, idx);
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
@@ -772,7 +808,7 @@ export class Simulation {
       case 'set':
         return v3(pt.x - toNet * c.setBehind, 0, pt.z);
       case 'block':
-        return v3(sideSign(plan.team) * 0.45, 0, pt.z);
+        return v3(sideSign(plan.team) * TUNING.contactStance.blockDepth, 0, pt.z);
       default: {
         const reach = plan.low ? c.diveReach : c.bumpReach;
         const vx = this.ball.v0.x;
@@ -901,6 +937,7 @@ export class Simulation {
     this.plan = null;
     this.netFaultTime = null;
     this.blockSetup = null;
+    this.blockHold = null;
     if (this.decision) this.closeDecision('bad');
   }
 

@@ -45,9 +45,9 @@ export const TUNING = {
   },
   attack: {
     base: 1.08,
-    minSpeed: 16,
-    speedRange: 12,
-    gravityBonus: 4,
+    minSpeed: 21,
+    speedRange: 13,
+    gravityBonus: 6,
     tipFlightTime: 0.9,
     /** Apuntar a menos de esta distancia de la red (m) es una finta. */
     tipDepth: 3.0,
@@ -63,7 +63,7 @@ export const TUNING = {
     spike: {
       soft: { speed: 0.75, risk: 0.6, noise: 0.7 },
       medium: { speed: 1, risk: 1, noise: 1 },
-      strong: { speed: 1.25, risk: 1.35, noise: 1.15 },
+      strong: { speed: 1.32, risk: 1.35, noise: 1.15 },
     },
     serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
   },

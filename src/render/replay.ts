@@ -62,26 +62,12 @@ export class ReplayBuffer {
   }
 }
 
-export interface PointSummary {
-  reason: PointReason;
-  /** Calidad del último ataque del rally (0 si no hubo). */
-  attackQuality: number;
-  /** El usuario tuvo timing perfecto en su último toque del rally. */
-  userPerfect: boolean;
-  userWon: boolean;
-}
+/** Puntos que se repiten: remate que cae (también el que sale del bloqueo), ace y tapa. */
+const REPLAYED: ReadonlySet<PointReason> = new Set<PointReason>(['kill', 'blockOut', 'ace', 'blockKill']);
 
-/** Decide qué puntos merecen repetición, con separación mínima entre repeticiones. */
+/** Decide qué puntos merecen repetición: siempre los remates que caen, los aces y las tapas; nunca los errores. */
 export class ReplayPolicy {
-  private since = Infinity;
-
-  constructor(private readonly minGap = 3) {}
-
-  shouldReplay(p: PointSummary): boolean {
-    this.since += 1;
-    const big = p.reason === 'ace' || p.reason === 'blockKill' || (p.reason === 'kill' && p.attackQuality >= 0.75) || (p.userWon && p.userPerfect);
-    if (!big || this.since <= this.minGap) return false;
-    this.since = 0;
-    return true;
+  shouldReplay(reason: PointReason): boolean {
+    return REPLAYED.has(reason);
   }
 }

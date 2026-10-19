@@ -22,28 +22,10 @@ describe('ReplayBuffer', () => {
 });
 
 describe('ReplayPolicy', () => {
-  const point = (p: ReplayPolicy, reason: PointReason, attackQuality = 0.5, userPerfect = false) =>
-    p.shouldReplay({ reason, attackQuality, userPerfect, userWon: userPerfect });
-
-  it('repite aces, tapas y remates fuertes; no errores', () => {
-    expect(point(new ReplayPolicy(0), 'ace')).toBe(true);
-    expect(point(new ReplayPolicy(0), 'blockKill')).toBe(true);
-    expect(point(new ReplayPolicy(0), 'kill', 0.8)).toBe(true);
-    expect(point(new ReplayPolicy(0), 'kill', 0.5)).toBe(false);
-    expect(point(new ReplayPolicy(0), 'serviceError')).toBe(false);
-  });
-
-  it('repite el punto perfecto del usuario', () => {
-    expect(point(new ReplayPolicy(0), 'kill', 0.4, true)).toBe(true);
-  });
-
-  it('respeta la separación mínima entre repeticiones', () => {
-    const p = new ReplayPolicy(3);
-    expect(point(p, 'ace')).toBe(true);
-    expect(point(p, 'ace')).toBe(false);
-    expect(point(p, 'ace')).toBe(false);
-    expect(point(p, 'ace')).toBe(false);
-    expect(point(p, 'ace')).toBe(true);
+  it('repite siempre remates que caen, aces y tapas; nunca errores', () => {
+    const p = new ReplayPolicy();
+    for (const r of ['kill', 'blockOut', 'ace', 'blockKill', 'kill', 'ace'] as PointReason[]) expect(p.shouldReplay(r)).toBe(true);
+    for (const r of ['serviceError', 'attackError', 'error', 'landed'] as PointReason[]) expect(p.shouldReplay(r)).toBe(false);
   });
 });
 

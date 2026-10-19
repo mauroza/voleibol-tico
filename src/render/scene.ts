@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { COURT } from '../sim/court';
 import type { Simulation } from '../sim/rally';
-import type { Timing } from '../sim/resolver';
 import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
 import { Arena } from './arena';
@@ -63,12 +62,10 @@ export class MatchView {
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
-  private readonly policy = new ReplayPolicy(3);
+  private readonly policy = new ReplayPolicy();
   private readonly prevBall = new THREE.Vector3();
   private lastPower: Power | null = null;
-  private lastAttackQuality = 0;
   private lastAttackAt = new THREE.Vector3();
-  private lastUserTiming: Timing | null = null;
   private pendingReplay: { at: number; focus: THREE.Vector3 } | null = null;
   private replay: { playhead: number; to: number } | null = null;
   private replayPointTime = 0;
@@ -196,10 +193,6 @@ export class MatchView {
       const now = performance.now() / 1000;
       if (e.type === 'contact') {
         this.byKey.get(e.playerKey)?.onContact(e.kind, e.time);
-        if (e.kind === 'serve') {
-          this.lastUserTiming = null;
-          this.lastAttackQuality = 0;
-        }
         const b = this.sim.ballPos;
         const at = new THREE.Vector3(b.x, b.y, b.z);
         const hit = e.kind === 'attack' || e.kind === 'serve';
@@ -214,7 +207,6 @@ export class MatchView {
           this.speedLines.flash(1);
         }
         if (e.kind === 'attack') {
-          this.lastAttackQuality = e.quality;
           this.lastAttackAt.copy(at);
           if (e.quality > 0.7) {
             this.director.punch(0.03);
@@ -226,19 +218,13 @@ export class MatchView {
           this.speedLines.flash(0.6);
         }
       } else if (e.type === 'decisionResolved') {
-        this.lastUserTiming = e.timing;
         this.lastPower = e.power ?? null;
       } else if (e.type === 'point') {
         for (const a of this.animators) a.onPoint(this.sim.player(a.key).team === e.winner, this.sim.time);
         const big = e.reason === 'ace' || e.reason === 'kill' || e.reason === 'blockKill';
         this.arena.cheer(e.winner, big);
         if (big) this.director.punch(0.05, 0.3);
-        const replay = this.policy.shouldReplay({
-          reason: e.reason,
-          attackQuality: this.lastAttackQuality,
-          userPerfect: this.lastUserTiming === 'perfect',
-          userWon: this.sim.control !== null && e.winner === this.sim.control,
-        });
+        const replay = this.policy.shouldReplay(e.reason);
         if (replay) {
           const b = this.sim.ballPos;
           const focus = e.reason === 'ace' ? new THREE.Vector3(b.x, 0, b.z) : this.lastAttackAt.clone().setY(0);
@@ -343,7 +329,7 @@ export class MatchView {
       // Remate fuerte (tenso, con efecto) o finta (globo corto).
       const tip = Math.abs(x) < TUNING.attack.tipDepth;
       from.set(up!.point.x, up!.point.y, up!.point.z);
-      T = tip ? TUNING.attack.tipFlightTime : Math.max(0.2, Math.hypot(x - from.x, z - from.z) / 22);
+      T = tip ? TUNING.attack.tipFlightTime : Math.max(0.15, Math.hypot(x - from.x, z - from.z) / (TUNING.attack.minSpeed + TUNING.attack.speedRange * 0.5));
       g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus;
       spread = TUNING.attack.noise * 0.35;
     }

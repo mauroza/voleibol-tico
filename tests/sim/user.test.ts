@@ -96,6 +96,24 @@ describe('control del equipo completo', () => {
     expect(seen).toEqual(new Set([cfg.thinkScale, cfg.approachScale, cfg.slowScale]));
   });
 
+  it('press(at) juzga el timing con el instante exacto de la tecla, no con el del último cuadro', () => {
+    const sim = new Simulation({ seed: 7, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let timing: Timing | null = null;
+    sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind === 'pass') timing = e.timing; });
+    while (sim.phase !== 'matchOver' && timing === null) {
+      const d = sim.decision;
+      if (d && d.kind === 'pass' && d.chosen === null && d.contactTime! - sim.time > 0.2) {
+        sim.choose(0);
+        // El cuadro va 0.2 s antes del contacto, pero la tecla se presionó 0.03 s antes del contacto.
+        sim.press(d.contactTime! - 0.03);
+      } else if (d && d.chosen === null) {
+        sim.choose(0);
+      }
+      sim.step(TUNING.dt);
+    }
+    expect(timing).toBe('perfect');
+  });
+
   it('jugar perfecto gana más puntos que no hacer nada', () => {
     const share = (bot: Bot) => {
       let a = 0;

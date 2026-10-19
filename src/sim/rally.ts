@@ -174,11 +174,14 @@ export class Simulation {
     if (d && d.kind === 'serve' && d.pressedAt === null) d.zone = zone;
   }
 
-  /** Presiona el timing. En el saque, saca de inmediato. */
-  press(): void {
+  /**
+   * Presiona el timing. `at` es el instante de simulación en que se tocó la tecla (puede caer entre dos cuadros);
+   * por defecto, el instante actual. En el saque, saca de inmediato.
+   */
+  press(at: number = this.time): void {
     const d = this.decision;
     if (!d || d.chosen === null || d.pressedAt !== null) return;
-    d.pressedAt = this.time;
+    d.pressedAt = Math.max(at, d.startTime);
     if (d.kind === 'serve' && this.phase === 'preServe') this.serve();
   }
 

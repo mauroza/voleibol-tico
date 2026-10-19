@@ -37,7 +37,8 @@ export class DecisionPanel {
   /** En pausa no se aceptan elecciones ni timing. */
   paused = false;
 
-  constructor(root: HTMLElement, private readonly sim: Simulation) {
+  /** `clock(eventTimeStamp)` traduce el instante real de un evento al tiempo de simulación (entre cuadros). */
+  constructor(root: HTMLElement, private readonly sim: Simulation, private readonly clock: (stamp: number) => number = () => sim.time) {
     this.el.className = 'decision';
     this.title.className = 'decision-title';
     this.buttons.className = 'decision-buttons';
@@ -47,7 +48,7 @@ export class DecisionPanel {
     this.hint.className = 'decision-hint';
     this.feedback.className = 'feedback';
     this.meter.append(this.goodZone, this.perfectZone, this.marker);
-    this.meter.addEventListener('click', () => { if (!this.paused) sim.press(); });
+    this.meter.addEventListener('click', (e) => { if (!this.paused) sim.press(this.clock(e.timeStamp)); });
     this.el.append(this.title, this.buttons, this.zones, this.meter, this.hint);
     root.append(this.el, this.feedback);
 
@@ -79,7 +80,7 @@ export class DecisionPanel {
     if (!d || this.paused) return;
     if (e.code === 'Space') {
       e.preventDefault();
-      this.sim.press();
+      this.sim.press(this.clock(e.timeStamp));
       return;
     }
     const n = Number(e.key);

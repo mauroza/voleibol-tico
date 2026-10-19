@@ -26,7 +26,11 @@ function start(setup: MatchSetup): void {
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
   const hud = new Hud(ui, sim);
-  const panel = new DecisionPanel(ui, sim);
+  // Reloj entre cuadros: la tecla se juzga en el instante real en que se tocó, no en el del último cuadro.
+  let frameStamp = performance.now();
+  let frameRate = 0;
+  const clock = (stamp: number) => sim.time + Math.max(0, (stamp - frameStamp) / 1000) * frameRate;
+  const panel = new DecisionPanel(ui, sim, clock);
   const sound = createSound(sim);
 
   // Reiniciar, revancha y menú recargan la página: así no hay que desmontar la escena a mano.
@@ -44,7 +48,7 @@ function start(setup: MatchSetup): void {
     pause.set(p);
     panel.paused = p;
   };
-  const gamepad = new GamepadInput(sim, () => setPaused(!pause.open));
+  const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
 
   sim.bus.on((e) => {
     if (e.type !== 'matchEnd') return;
@@ -78,13 +82,16 @@ function start(setup: MatchSetup): void {
     // Paso variable: la simulación avanza exactamente lo que duró el cuadro (fluido a 60, 144 o 165 Hz).
     // En pausa o repetición espera; la cámara lenta de decisión ignora la aceleración x4.
     if (!view.replaying && !pause.open) {
-      let remaining = dtReal * pace * (sim.timeScale < 1 ? sim.timeScale : speed);
+      frameRate = pace * (sim.timeScale < 1 ? sim.timeScale : speed);
+      let remaining = dtReal * frameRate;
       while (remaining > 1e-6) {
         const h = Math.min(remaining, TUNING.dt);
         sim.step(h);
         remaining -= h;
       }
     }
+    frameStamp = now;
+    if (view.replaying || pause.open) frameRate = 0;
     view.render(pause.open ? 0 : dtReal);
     hud.update();
     panel.update();

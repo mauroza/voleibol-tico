@@ -14,11 +14,12 @@ const DPAD_ZONE: Record<number, Zone> = { 12: 3, 14: 4, 15: 2, 13: 6 }; // en el
 export class GamepadInput {
   private prev: boolean[] = [];
 
-  constructor(private readonly sim: Simulation, private readonly onPause: () => void) {}
+  constructor(private readonly sim: Simulation, private readonly onPause: () => void, private readonly clock: (stamp: number) => number = () => sim.time) {}
 
   update(): void {
     const pad = navigator.getGamepads?.().find((g) => g && g.connected);
     if (!pad) return;
+    const stamp = pad.timestamp;
     const now = pad.buttons.map((b) => b.pressed);
     const pressed = (i: number) => now[i] && !this.prev[i];
     this.prev = now;
@@ -33,7 +34,7 @@ export class GamepadInput {
     }
     if (pressed(A)) {
       if (d.chosen === null) this.sim.choose(0);
-      else this.sim.press();
+      else this.sim.press(this.clock(stamp));
     }
   }
 }

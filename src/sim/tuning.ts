@@ -59,8 +59,8 @@ export const TUNING = {
     slowWindow: 0.4,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
     perfectBonus: 0.15,
-    perfectWindow: 0.06,
-    goodWindow: 0.16,
+    perfectWindow: 0.08,
+    goodWindow: 0.2,
     servePeriod: 1.6,
     serveTimeout: 10,
     blockTiming: { perfect: 1.5, good: 1, bad: 0.5 },

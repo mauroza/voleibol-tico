@@ -80,7 +80,9 @@ export async function supabaseTransport(code: string, url: string, key: string):
 export function openTransport(code: string): Promise<Transport> {
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const key = import.meta.env.VITE_SUPABASE_KEY as string | undefined;
-  return url && key ? supabaseTransport(code, url, key) : localTransport(code);
+  // En claude.ai (build "artifact") no hay red: ni siquiera se incluye el cliente de Supabase.
+  if (import.meta.env.MODE !== 'artifact' && url && key) return supabaseTransport(code, url, key);
+  return localTransport(code);
 }
 
 /** Código de sala fácil de dictar: 4 letras sin confusiones (sin I, O) y 2 números. */

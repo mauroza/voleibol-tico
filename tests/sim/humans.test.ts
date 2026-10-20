@@ -29,3 +29,30 @@ describe('dos personas (online)', () => {
     expect(both).toBeGreaterThan(0);
   }, 60_000);
 });
+
+describe('tecla tardía', () => {
+  it('un ESPACIO justo después de la recepción no marca la colocación (contra la IA)', () => {
+    const sim = new Simulation({ seed: 8, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let lateTries = 0;
+    const sets: string[] = [];
+    sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.team === 'A' && e.kind === 'set') sets.push(e.timing); });
+    let passOpen = false;
+    while (sim.phase !== 'matchOver' && lateTries < 8 && sim.time < 3600) {
+      const d = sim.decision;
+      if (d?.kind === 'serve' && sim.time - d.startTime > 0.7) sim.press();
+      if (d?.kind === 'pass') passOpen = true;
+      else if (passOpen) {
+        // Se cerró la recepción sin tocar: el golpe llega tarde, ya con la colocación abierta.
+        passOpen = false;
+        if (d?.kind === 'set') {
+          sim.press(sim.time);
+          lateTries += 1;
+        }
+      }
+      sim.step(TUNING.dt);
+    }
+    expect(lateTries).toBeGreaterThan(3);
+    // Las colocaciones no se presionaron solas: todas quedan como "sin tocar" (malas).
+    expect(sets.slice(0, lateTries).every((t) => t === 'bad')).toBe(true);
+  }, 60_000);
+});

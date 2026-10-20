@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { landingTime } from '../sim/ball';
+import { landingTime, positionAt } from '../sim/ball';
 import { COURT } from '../sim/court';
 import { AVG_HEIGHT, isTall, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
@@ -118,6 +118,8 @@ export class MatchView {
   private readonly animators: Animator[] = [];
   private readonly byKey = new Map<string, Animator>();
   private readonly ball: THREE.Mesh;
+  private readonly ball2: THREE.Mesh;
+  private readonly ball2Shadow: THREE.Mesh;
   private readonly ballShadow: THREE.Mesh;
   /** Mira del remate apuntado: cruz, círculo de dispersión (dónde puede caer) y trayectoria punteada. */
   private readonly aimGroup = new THREE.Group();
@@ -147,6 +149,8 @@ export class MatchView {
   private readonly rigs = new Map<string, Rig>();
   private readonly spinAxis = new THREE.Vector3();
   private spinTime = 0;
+  /** Online: tiempo de simulación entre el último paso fijo y este cuadro (lo pone el lockstep). */
+  renderAhead: () => number = () => 0;
   private status: PlayerStatus | null = null;
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
@@ -192,7 +196,11 @@ export class MatchView {
       new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 }),
     );
     this.ballShadow.rotation.x = -Math.PI / 2;
-    this.scene.add(this.ball, this.ballShadow);
+    this.ball2 = new THREE.Mesh(this.ball.geometry, this.ball.material);
+    this.ball2Shadow = new THREE.Mesh(this.ballShadow.geometry, this.ballShadow.material);
+    this.ball2Shadow.rotation.x = -Math.PI / 2;
+    this.ball2.visible = this.ball2Shadow.visible = false;
+    this.scene.add(this.ball, this.ballShadow, this.ball2, this.ball2Shadow);
     this.userRing.rotation.x = -Math.PI / 2;
     this.userRing.visible = false;
     this.scene.add(this.userRing);
@@ -250,6 +258,13 @@ export class MatchView {
       for (const a of this.animators) a.update();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
+      // Online la simulación avanza en pasos fijos: la pelota se dibuja en el instante exacto del cuadro
+      // (entre dos pasos), así no tiembla con la cámara lenta ni con distintas velocidades.
+      const ahead = this.renderAhead();
+      if (ahead > 0 && (this.sim.phase === 'inPlay' || this.sim.phase === 'warmup')) {
+        const p = positionAt(this.sim.ball, this.sim.time + ahead);
+        ballPos.set(p.x, p.y, p.z);
+      }
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
@@ -267,6 +282,14 @@ export class MatchView {
     this.updateAim();
     this.updateSetMarkers();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
+    // Calentamiento: el segundo balón (el del equipo B) con su sombra.
+    const warm = this.replay ? null : this.sim.warmupBalls;
+    this.ball2.visible = this.ball2Shadow.visible = !!warm;
+    if (warm) {
+      this.ball2.position.set(warm.B.x, warm.B.y, warm.B.z);
+      this.ball2Shadow.position.set(warm.B.x, 0.012, warm.B.z);
+      this.ball2.rotation.x += 0.05;
+    }
 
     const scale = this.replay ? REPLAY_SPEED : this.sim.timeScale;
     const ballSpeed = dtReal > 0 ? ballPos.distanceTo(this.prevBall) / (dtReal * Math.max(scale, 0.05)) : 0;
@@ -286,8 +309,9 @@ export class MatchView {
     this.sim.bus.on((e) => {
       const now = performance.now() / 1000;
       if (e.type === 'contact') {
-        this.byKey.get(e.playerKey)?.onContact(e.kind, e.time);
-        const b = this.sim.ballPos;
+        this.byKey.get(e.playerKey)?.onContact(e.kind, e.time, e.at);
+        // En el calentamiento hay dos balones: el golpe trae su propio punto.
+        const b = e.at ?? this.sim.ballPos;
         const at = new THREE.Vector3(b.x, b.y, b.z);
         const hit = e.kind === 'attack' || e.kind === 'serve';
         // Golpe en rojo de la barra de fuerza: destello rojo, estela de fuego, sacudida y líneas de velocidad.
@@ -348,7 +372,7 @@ export class MatchView {
     const t = sim.time;
     const dt = Math.max(0, t - this.spinTime);
     this.spinTime = t;
-    if (sim.phase !== 'inPlay' || this.replay) return;
+    if ((sim.phase !== 'inPlay' && sim.phase !== 'warmup') || this.replay) return;
     const kind = sim.lastContact?.kind;
     const v = sim.ball.v0;
     const flat = Math.hypot(v.x, v.z) || 1;
@@ -364,7 +388,8 @@ export class MatchView {
     const rate = kind === 'attack' || (kind === 'serve' && sim.servedType === 'jump') ? 28 : kind === 'serve' ? 10 : 5;
     // Eje del efecto: horizontal y perpendicular a la dirección de vuelo (topspin).
     this.spinAxis.set(v.z / flat, 0, -v.x / flat);
-    this.ball.rotateOnWorldAxis(this.spinAxis, rate * dt);
+    // Tope de giro por cuadro: muy rápido, la textura "parpadea" (efecto estroboscópico) y la pelota se ve deformada.
+    this.ball.rotateOnWorldAxis(this.spinAxis, Math.min(rate * dt, 0.22));
   }
 
   private serveBall(out: THREE.Vector3): void {

@@ -97,6 +97,11 @@ export class CameraDirector {
       targetPos.set(fx, BROADCAST_POS.y, BROADCAST_POS.z);
       targetLook.set(fx, 0.5, 0);
     }
+    // Nunca contra las paredes ni dentro de la tribuna: la cámara queda dentro del pabellón.
+    if (this.mode === 'aim' || this.mode === 'decision') {
+      targetPos.x = Math.max(-15.5, Math.min(15.5, targetPos.x));
+      targetPos.z = Math.max(-9, Math.min(13, targetPos.z));
+    }
     const k = 1 - Math.exp(-rate * dtReal);
     this.pos.lerp(targetPos, k);
     this.look.lerp(targetLook, k);

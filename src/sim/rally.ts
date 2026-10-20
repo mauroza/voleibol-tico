@@ -23,6 +23,8 @@ export interface SimOptions {
   firstServer?: TeamId;
   /** Online: adelanto de las barras de timing (segundos de simulación). */
   inputLead?: number;
+  /** Calentamiento de remate antes del partido (segundos de juego; 0 = sin calentamiento). */
+  warmup?: number;
   /** Ritmo de las decisiones (por defecto, el clásico con cámara lenta marcada). */
   tempo?: TempoProfile;
   /**
@@ -37,7 +39,7 @@ export interface SimOptions {
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
-export type Phase = 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
+export type Phase = 'warmup' | 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
 
 type BlockOutcome = 'stuff' | 'soft' | 'tool';
 
@@ -98,6 +100,16 @@ interface Reach {
 }
 
 const TEAM_IDS: readonly TeamId[] = ['A', 'B'];
+
+/** Una fila de calentamiento: su balón, en qué parte de la jugada va y quién remata. */
+interface WarmLane {
+  stage: 'idle' | 'set' | 'attack' | 'fly';
+  until: number;
+  hitter: string;
+  option: SetOption;
+  ball: Trajectory;
+  plan: Plan | null;
+}
 
 export class Simulation {
   readonly bus = new EventBus();
@@ -172,6 +184,13 @@ export class Simulation {
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
   private blockHold: BlockSetup | null = null;
+  /** Calentamiento: filas de rematadores por equipo y la jugada en curso (un balón, alternando equipos). */
+  private warm: {
+    left: number;
+    queues: Record<TeamId, string[]>;
+    /** Cada equipo calienta a la vez con su propio balón. */
+    lanes: Record<TeamId, WarmLane>;
+  } | null = null;
 
   constructor(opts: SimOptions) {
     this.rng = createRng(opts.seed);
@@ -188,7 +207,8 @@ export class Simulation {
       }
     }
     this.match = createMatch({ setsToWin: opts.setsToWin }, this.setup('A'), this.setup('B'), opts.firstServer ?? 'A');
-    this.resetForServe();
+    if ((opts.warmup ?? 0) > 0) this.startWarmup(opts.warmup!);
+    else this.resetForServe();
   }
 
   court(team: TeamId): string[] {
@@ -253,6 +273,17 @@ export class Simulation {
     pin.target = clone(pout.target);
     pout.pos = v3(sideSign(team) * 5.5, 0, -6.5);
     pout.target = clone(pout.pos);
+    // Si sale el que iba a sacar, el saque pasa al que entra: a su lugar de saque y con su decisión (y su estilo).
+    if (idx === 0 && this.match.serving === team && this.phase === 'preServe' && !this.pendingServe) {
+      const serveSpot = spot(team, pin.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
+      pin.pos = clone(serveSpot);
+      pin.target = clone(serveSpot);
+      if (this.decisions[team]?.kind === 'serve') {
+        this.decisions[team] = null;
+        this.openServeDecision();
+      }
+      if (!this.humans.has(team)) this.aiServe = this.chooseAiServe(inKey);
+    }
     this.bus.emit({ type: 'substitution', team, outKey, inKey });
     return true;
   }
@@ -368,8 +399,10 @@ export class Simulation {
     if (!d || !d.aim || !d.aimSide || d.pressedAt !== null) return;
     const s = sideSign(d.aimSide);
     const own = d.aimSide === this.player(d.playerKey).team;
-    const depth = own ? COURT.halfLength + 0.5 : COURT.halfLength + 2;
-    const width = own ? COURT.halfWidth + 0.5 : COURT.halfWidth + 1.5;
+    // El saque apunta solo a la cancha rival (con un margen corto afuera); el remate puede irse más lejos.
+    const serve = d.kind === 'serve';
+    const depth = own ? COURT.halfLength + 0.5 : COURT.halfLength + (serve ? 1 : 2);
+    const width = own ? COURT.halfWidth + 0.5 : COURT.halfWidth + (serve ? 1 : 1.5);
     // La colocación puede apuntar al campo rival: es la segunda del colocador.
     const near = d.kind === 'set' ? -4 : 0.3;
     d.aim = { x: s * clamp(s * x, near, depth), z: clamp(z, -width, width) };
@@ -405,7 +438,9 @@ export class Simulation {
     if (this.phase === 'matchOver') return;
     this.time += dt;
     this.movePlayers(dt);
-    if (this.phase === 'preServe') {
+    if (this.phase === 'warmup') {
+      this.stepWarmup(dt);
+    } else if (this.phase === 'preServe') {
       this.ballPos = this.serverHand();
       if (this.pendingServe) {
         this.runUp(this.pendingServe);
@@ -447,6 +482,210 @@ export class Simulation {
   }
 
   // ---------- preparación ----------
+
+  // ---------- calentamiento ----------
+
+  /** Segundos de calentamiento que quedan (null si no hay). */
+  get warmupLeft(): number | null {
+    return this.phase === 'warmup' && this.warm ? Math.max(0, this.warm.left) : null;
+  }
+
+  /** Termina el calentamiento en cuanto acabe la jugada en curso. */
+  skipWarmup(): void {
+    if (this.warm) this.warm.left = 0;
+  }
+
+  /**
+   * Calentamiento como en la liga: cada equipo hace fila de rematadores (puntas y opuestos por un lado, centrales por
+   * otro, intercalados), el líbero le pasa al colocador, el colocador coloca y el primero de la fila remata; después
+   * pasa al final de la fila. Un balón que alterna entre los dos equipos. Si el equipo es de una persona, ella remata.
+   */
+  private startWarmup(seconds: number): void {
+    this.phase = 'warmup';
+    const queues = {} as Record<TeamId, string[]>;
+    for (const team of TEAM_IDS) {
+      const all = [...this.players.values()].filter((p) => p.team === team && p.def.role !== 'S' && p.def.role !== 'L');
+      const wings = all.filter((p) => p.def.role !== 'MB').map((p) => p.key);
+      const middles = all.filter((p) => p.def.role === 'MB').map((p) => p.key);
+      const q: string[] = [];
+      while (wings.length || middles.length) {
+        if (wings.length) q.push(wings.shift()!);
+        if (wings.length) q.push(wings.shift()!);
+        if (middles.length) q.push(middles.shift()!);
+      }
+      queues[team] = q;
+    }
+    const lane = (start: number): WarmLane => ({ stage: 'idle', until: this.time + start, hitter: '', option: 'zone4', ball: this.restingBall(), plan: null });
+    // Los dos equipos a la vez, un poco desfasados para que no rematen en el mismo instante.
+    this.warm = { left: seconds, queues, lanes: { A: lane(1.2), B: lane(2.4) } };
+    this.warmFormation(true);
+    this.ballPos = v3(0, COURT.ballRadius, 0);
+  }
+
+  /** Lugares del calentamiento: colocador en su puesto, líbero pasando desde atrás, filas detrás de la línea de 3 m. */
+  private warmFormation(teleport = false): void {
+    const w = this.warm!;
+    for (const team of TEAM_IDS) {
+      const place = (key: string, s: Vec3) => {
+        const p = this.player(key);
+        p.target = s;
+        if (teleport) p.pos = clone(s);
+      };
+      const players = [...this.players.values()].filter((p) => p.team === team);
+      let other = 0;
+      for (const p of players) {
+        if (p.def.role === 'S' && this.match.lineups[team].includes(p.key)) place(p.key, this.warmSpot(team, 0.8, 1.7));
+        else if (p.key === this.match.libero[team]) place(p.key, this.warmSpot(team, 5.2, 1.7));
+        else if (!w.queues[team].includes(p.key)) place(p.key, v3(sideSign(team) * (2.5 + 0.7 * other++), 0, -6.5));
+      }
+      // Dos filas: puntas/opuestos por la izquierda (zona 4), centrales por el medio.
+      let wing = 0;
+      let mid = 0;
+      for (const key of w.queues[team]) {
+        // El que está rematando ahora maneja su propia carrera.
+        const lane = w.lanes[team];
+        if (lane.stage !== 'idle' && key === lane.hitter) continue;
+        const isMid = this.player(key).def.role === 'MB';
+        const n = isMid ? mid++ : wing++;
+        place(key, this.warmSpot(team, 4.6 + n * 0.75, isMid ? 0.9 : 3.6));
+      }
+    }
+  }
+
+  /**
+   * Punto del calentamiento: cada equipo usa una mitad de la red (A la de z negativo, B la de z positivo).
+   * `depth` desde la red hacia el fondo de `team`; `lane` el equipo dueño de esa mitad (por defecto, el mismo).
+   */
+  private warmSpot(team: TeamId, depth: number, zAbs: number, y = 0, lane: TeamId = team): Vec3 {
+    return v3(sideSign(team) * depth, y, (lane === 'A' ? -1 : 1) * zAbs);
+  }
+
+  /** Balón quieto en el piso (antes de la primera jugada de cada fila). */
+  private restingBall(): Trajectory {
+    return { p0: v3(0, COURT.ballRadius, 0), v0: v3(), t0: this.time, g: 0 };
+  }
+
+  /** Contacto planificado de un jugador en el calentamiento (para las animaciones). */
+  upcomingFor(key: string): Readonly<PlannedContact> | null {
+    if (this.plan?.key === key) return this.plan;
+    if (!this.warm) return null;
+    for (const t of TEAM_IDS) if (this.warm.lanes[t].plan?.key === key) return this.warm.lanes[t].plan;
+    return null;
+  }
+
+  /** Posición del balón de cada equipo en el calentamiento (A y B). */
+  get warmupBalls(): Record<TeamId, Vec3> | null {
+    if (!this.warm) return null;
+    const at = (t: Trajectory) => positionAt(t, t.g === 0 ? t.t0 : Math.min(this.time, landingTime(t)));
+    return { A: at(this.warm.lanes.A.ball), B: at(this.warm.lanes.B.ball) };
+  }
+
+  private stepWarmup(dt: number): void {
+    const w = this.warm!;
+    w.left -= dt;
+    // Termina cuando se acaba el tiempo y los dos balones ya cayeron.
+    if (w.left <= 0 && TEAM_IDS.every((t) => w.lanes[t].stage === 'idle')) return this.endWarmup();
+    for (const team of TEAM_IDS) this.stepLane(team, w.lanes[team], w.left > 0);
+    // La pelota "principal" (efectos, sonido) es la del equipo A.
+    this.ballPos = this.warmupBalls!.A;
+  }
+
+  private stepLane(team: TeamId, lane: WarmLane, more: boolean): void {
+    const w = this.warm!;
+    const tune = TUNING.warmup;
+    const pos = () => positionAt(lane.ball, this.time);
+    if (lane.stage === 'idle') {
+      if (!more || this.time < lane.until) return;
+      // Arranca una jugada: el líbero le pasa al colocador.
+      const hitter = w.queues[team][0];
+      const role = this.player(hitter).def.role;
+      lane.hitter = hitter;
+      lane.option = role === 'MB' ? 'quick' : role === 'OP' ? 'zone2' : 'zone4';
+      const libero = this.match.libero[team];
+      const setter = this.court(team).find((k) => this.player(k).def.role === 'S') ?? this.court(team)[0];
+      const from = libero ? this.player(libero).pos : this.warmSpot(team, 5.2, 1.7);
+      const setPoint = this.warmSpot(team, 0.8, 1.7, TUNING.setHeight);
+      lane.ball = launch(v3(from.x, 1.0, from.z), setPoint, tune.toss, this.time);
+      lane.plan = { key: setter, team, time: this.time + tune.toss, point: setPoint, kind: 'set', low: false };
+      // El rematador se va a su punto de carrera.
+      // Cada equipo calienta en su mitad de la red: puntas por la orilla, centrales cerca del colocador.
+      this.player(hitter).target = lane.option === 'quick' ? this.warmSpot(team, 2.2, 0.6) : this.warmSpot(team, 3.3, 3.6);
+      lane.stage = 'set';
+      this.warmFormation();
+      return;
+    }
+    const plan = lane.plan;
+    if (lane.stage === 'set' && plan && this.time >= plan.time) {
+      // El colocador coloca al primero de la fila; el rematador arranca la carrera.
+      const at = pos();
+      this.bus.emit({ type: 'contact', time: this.time, playerKey: plan.key, team, kind: 'set', quality: 0.9, warmup: true, at });
+      const attacker = this.player(lane.hitter);
+      const quick = lane.option === 'quick';
+      const point = this.warmSpot(team, quick ? 0.7 : 1.0, quick ? 0.7 : 3.4, this.attackHeight(attacker, lane.option, false));
+      const flight = TUNING.set.flightTime[lane.option];
+      lane.ball = launch(at, point, flight, this.time);
+      lane.plan = { key: attacker.key, team, time: this.time + flight, point, kind: 'attack', low: false };
+      attacker.target = this.standPoint(lane.plan);
+      lane.stage = 'attack';
+      // Si el equipo es de una persona, remata ella: mira y barra de fuerza como en el partido.
+      if (this.humans.has(team) && !this.decisions[team]) {
+        this.openDecision('attack', [{ label: 'Remate apuntado', option: { id: 'aim' } }], lane.plan.time, attacker.key);
+        const d = this.decisions[team];
+        const deep = this.warmSpot(otherTeam(team), 6.5, 2.4, 0, team);
+        if (d) this.aimDecision(d, { x: deep.x, z: deep.z }, otherTeam(team), 'power');
+      }
+      return;
+    }
+    if (lane.stage === 'attack' && plan && this.time >= plan.time) {
+      const p = this.player(plan.key);
+      const opp = otherTeam(team);
+      let power: Power = 'medium';
+      let aim: { x: number; z: number };
+      const d = this.decisions[team];
+      if (d && d.kind === 'attack') {
+        power = d.pressedAt === null ? 'medium' : powerZone(meterOf(d, this.time));
+        aim = this.localOr(d);
+        this.closeDecision(team, d.pressedAt === null ? 'bad' : powerTiming(power), power);
+      } else {
+        // Remata hacia su misma mitad: los balones de los dos equipos nunca se cruzan de frente.
+        const t = this.warmSpot(opp, this.rng.range(4, 8.5), this.rng.range(0.6, 4.2), 0, team);
+        aim = { x: t.x, z: t.z };
+        power = this.rng.chance(0.3) ? 'strong' : 'medium';
+      }
+      const cfg = TUNING.attack;
+      const pw = TUNING.power.spike[power];
+      const at = pos();
+      const target = this.noisy(v3(aim.x, COURT.ballRadius, aim.z), 0.4 * pw.noise);
+      const speed = (cfg.minSpeed + cfg.speedRange * 0.7 * (p.def.attrs.attackPower / 100)) * pw.speed;
+      lane.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus, this.time, true);
+      this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team, kind: 'attack', quality: power === 'strong' ? 0.95 : 0.75, warmup: true, at });
+      this.tire(p.key, TUNING.stamina.cost.attack * 0.3);
+      // Pasa al final de la fila.
+      const q = w.queues[team];
+      q.push(q.shift()!);
+      lane.plan = null;
+      lane.stage = 'fly';
+      lane.until = landingTime(lane.ball) + tune.gap;
+      return;
+    }
+    if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
+      lane.stage = 'idle';
+      this.warmFormation();
+    }
+  }
+
+  /** Mira de la decisión (la simulación usa siempre la oficial; `localAim` es solo para dibujar). */
+  private localOr(d: Decision): { x: number; z: number } {
+    return d.aim ?? { x: 0, z: 0 };
+  }
+
+  private endWarmup(): void {
+    this.warm = null;
+    this.plan = null;
+    for (const p of this.players.values()) p.stamina = 1;
+    this.bus.emit({ type: 'warmupEnd' });
+    this.resetForServe();
+  }
 
   private setup(team: TeamId): TeamSetup {
     const d = this.teams[team];
@@ -601,7 +840,7 @@ export class Simulation {
     const d = this.decisions[team];
     if (!d) return;
     this.decisions[team] = null;
-    this.bus.emit({ type: 'decisionResolved', team, kind: d.kind, timing, power, label });
+    this.bus.emit({ type: 'decisionResolved', team, kind: d.kind, timing, power, label, warmup: this.phase === 'warmup' });
   }
 
   /** Saque apuntado: la mira empieza en la zona 1 rival; la fuerza (verde, amarillo, rojo) decide el tipo de saque. */

@@ -38,7 +38,7 @@ export function attachMetrics(bus: EventBus, m: Metrics): void {
   /** Equipo cuyo último ataque sigue vivo (nadie más lo ha tocado salvo un bloqueo). */
   let pendingAttack: TeamId | null = null;
   bus.on((e) => {
-    if (e.type === 'contact') {
+    if (e.type === 'contact' && !e.warmup) {
       m.contacts += 1;
       if (e.kind === 'serve') {
         m.serves += 1;

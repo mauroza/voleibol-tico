@@ -70,8 +70,8 @@ export class Animator {
     this.yaw = this.netYaw();
   }
 
-  onContact(kind: ContactKind, time: number): void {
-    const b = this.sim.ballPos;
+  onContact(kind: ContactKind, time: number, point?: { x: number; y: number; z: number }): void {
+    const b = point ?? this.sim.ballPos;
     const plancha = !!this.dive && Math.abs(this.dive.at - time) < 0.1;
     if (kind !== 'serve') this.contactAim = { target: new THREE.Vector3(b.x, b.y, b.z), arms: kind === 'attack' ? 'right' : 'both', at: time };
     this.action = { track: plancha ? TRACKS.plancha : trackFor(kind, this.sim.ballPos.y < 0.6), at: time };
@@ -125,7 +125,8 @@ export class Animator {
 
     const court = sim.court(p.team);
     const onCourt = court.includes(this.key);
-    const inPlay = sim.phase === 'inPlay';
+    // En el calentamiento también hay pases, colocaciones y remates.
+    const inPlay = sim.phase === 'inPlay' || sim.phase === 'warmup';
 
     // ---- Locomoción ----
     let pose: Pose = onCourt ? POSES.ready : POSES.idle;
@@ -140,7 +141,8 @@ export class Animator {
     }
 
     // ---- Gesto técnico ----
-    const up = sim.upcoming;
+    // En el calentamiento cada equipo tiene su propia jugada (dos balones).
+    const up = sim.phase === 'warmup' ? sim.upcomingFor(this.key) : sim.upcoming;
     const block = sim.blockers;
     let active: Action | null = null;
     let aim: { target: THREE.Vector3; arms: 'both' | 'right'; weight: number } | null = null;

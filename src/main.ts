@@ -43,9 +43,17 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     difficulty: setup.difficulty,
     // Online: los dos juegan con el mismo reloj, casi sin cámara lenta, y las barras se adelantan lo que tarda la red.
     tempo: online ? online.deal.tempo ?? 'fluido' : PACE_TEMPO[setup.pace] ?? 'fluido',
+    // 1:30 de calentamiento de remate antes de cada partido.
+    warmup: 90,
     ...(online ? { humans: ['A', 'B'] as const, inputLead: leadForDelay(online.deal.delay) } : {}),
   });
   const lockstep = online ? new Lockstep(sim, online.net, online.local, online.deal.delay) : null;
+  // Calentamiento: cuenta regresiva y botón para saltarlo (online no se salta: el reloj es de los dos).
+  const warmBanner = document.createElement('div');
+  warmBanner.className = 'warmup-banner';
+  ui.append(warmBanner);
+  const skipWarm = () => { if (!online) sim.skipWarmup(); };
+  warmBanner.addEventListener('click', (e) => { e.stopPropagation(); skipWarm(); });
   const netStatus = document.createElement('div');
   netStatus.className = 'net-status';
   // Ping arriba: verde fluido, amarillo aceptable, rojo con retraso.
@@ -55,6 +63,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   if (online) ui.append(pingEl);
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
+  if (lockstep) view.renderAhead = () => lockstep.pendingTime;
   const hud = new Hud(ui, sim);
   // Reloj entre cuadros: la tecla se juzga en el instante real en que se tocó, no en el del último cuadro.
   let frameStamp = performance.now();
@@ -99,6 +108,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     const k = e.key.toLowerCase();
     if (k === 'escape' || k === 'p') setPaused(!pause.open);
     if (k === 'm') sound?.toggleMute();
+    if (e.key === 'Enter' && sim.warmupLeft !== null) skipWarm();
     if (k === 'f' && !online) speed = speed === 1 ? 4 : 1;
     if (e.code === 'Space' && view.replaying) view.skipReplay();
   });
@@ -148,6 +158,13 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     if (view.replaying || stopped) frameRate = 0;
     view.render(stopped ? 0 : dtReal);
     timeouts.update();
+    const left = sim.warmupLeft;
+    warmBanner.style.display = left === null ? 'none' : 'block';
+    if (left !== null) {
+      const t = Math.ceil(left);
+      const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      warmBanner.textContent = `Calentamiento · ${clock} · cuando le toque a tu rematador, apunta y remata${online ? '' : ' · Enter o clic aquí para saltar'}`;
+    }
     hud.update();
     panel.update();
     sound?.update(dtReal);

@@ -88,7 +88,7 @@ describe('control del equipo completo', () => {
         if (d.contactTime - sim.time < 0.9) sim.choose(0);
       } else {
         // Con mira (remate, pase) el tiempo corre más lento para apuntar; sin mira, el ritmo normal de la decisión.
-        const near = d.contactTime - sim.time <= cfg.slowWindow;
+        const near = d.contactTime - sim.time <= (d.kind === 'set' ? cfg.setWindow : cfg.slowWindow);
         const aiming = !!d.aim && d.kind !== 'block';
         const expected = aiming ? (near ? cfg.aimSlowScale : cfg.aimApproachScale) : near ? cfg.slowScale : cfg.approachScale;
         expect(sim.timeScale).toBe(expected);

@@ -87,6 +87,8 @@ export const TUNING = {
     slowScale: 0.3,
     /** Segundos de simulación antes del contacto en que corre el medidor de timing. */
     slowWindow: 0.4,
+    /** La barra de tempo de la colocación corre más tiempo: da para elegir alta, media o rápida con calma. */
+    setWindow: 0.75,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
     perfectBonus: 0.15,
     perfectWindow: 0.08,
@@ -100,6 +102,15 @@ export const TUNING = {
     /** Remate apuntado: el tiempo corre más lento para mover la mira y golpear a tiempo. */
     aimApproachScale: 0.35,
     aimSlowScale: 0.22,
+    /**
+     * Perfiles de ritmo de las decisiones (escala del tiempo): clásico = cámara lenta marcada; fluido = más ágil;
+     * online = casi tiempo real (en 1 vs 1 el reloj es uno solo para los dos, no puede frenarse mucho).
+     */
+    profiles: {
+      clasico: { think: 0.1, approach: 0.6, slow: 0.3, aimApproach: 0.35, aimSlow: 0.22 },
+      fluido: { think: 0.3, approach: 0.85, slow: 0.5, aimApproach: 0.6, aimSlow: 0.42 },
+      online: { think: 0.6, approach: 1, slow: 0.75, aimApproach: 0.85, aimSlow: 0.65 },
+    },
     /** Los errores al azar pesan menos: el usuario ya puede mandarla afuera apuntando mal. */
     aimRiskFactor: 0.6,
   },

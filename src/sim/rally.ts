@@ -3,7 +3,7 @@ import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type SetOp
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
-import { contactMeter, judgeTiming, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
+import { contactMeter, judgeTiming, meterOf, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
@@ -13,12 +13,16 @@ import { createRng, type Rng } from './rng';
 import { TUNING } from './tuning';
 import { clamp, clamp01, clone, distXZ, v3, type Vec3 } from './vec';
 
+export type TempoProfile = keyof typeof TUNING.decision.profiles;
+
 export interface SimOptions {
   seed: number;
   setsToWin: 1 | 2;
   teamA: TeamDef;
   teamB: TeamDef;
   firstServer?: TeamId;
+  /** Ritmo de las decisiones (por defecto, el clásico con cámara lenta marcada). */
+  tempo?: TempoProfile;
   /** Equipo que controla el usuario: decide todas las jugadas de todos sus jugadores. */
   control?: TeamId;
   /** Dificultad del rival (el equipo que no controla el usuario). Por defecto, normal. */
@@ -89,6 +93,7 @@ export class Simulation {
   readonly players = new Map<string, PlayerState>();
   readonly teams: Record<TeamId, TeamDef>;
   readonly control: TeamId | null;
+  readonly tempo: TempoProfile;
   phase: Phase = 'preServe';
   time = 0;
   ball: Trajectory = { p0: v3(), v0: v3(), t0: 0, g: GRAVITY };
@@ -120,6 +125,7 @@ export class Simulation {
     this.rng = createRng(opts.seed);
     this.difficulty = opts.difficulty ?? 'normal';
     this.control = opts.control ?? null;
+    this.tempo = opts.tempo ?? 'clasico';
     this.teams = { A: opts.teamA, B: opts.teamB };
     for (const team of TEAM_IDS) {
       for (const def of this.teams[team].roster) {
@@ -169,10 +175,11 @@ export class Simulation {
     const d = this.decision;
     if (!d || d.contactTime === null) return 1;
     const cfg = TUNING.decision;
-    if (d.chosen === null) return cfg.thinkScale;
-    const near = d.contactTime - this.time <= cfg.slowWindow;
-    if (d.aim && d.kind !== 'block') return near ? cfg.aimSlowScale : cfg.aimApproachScale;
-    return near ? cfg.slowScale : cfg.approachScale;
+    const p = cfg.profiles[this.tempo];
+    if (d.chosen === null) return p.think;
+    const near = d.contactTime - this.time <= (d.kind === 'set' ? cfg.setWindow : cfg.slowWindow);
+    if (d.aim && d.kind !== 'block') return near ? p.aimSlow : p.aimApproach;
+    return near ? p.slow : p.approach;
   }
 
   /** Elige una opción. Se puede cambiar mientras no se haya presionado el timing. */
@@ -479,7 +486,7 @@ export class Simulation {
     const d = this.decision;
     if (!d || d.kind !== 'set' || !d.aim || d.contactTime === null) return null;
     if (d.locked) return d.chosen;
-    return this.setOptionAt(d, tempoOf(powerZone(contactMeter(this.time, d.contactTime))));
+    return this.setOptionAt(d, tempoOf(powerZone(meterOf(d, this.time))));
   }
 
   /** Configura la mira de una decisión ya abierta (queda "elegida": se apunta y se presiona). */
@@ -570,7 +577,7 @@ export class Simulation {
     const d = this.decision;
     if (!d || d.kind === 'block' || d.kind === 'serve' || d.playerKey !== plan.key) return undefined;
     if (d.kind === 'set' && d.aim) {
-      const power = d.pressedAt === null ? null : powerZone(contactMeter(d.pressedAt, plan.time));
+      const power = d.pressedAt === null ? null : powerZone(meterOf(d, this.time));
       const index = d.locked ? d.chosen! : this.setOptionAt(d, power === null ? null : tempoOf(power));
       const timing: Timing = power === null ? 'bad' : powerTiming(power);
       this.closeDecision(timing, undefined, d.options[index].label);

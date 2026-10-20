@@ -1,4 +1,4 @@
-import { contactMeter, serveMeter, type Decision, type DecisionKind, type Power } from '../sim/decision';
+import { meterOf, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
@@ -50,6 +50,7 @@ export class DecisionPanel {
   private shown: Decision | null = null;
   private shownChosen: number | null = null;
   private shownPreview: number | null = null;
+  private shownPressed = false;
   private readonly tempo = document.createElement('div');
   private feedbackUntil = 0;
   /** En pausa no se aceptan elecciones ni timing. */
@@ -95,7 +96,7 @@ export class DecisionPanel {
     }
     this.el.style.display = 'block';
     const preview = this.sim.setPreview;
-    if (d !== this.shown || d.chosen !== this.shownChosen || preview !== this.shownPreview) this.rebuild(d);
+    if (d !== this.shown || d.chosen !== this.shownChosen || preview !== this.shownPreview || (d.pressedAt !== null) !== this.shownPressed) this.rebuild(d);
     this.marker.style.left = `${(this.meterValue(d) * 100).toFixed(1)}%`;
   }
 
@@ -116,13 +117,21 @@ export class DecisionPanel {
     this.shown = d;
     this.shownChosen = d.chosen;
     this.shownPreview = this.sim.setPreview;
+    this.shownPressed = d.pressedAt !== null;
+    // Confirmación inmediata: la barra se congela y el título muestra lo elegido.
+    this.el.classList.toggle('pressed', d.pressedAt !== null);
     const p = this.sim.player(d.playerKey);
     this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''}`;
+    const preview = this.sim.setPreview;
+    if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
         b.textContent = `${i + 1}  ${o.label}`;
         b.classList.toggle('chosen', (d.kind === 'set' && d.aim ? this.sim.setPreview : d.chosen) === i);
+        // Sin foco: ESPACIO nunca "hace clic" en un botón, siempre es el golpe.
+        b.tabIndex = -1;
+        b.addEventListener('mousedown', (e) => e.preventDefault());
         b.addEventListener('click', () => this.sim.choose(i));
         return b;
       }),
@@ -146,8 +155,7 @@ export class DecisionPanel {
 
   /** 0..1: posición del marcador. Llega a 1 en el instante ideal. */
   private meterValue(d: Decision): number {
-    if (d.kind === 'serve') return serveMeter(this.sim.time - d.startTime);
-    return contactMeter(this.sim.time, d.contactTime!);
+    return meterOf(d, this.sim.time);
   }
 
   private zoneBar(kind: 'good' | 'perfect'): HTMLElement {

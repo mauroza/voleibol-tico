@@ -12,7 +12,7 @@ import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
 import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
-import { contactMeter, powerZone, serveMeter, type Power } from '../sim/decision';
+import { meterOf, powerZone, type Power } from '../sim/decision';
 import { toon } from './toon';
 
 interface SetMarker {
@@ -314,7 +314,7 @@ export class MatchView {
       const seen = new Set<string>();
       const selected = d.options[preview].option;
       const selKey = selected.id === 'set' ? selected.choice.attackerKey : 'dump';
-      const m = contactMeter(this.sim.time, d.contactTime!);
+      const m = meterOf(d, this.sim.time);
       const tempoColor = d.locked ? '#ffe14d' : POWER_COLORS[powerZone(m)];
       d.options.forEach((o, i) => {
         const key = o.option.id === 'set' ? o.option.choice.attackerKey : 'dump';
@@ -408,7 +408,7 @@ export class MatchView {
     this.aimPath.visible = true;
     let color = '#ffe14d';
     if (d.meter === 'power') {
-      const m = d.kind === 'serve' ? serveMeter(this.sim.time - d.startTime) : contactMeter(this.sim.time, d.contactTime!);
+      const m = meterOf(d, this.sim.time);
       color = POWER_COLORS[powerZone(m)];
     }
     this.aimMat.color.set(color);

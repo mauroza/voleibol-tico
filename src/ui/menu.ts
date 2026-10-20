@@ -1,3 +1,4 @@
+import type { TempoProfile } from '../sim/rally';
 import { TEAMS } from '../data/teams';
 import type { Role } from '../sim/players';
 import type { Difficulty } from '../sim/rally';
@@ -5,8 +6,10 @@ import type { Difficulty } from '../sim/rally';
 export type Pace = 'calm' | 'normal' | 'real';
 
 /** Velocidad del reloj del juego respecto del tiempo real. */
-export const PACE_SPEED: Record<Pace, number> = { calm: 0.6, normal: 0.8, real: 1 };
-const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Normal', real: 'Real' };
+export const PACE_SPEED: Record<Pace, number> = { calm: 0.8, normal: 1, real: 1 };
+/** Ritmo de las decisiones de cada modo: cuánto se frena el tiempo para pensar y golpear. */
+export const PACE_TEMPO: Record<Pace, TempoProfile> = { calm: 'clasico', normal: 'fluido', real: 'online' };
+const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Fluido', real: 'Rápido (online)' };
 
 export interface MatchSetup {
   team: number;

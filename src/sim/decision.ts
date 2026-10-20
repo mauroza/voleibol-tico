@@ -75,8 +75,8 @@ export function powerZone(meter: number): Power {
 }
 
 /** Posición de la barra de un contacto (0..1) en el instante en que se presionó: llega a 1 justo en el contacto. */
-export function contactMeter(pressedAt: number, contactTime: number): number {
-  return Math.min(1, Math.max(0, 1 - (contactTime - pressedAt) / TUNING.decision.slowWindow));
+export function contactMeter(pressedAt: number, contactTime: number, window: number = TUNING.decision.slowWindow): number {
+  return Math.min(1, Math.max(0, 1 - (contactTime - pressedAt) / window));
 }
 
 /** El rojo es lo más difícil de acertar (cuenta como timing perfecto); amarillo y verde, como bueno. */
@@ -84,3 +84,14 @@ export const powerTiming = (p: Power): Timing => (p === 'strong' ? 'perfect' : '
 
 /** Tempo de la colocación según la barra: verde alta (0), amarillo media (1), rojo rápida (2). */
 export const tempoOf = (p: Power): number => (p === 'soft' ? 0 : p === 'medium' ? 1 : 2);
+
+/**
+ * Posición de la barra (0..1) de una decisión. Al presionar queda congelada donde se presionó.
+ * Saque: triangular; colocación: ventana de tempo más larga; el resto, la ventana del contacto.
+ */
+export function meterOf(d: Decision, now: number): number {
+  const t = d.pressedAt ?? now;
+  if (d.kind === 'serve') return serveMeter(t - d.startTime);
+  if (d.contactTime === null) return 0;
+  return contactMeter(t, d.contactTime, d.kind === 'set' ? TUNING.decision.setWindow : TUNING.decision.slowWindow);
+}

@@ -25,6 +25,15 @@ export interface PlayerDef {
   height: number;
   /** Figura del equipo: salto y remate fuera de serie. */
   star?: boolean;
+  /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (0 negro, 1 castaño oscuro, 2 castaño, 3 rapado). */
+  skin: number;
+  hair: number;
+}
+
+/** Apellido para la espalda de la camisa. */
+export function shirtName(p: PlayerDef): string {
+  const parts = p.name.split(' ');
+  return parts[parts.length - 1].toUpperCase();
 }
 
 export interface PlayerState {

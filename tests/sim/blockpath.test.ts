@@ -61,6 +61,13 @@ describe('físico de los jugadores', () => {
     const libs = TEAMS.flatMap((t) => t.roster.filter((p) => p.role === 'L')).map((p) => p.height);
     expect(Math.min(...mbs)).toBeGreaterThan(Math.max(...libs));
   });
+
+  it('hay jugadores de todos los tonos de piel, también negros', () => {
+    const skins = new Set(TEAMS.flatMap((t) => t.roster.map((p) => p.skin)));
+    expect(skins).toEqual(new Set([0, 1, 2, 3, 4, 5]));
+    const limon = TEAMS.find((t) => t.id === 'LI')!.roster;
+    expect(limon.filter((p) => p.skin >= 4).length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe('finta del central', () => {

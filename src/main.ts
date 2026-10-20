@@ -48,7 +48,11 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   const lockstep = online ? new Lockstep(sim, online.net, online.local, online.deal.delay) : null;
   const netStatus = document.createElement('div');
   netStatus.className = 'net-status';
+  // Ping arriba: verde fluido, amarillo aceptable, rojo con retraso.
+  const pingEl = document.createElement('div');
+  pingEl.className = 'net-ping';
   ui.append(netStatus);
+  if (online) ui.append(pingEl);
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
   const hud = new Hud(ui, sim);
@@ -123,6 +127,9 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
         : lockstep.silence > 6 ? 'El rival no responde… esperando'
         : waitingFor > 0.4 ? 'Esperando al rival…' : '';
       netStatus.style.opacity = netStatus.textContent ? '1' : '0';
+      const ping = lockstep.ping;
+      pingEl.textContent = ping === null ? 'Ping …' : `Ping ${Math.round(ping)} ms`;
+      pingEl.dataset.level = ping === null ? '' : ping < 120 ? 'good' : ping < 220 ? 'ok' : 'bad';
     } else if (!view.replaying && !stopped) {
       frameRate = pace * (sim.timeScale < 1 ? sim.timeScale : speed);
       let remaining = dtReal * frameRate;

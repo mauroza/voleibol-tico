@@ -16,7 +16,14 @@ export class TimeoutPanel {
   private picked: string | null = null;
   private toastUntil = 0;
 
-  constructor(root: HTMLElement, private readonly sim: Simulation, private readonly team: TeamId, private readonly onChange: (open: boolean) => void) {
+  constructor(
+    root: HTMLElement,
+    private readonly sim: Simulation,
+    private readonly team: TeamId,
+    private readonly onChange: (open: boolean) => void,
+    /** Online no hay tiempos (el reloj es compartido). */
+    private readonly enabled = true,
+  ) {
     this.el.className = 'overlay timeout';
     this.box.className = 'overlay-box timeout-box';
     this.el.append(this.box);
@@ -29,8 +36,9 @@ export class TimeoutPanel {
     });
     this.toast.className = 'timeout-toast';
     root.append(this.el, this.button, this.toast);
+    this.button.style.display = enabled ? '' : 'none';
     window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 't' && !this.open) this.request();
+      if (e.key.toLowerCase() === 't' && !this.open && this.enabled) this.request();
     });
     sim.bus.on((e) => {
       const name = (t: TeamId) => sim.teams[t].name;

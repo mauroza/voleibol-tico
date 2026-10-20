@@ -64,8 +64,9 @@ export function showResult(
   stats: MatchStats,
   hasUser: boolean,
   actions: { rematch: () => void; menu: () => void },
+  userTeam: TeamId = 'A',
 ): void {
-  const won = winner === 'A';
+  const won = winner === userTeam;
   const p = panel('result', won ? '¡Ganaste, mae!' : 'Derrota… ¡a la próxima!', [
     { label: 'Revancha', run: actions.rematch, primary: true },
     { label: 'Menú principal', run: actions.menu },

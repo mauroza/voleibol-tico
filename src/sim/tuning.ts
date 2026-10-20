@@ -58,8 +58,11 @@ export const TUNING = {
     outOfSystemPass: 0.3,
     rescueFlightTime: 1.5,
     flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.85, back1: 0.9 },
-    /** El central que hace la finta de rápida arrastra al bloqueo: a veces le resta un bloqueador. */
-    decoyPull: 0.3,
+    /**
+     * Finta del central: el central rival a veces "se la come" y salta con él (más si bloquea peor);
+     * entonces ese bloqueador no llega al remate.
+     */
+    decoyBite: 0.45,
   },
   attack: {
     base: 1.12,
@@ -169,6 +172,12 @@ export const TUNING = {
     spacing: 0.75,
     /** Medio ancho del bloqueador (manos y cuerpo) más el radio de la pelota: el remate sin toque pasa fuera de esto. */
     bodyHalfWidth: 0.48,
+    /**
+     * Bloqueo humano: se arma un poco hacia adentro (cuida la diagonal y deja algo de línea) y con error de lectura;
+     * más error con colocaciones rápidas y bloqueadores flojos.
+     */
+    insideShift: 0.35,
+    readError: 0.45,
     /** Cada metro de estatura promedio del bloqueo sobre el promedio: más tapas. */
     heightStuff: 2.5,
   },

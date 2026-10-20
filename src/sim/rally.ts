@@ -129,6 +129,8 @@ export class Simulation {
   servedType: ServeType | null = null;
   /** El contacto en curso es una plancha. */
   private diving = false;
+  /** Central rival que se comió la finta: salta con el que amaga. */
+  private bite: { key: string; time: number } | null = null;
   /** El contacto en curso es un pelotazo en el cuerpo. */
   private bodyHit = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
@@ -170,6 +172,11 @@ export class Simulation {
   }
 
   /** Próximo contacto planificado (solo lectura): el render lo usa para anticipar saltos y gestos. */
+  /** Bloqueador que se comió la finta (salta con el central que amaga). */
+  get decoyBite(): Readonly<{ key: string; time: number }> | null {
+    return this.bite && this.time < this.bite.time + 0.6 ? this.bite : null;
+  }
+
   /** Finta de rápida en curso: quién y cuándo salta. */
   get decoy(): Readonly<{ key: string; time: number }> | null {
     return this.decoyRun;
@@ -884,10 +891,10 @@ export class Simulation {
     this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
     this.intent = { key: attacker.key, option: choice.option, outOfSystem };
     this.threat = 0;
-    // El central delantero siempre amaga la rápida si la pelota va a otro lado (con juego en sistema).
+    // El central delantero siempre amaga la rápida si la pelota va a otro lado (punta, opuesto, pipe o zaguero).
     const court = this.court(p.team);
     const mb = court.find((k, i) => isFrontIndex(i) && k !== p.key && k !== attacker.key && this.player(k).def.role === 'MB');
-    this.decoyRun = mb && !outOfSystem ? { key: mb, time: t + cfg.flightTime.quick } : null;
+    this.decoyRun = mb ? { key: mb, time: t + cfg.flightTime.quick } : null;
   }
 
   private doAttack(p: PlayerState, at: Vec3, t: number, ctl?: Control): void {
@@ -1029,11 +1036,24 @@ export class Simulation {
 
   /** Prepara el bloqueo del equipo que defiende contra el remate ya planificado (esquema de la IA por defecto). */
   private setupBlock(team: TeamId, attack: Plan): void {
-    let scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
-    // La finta del central saca un bloqueador del remate de vez en cuando.
-    if (this.decoyRun && scheme > 1 && this.rng.chance(TUNING.set.decoyPull)) scheme -= 1;
+    const scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
     const n = Math.min(scheme, this.frontPlayers(team).length);
-    this.blockSetup = { team, scheme: n, keys: this.pickBlockers(team, n, attack.point.z), attackTime: attack.time, z: attack.point.z };
+    // Lectura imperfecta: el bloqueo se arma un poco hacia adentro y con error (más con colocaciones rápidas).
+    const cfg = TUNING.block;
+    const fast = this.intent && ['zone4fast', 'quick', 'pipe', 'back1'].includes(this.intent.option) ? 1.6 : 1;
+    const side = Math.sign(attack.point.z) || 1;
+    const z = clamp(attack.point.z - side * cfg.insideShift + this.rng.range(-1, 1) * cfg.readError * fast, -COURT.halfWidth, COURT.halfWidth);
+    let keys = this.pickBlockers(team, n, z);
+    // La finta: el central del bloqueo (solo la IA) puede saltar con el central que amaga y no llegar al remate.
+    this.bite = null;
+    if (this.decoyRun && team !== this.control) {
+      const mb = keys.find((k) => this.player(k).def.role === 'MB');
+      if (mb && this.rng.chance(TUNING.set.decoyBite * (1.3 - this.player(mb).def.attrs.block / 100))) {
+        keys = keys.filter((k) => k !== mb);
+        this.bite = { key: mb, time: this.decoyRun.time };
+      }
+    }
+    this.blockSetup = { team, scheme: keys.length, keys, attackTime: attack.time, z };
   }
 
   /** Delanteros que pueden bloquear (sin líbero). */
@@ -1287,6 +1307,8 @@ export class Simulation {
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
         } else if (blockSpots?.has(key)) p.target = blockSpots.get(key)!;
+        // El que se comió la finta se queda en la red, frente al central que amaga.
+        else if (this.decoyBite?.key === key) p.target = v3(sideSign(team) * TUNING.contactStance.blockDepth, 0, this.decoyRun ? this.player(this.decoyRun.key).target.z : 0);
         else if (block?.focus && block.focusKey === key) p.target = v3(block.focus.x, 0, block.focus.z);
         else p.target = this.zoneSpot(team, p, idx, !!block);
       });
@@ -1352,13 +1374,16 @@ export class Simulation {
     const walls = block ? [...this.blockSpots(block).values()].map((p) => p.z) : [];
     let best = v3();
     let bestScore = -Infinity;
-    for (let i = 0; i < TUNING.attack.targetSamples; i++) {
+    // Remate fuerte: el atacante mira el bloqueo y elige línea o diagonal según dónde quedó el hueco.
+    const hard = shot === 'cross' || shot === 'line';
+    for (let i = 0; i < TUNING.attack.targetSamples * (hard ? 2 : 1); i++) {
       let depth: number;
       let z: number;
-      if (shot === 'line' || shot === 'tool') {
+      const sample = hard ? (i % 2 === 0 ? shot : shot === 'cross' ? 'line' : 'cross') : shot;
+      if (sample === 'line' || sample === 'tool') {
         depth = this.rng.range(5, 8.5);
         z = lane * this.rng.range(2.5, 4.2);
-      } else if (shot === 'cross') {
+      } else if (sample === 'cross') {
         depth = this.rng.range(3.5, 8);
         z = -lane * this.rng.range(0.5, 4.2);
       } else {

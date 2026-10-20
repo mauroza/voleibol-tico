@@ -8,7 +8,7 @@ import { v3 } from '../../src/sim/vec';
 
 const team = TEAMS[0];
 const players = new Map<string, PlayerState>(
-  team.roster.map((p) => [`A:${p.id}`, { key: `A:${p.id}`, def: p, team: 'A', pos: v3(), target: v3() }]),
+  team.roster.map((p) => [`A:${p.id}`, { key: `A:${p.id}`, def: p, team: 'A', pos: v3(), target: v3(), stamina: 1 }]),
 );
 const court = team.lineup.map((id) => `A:${id}`); // [S, OH, MB, OP, OH, MB]
 const options = (setter: string, pass: number, specialist: boolean) =>

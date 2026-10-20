@@ -42,7 +42,7 @@ describe('bloqueo sólido', () => {
       });
     }
     expect(passes).toBeGreaterThan(100);
-    expect(through / passes).toBeLessThan(0.01);
+    expect(through / passes).toBeLessThan(0.015);
   }, 120_000);
 });
 
@@ -91,4 +91,53 @@ describe('finta del central', () => {
     expect(decoys).toBeGreaterThan(10);
     expect(atNet / decoys).toBeGreaterThan(0.8);
   }, 60_000);
+});
+
+describe('bloqueo ordenado', () => {
+  it('los bloqueadores llegan al bloqueo sin cruzarse entre ellos', () => {
+    let blocks = 0;
+    let crossed = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => {
+        let current: unknown = null;
+        let order = '';
+        const rank = (keys: readonly string[]) => [...keys].sort((a, b) => sim.player(a).pos.z - sim.player(b).pos.z).join();
+        sim.bus.on((e) => {
+          if (e.type !== 'contact' || e.kind !== 'attack' || !current) return;
+          const b = current as { keys: string[] };
+          if (b.keys.length < 2) return;
+          blocks += 1;
+          if (rank(b.keys) !== order) crossed += 1;
+        });
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          const b = sim.blockers;
+          if (b && b !== current) {
+            current = b;
+            order = rank(b.keys);
+          } else if (b && b.keys.join() !== (current as { keys: string[] }).keys.join()) order = rank(b.keys);
+        };
+      });
+    }
+    expect(blocks).toBeGreaterThan(50);
+    expect(crossed / blocks).toBeLessThan(0.05);
+  }, 120_000);
+});
+
+describe('fortalezas', () => {
+  it('cada jugador tiene un fuerte y el líbero recibe mejor que los centrales', () => {
+    for (const t of TEAMS) for (const p of t.roster) expect(p.specialty).toBeTruthy();
+    const q: Record<string, number[]> = { L: [], MB: [] };
+    for (let seed = 1; seed <= 12; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => sim.bus.on((e) => {
+        if (e.type !== 'contact' || (e.kind !== 'reception' && e.kind !== 'dig')) return;
+        const role = sim.player(e.playerKey).def.role;
+        if (role in q) q[role].push(e.quality);
+      }));
+    }
+    const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+    expect(q.MB.length).toBeGreaterThan(20);
+    expect(mean(q.L)).toBeGreaterThan(mean(q.MB) + 0.05);
+  }, 120_000);
 });

@@ -10,15 +10,22 @@ import { TUNING } from '../../src/sim/tuning';
 type Bot = 'idle' | 'perfect';
 
 /** Partido con el usuario controlando al equipo A. El bot perfecto elige la primera opción y presiona justo a tiempo. */
-function play(seed: number, bot: Bot, onCreate?: (sim: Simulation) => void): Simulation {
-  const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+function play(seed: number, bot: Bot, onCreate?: (sim: Simulation) => void, teamB = TEAMS[1]): Simulation {
+  const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB, control: 'A' });
   onCreate?.(sim);
   while (sim.phase !== 'matchOver') {
     const d = sim.decision;
     if (bot === 'perfect' && d) {
-      if (d.chosen === null) sim.choose(0);
+      // Bloqueo doble (el triple deja la cancha vacía); en lo demás, la primera opción.
+      if (d.chosen === null) sim.choose(d.kind === 'block' && d.options.length > 1 ? 1 : 0);
       if (d.kind === 'serve') {
         if (serveMeter(sim.time - d.startTime) >= 0.97) sim.press();
+      } else if (d.kind === 'set' && d.contactTime !== null) {
+        // Colocación segura: tempo alto (barra en verde).
+        if (d.contactTime - sim.time <= TUNING.decision.setWindow * 0.8) sim.press();
+      } else if (d.kind === 'attack' && d.contactTime !== null) {
+        // Remate fuerte pero controlado: barra en amarillo.
+        if (d.contactTime - sim.time <= TUNING.decision.slowWindow * 0.35) sim.press();
       } else if (d.contactTime !== null && d.contactTime - sim.time <= 0.03) {
         sim.press();
       }
@@ -88,7 +95,7 @@ describe('control del equipo completo', () => {
         if (d.contactTime - sim.time < 0.9) sim.choose(0);
       } else {
         // Con mira (remate, pase) el tiempo corre más lento para apuntar; sin mira, el ritmo normal de la decisión.
-        const near = d.contactTime - sim.time <= cfg.slowWindow;
+        const near = d.contactTime - sim.time <= (d.kind === 'set' ? cfg.setWindow : cfg.slowWindow);
         const aiming = !!d.aim && d.kind !== 'block';
         const expected = aiming ? (near ? cfg.aimSlowScale : cfg.aimApproachScale) : near ? cfg.slowScale : cfg.approachScale;
         expect(sim.timeScale).toBe(expected);
@@ -122,9 +129,10 @@ describe('control del equipo completo', () => {
       let a = 0;
       let total = 0;
       for (let seed = 1; seed <= 30; seed++) {
+        // Rival idéntico: la diferencia sale solo de cómo juega el usuario.
         play(seed, bot, (sim) => sim.bus.on((e) => {
           if (e.type === 'point') { total += 1; if (e.winner === 'A') a += 1; }
-        }));
+        }), TEAMS[0]);
       }
       return a / total;
     };
@@ -141,7 +149,7 @@ describe('remate apuntado', () => {
     sim.bus.on((e) => { if (e.type === 'contact' && e.kind === 'attack' && e.team === 'A' && target) justHit = true; });
     while (sim.phase !== 'matchOver') {
       const d = sim.decision;
-      if (d?.kind === 'attack' && !target) {
+      if (d?.kind === 'attack' && d.options[0].option.id === 'aim' && !target) {
         expect(d.aim).not.toBeNull();
         expect(d.chosen).toBe(0);
         target = aim(d);
@@ -202,6 +210,8 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
         // Medidor triangular: arriba (≈1) = rojo; al inicio (≈0.3) = verde.
         while (serveMeter(sim.time - d.startTime) < (zone === 'strong' ? 0.95 : 0.3)) sim.step(TUNING.dt);
         sim.press();
+        // El golpe llega al final de la secuencia de saque (lanzamiento y carrera).
+        while (sim.phase === 'preServe') sim.step(TUNING.dt);
         speeds[zone].push(horizontalSpeed(sim));
         if (zone === 'strong') {
           const land = positionAt(sim.ball, landingTime(sim.ball));
@@ -217,7 +227,7 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
   it('remate: rojo pega más fuerte que verde', () => {
     const speed = (late: boolean) => {
       const sim = fresh(5);
-      const d = until(sim, (x) => x.kind === 'attack' && !!x.aim);
+      const d = until(sim, (x) => x.kind === 'attack' && x.options[0].option.id === 'aim');
       // Rojo: al final de la barra; verde: apenas entra la barra.
       sim.press(late ? d.contactTime! - 0.02 : d.contactTime! - 0.35);
       while (sim.decision === d) sim.step(TUNING.dt);

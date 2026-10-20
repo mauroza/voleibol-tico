@@ -9,7 +9,7 @@ import { AimInput } from './ui/aim';
 import { DecisionPanel } from './ui/decision';
 import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
-import { PACE_SPEED, saveSetup, showMenu, type MatchSetup } from './ui/menu';
+import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, type MatchSetup } from './ui/menu';
 import { PauseMenu, showResult } from './ui/overlays';
 
 const ui = document.getElementById('hud')!;
@@ -23,6 +23,7 @@ function start(setup: MatchSetup): void {
     teamB: TEAMS[setup.rival],
     control: 'A',
     difficulty: setup.difficulty,
+    tempo: PACE_TEMPO[setup.pace] ?? 'fluido',
   });
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);

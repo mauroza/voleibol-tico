@@ -28,10 +28,17 @@ export const TUNING = {
     hard: { perfect: 0.5, good: 0.42, bad: 0.08 },
   },
   serve: {
-    float: { base: 1.0, risk: 0.15, speed: 15, gravityBonus: 0, contactHeight: 2.6, noise: 1.5 },
-    jump: { base: 1.05, risk: 0.32, speed: 21, gravityBonus: 6, contactHeight: 3.1, noise: 2.0 },
+    float: { base: 1.0, risk: 0.15, speed: 13.5, gravityBonus: 0, contactHeight: 2.95, noise: 1.5 },
+    jump: { base: 1.05, risk: 0.32, speed: 22, gravityBonus: 6, contactHeight: 3.25, noise: 2.0 },
     safe: { base: 0.8, risk: 0.05, speed: 11, gravityBonus: 0, contactHeight: 2.3, noise: 1.2 },
   },
+  /**
+   * Secuencia de saque (segundos del lanzamiento al golpe) y carrera hacia la red: el de suspensión lanza muy alto,
+   * corre tres pasos y salta largo; el flotado en salto da dos pasos y un saltito; el seguro, de pie.
+   */
+  serveWindup: { safe: 0.9, float: 1.0, jump: 1.35 },
+  serveRunUp: { safe: 0, float: 0.6, jump: 1.25 },
+  serveRunTime: { safe: 0, float: 0.4, jump: 0.6 },
   pass: { base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8 },
   set: {
     base: 1.05,
@@ -76,6 +83,20 @@ export const TUNING = {
     },
     serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
   },
+  /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */
+  dive: { extra: 1.5, minDefense: 55, quality: 0.85 },
+  /** Estamina: costo de cada acción, recuperación y efecto del cansancio (atributos y altura del salto). */
+  stamina: {
+    cost: { attack: 0.055, backAttack: 0.075, block: 0.035, jumpServe: 0.05, floatServe: 0.03, safeServe: 0.01, dive: 0.07, pass: 0.012, set: 0.008, decoy: 0.025 },
+    perPoint: 0.035,
+    bench: 0.12,
+    floor: 0.25,
+    /** Con estamina 0 el atributo rinde este porcentaje y el salto pierde estos metros. */
+    attrAtZero: 0.7,
+    jumpLoss: 0.18,
+  },
+  /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
+  fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */
   defense: { focusRadius: 1.8, reachBonus: 0.7, reactionBonus: 0.1 },
   decision: {
@@ -87,8 +108,10 @@ export const TUNING = {
     slowScale: 0.3,
     /** Segundos de simulación antes del contacto en que corre el medidor de timing. */
     slowWindow: 0.4,
+    /** La barra de tempo de la colocación corre más tiempo: da para elegir alta, media o rápida con calma. */
+    setWindow: 0.75,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
-    perfectBonus: 0.15,
+    perfectBonus: 0.2,
     perfectWindow: 0.08,
     goodWindow: 0.2,
     servePeriod: 1.6,
@@ -100,6 +123,15 @@ export const TUNING = {
     /** Remate apuntado: el tiempo corre más lento para mover la mira y golpear a tiempo. */
     aimApproachScale: 0.35,
     aimSlowScale: 0.22,
+    /**
+     * Perfiles de ritmo de las decisiones (escala del tiempo): clásico = cámara lenta marcada; fluido = más ágil;
+     * online = casi tiempo real (en 1 vs 1 el reloj es uno solo para los dos, no puede frenarse mucho).
+     */
+    profiles: {
+      clasico: { think: 0.1, approach: 0.6, slow: 0.3, aimApproach: 0.35, aimSlow: 0.22 },
+      fluido: { think: 0.3, approach: 0.85, slow: 0.5, aimApproach: 0.6, aimSlow: 0.42 },
+      online: { think: 0.6, approach: 1, slow: 0.75, aimApproach: 0.85, aimSlow: 0.65 },
+    },
     /** Los errores al azar pesan menos: el usuario ya puede mandarla afuera apuntando mal. */
     aimRiskFactor: 0.6,
   },

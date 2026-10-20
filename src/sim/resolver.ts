@@ -20,7 +20,8 @@ export interface QualityInput {
 /** calidad = base × toque previo × timing × atributo × presión + ruido (spec §3.4) */
 export function computeQuality(input: QualityInput, rng: Rng): number {
   const prev = 0.5 + 0.5 * clamp01(input.prevQuality);
-  const attr = 0.6 + 0.4 * clamp01(input.attribute / 100);
+  // El atributo pesa mucho: el líbero recibe bastante mejor que un central, el especialista saca mejor.
+  const attr = 0.45 + 0.6 * clamp01(input.attribute / 100);
   const pressure = 1 - 0.5 * clamp01(input.pressure);
   const raw = input.base * prev * TIMING_FACTOR[input.timing] * attr * pressure;
   return clamp01(raw + rng.range(-0.08, 0.08));

@@ -2,6 +2,10 @@ import type { TeamId } from './court';
 import type { Vec3 } from './vec';
 
 export type Role = 'S' | 'OH' | 'MB' | 'OP' | 'L';
+export type Specialty = 'serve' | 'reception' | 'block' | 'attackPower' | 'defense' | 'setting';
+export const SPECIALTY_LABELS: Record<Specialty, string> = {
+  serve: 'Saque', reception: 'Recepción', block: 'Bloqueo', attackPower: 'Remate', defense: 'Defensa', setting: 'Colocación',
+};
 
 export interface Attributes {
   serve: number;
@@ -25,6 +29,8 @@ export interface PlayerDef {
   height: number;
   /** Figura del equipo: salto y remate fuera de serie. */
   star?: boolean;
+  /** Su fuerte: el fundamento en que se destaca. */
+  specialty: Specialty;
   /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (índice de color; el último, rapado). */
   skin: number;
   hair: number;
@@ -47,6 +53,8 @@ export interface PlayerState {
   team: TeamId;
   pos: Vec3;
   target: Vec3;
+  /** Energía 0..1: los saltos y las planchas cansan; se recupera entre puntos y en la banca. */
+  stamina: number;
 }
 
 /** m/s */

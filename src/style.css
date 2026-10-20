@@ -57,6 +57,13 @@ button { font: inherit; cursor: pointer; }
 .decision button.chosen { background: #ffe14d; color: #111; border-color: #ffe14d; font-weight: 700; }
 .meter { position: relative; height: 16px; margin-top: 10px; border-radius: 8px; background: #2a3247; overflow: hidden; cursor: pointer; }
 .meter.power { height: 20px; background: linear-gradient(90deg, #2f9e5b 0, #5dff8f var(--medium), #ffd23f var(--medium), #ffb020 var(--strong), #ff3b3b var(--strong), #b80d1f 100%); }
+.meter-tempo { position: absolute; inset: 0; display: flex; pointer-events: none; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #0b0f18cc; }
+.meter-tempo span { display: flex; align-items: center; justify-content: center; }
+.meter-tempo span:nth-child(1) { width: var(--medium); }
+.meter-tempo span:nth-child(2) { width: calc(var(--strong) - var(--medium)); }
+.meter-tempo span:nth-child(3) { flex: 1; color: #fff; }
+.decision-buttons.compact { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); font-size: 12px; }
+.decision-buttons.compact button { padding: 5px 8px; }
 .meter-zone { position: absolute; top: 0; bottom: 0; right: 0; }
 .meter-zone.good { background: #3d8b5a; }
 .meter-zone.perfect { background: #5dff8f; }

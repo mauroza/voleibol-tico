@@ -3,6 +3,8 @@ import { TEAMS } from '../../src/data/teams';
 import { runMatch } from '../../src/sim/headless';
 import { courtPlayers, isFrontIndex } from '../../src/sim/match';
 import type { Role } from '../../src/sim/players';
+import { Simulation } from '../../src/sim/rally';
+import { TUNING } from '../../src/sim/tuning';
 
 const opts = (seed: number) => ({ seed, setsToWin: 1 as const, teamA: TEAMS[0], teamB: TEAMS[1] });
 
@@ -78,5 +80,40 @@ describe('5-1 y rotaciones', () => {
     expect(setterShare).toBeLessThan(0.03);
     expect(setterFirst).toBeGreaterThan(5);
     expect(liberoSets / setterFirst).toBeGreaterThan(0.6);
+  }, 60_000);
+});
+
+describe('colocación en abanico', () => {
+  /** Juega hasta una colocación con rápida y semi al central; apunta a él y presiona `lead` s antes del contacto. */
+  function setToMiddle(lead: number): string | null {
+    for (let seed = 1; seed <= 20; seed++) {
+      const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+      let label: string | null = null;
+      let target = false;
+      sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind === 'set' && target) label = e.label ?? null; });
+      while (sim.phase !== 'matchOver' && label === null) {
+        const d = sim.decision;
+        if (d?.kind === 'set' && d.aim && d.pressedAt === null) {
+          const quick = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'quick');
+          const semi = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'semi');
+          if (quick >= 0 && semi >= 0) {
+            target = true;
+            const at = sim.setOptionPoint(d, quick);
+            sim.setAim(at.x, at.z);
+            if (d.contactTime! - sim.time <= lead) sim.press();
+          } else if (d.contactTime! - sim.time <= 0.03) sim.press();
+        } else if (d && d.chosen === null) sim.choose(0);
+        else if (d && d.kind === 'serve' && sim.time - d.startTime > 0.8) sim.press();
+        else if (d && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
+        sim.step(TUNING.dt);
+      }
+      if (label) return label;
+    }
+    return null;
+  }
+
+  it('la mira elige al atacante y la barra el tempo: tarde (rojo) rápida, temprano (verde) semi', () => {
+    expect(setToMiddle(0.03)).toBe('Rápida al central');
+    expect(setToMiddle(0.38)).toBe('Semi-rápida al centro');
   }, 60_000);
 });

@@ -24,7 +24,9 @@ const MOVE = 'Apunta con el mouse o flechas/WASD';
 const HINTS: Record<DecisionKind, (d: Decision) => string> = {
   serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde seguro · amarillo flotado · rojo en salto)`,
   pass: () => `${MOVE} dónde dejar la pelota · clic o ESPACIO justo cuando llegue (zona verde)`,
-  set: (d) => (d.chosen === null ? `Tiempo detenido: elige con 1–${d.options.length} o clic` : 'ESPACIO justo cuando la pelota llegue (zona verde)'),
+  set: (d) => (d.aim
+    ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
+    : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
   attack: () => `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red = finta`,
   block: (d) => (d.chosen === null
     ? `Elige bloqueo con 1–${d.options.length} · mueve la marca de defensa (azul) a donde esperas el remate`
@@ -47,6 +49,8 @@ export class DecisionPanel {
   private readonly feedback = document.createElement('div');
   private shown: Decision | null = null;
   private shownChosen: number | null = null;
+  private shownPreview: number | null = null;
+  private readonly tempo = document.createElement('div');
   private feedbackUntil = 0;
   /** En pausa no se aceptan elecciones ni timing. */
   paused = false;
@@ -60,7 +64,13 @@ export class DecisionPanel {
     this.marker.className = 'meter-marker';
     this.hint.className = 'decision-hint';
     this.feedback.className = 'feedback';
-    this.meter.append(this.goodZone, this.perfectZone, this.marker);
+    this.tempo.className = 'meter-tempo';
+    for (const t of ['ALTA', 'MEDIA', 'RÁPIDA']) {
+      const span = document.createElement('span');
+      span.textContent = t;
+      this.tempo.append(span);
+    }
+    this.meter.append(this.goodZone, this.perfectZone, this.tempo, this.marker);
     this.meter.addEventListener('click', (e) => { if (!this.paused) sim.press(this.clock(e.timeStamp)); });
     this.el.append(this.title, this.buttons, this.meter, this.hint);
     root.append(this.el, this.feedback);
@@ -68,7 +78,7 @@ export class DecisionPanel {
     window.addEventListener('keydown', (e) => this.onKey(e));
     sim.bus.on((e) => {
       if (e.type === 'decisionResolved') {
-        this.feedback.textContent = e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing];
+        this.feedback.textContent = e.label ?? (e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing]);
         this.feedback.dataset.timing = e.power ? `power-${e.power}` : e.timing;
         this.feedbackUntil = performance.now() + 1000;
       }
@@ -84,7 +94,8 @@ export class DecisionPanel {
       return;
     }
     this.el.style.display = 'block';
-    if (d !== this.shown || d.chosen !== this.shownChosen) this.rebuild(d);
+    const preview = this.sim.setPreview;
+    if (d !== this.shown || d.chosen !== this.shownChosen || preview !== this.shownPreview) this.rebuild(d);
     this.marker.style.left = `${(this.meterValue(d) * 100).toFixed(1)}%`;
   }
 
@@ -104,13 +115,14 @@ export class DecisionPanel {
   private rebuild(d: Decision): void {
     this.shown = d;
     this.shownChosen = d.chosen;
+    this.shownPreview = this.sim.setPreview;
     const p = this.sim.player(d.playerKey);
     this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
         b.textContent = `${i + 1}  ${o.label}`;
-        b.classList.toggle('chosen', d.chosen === i);
+        b.classList.toggle('chosen', (d.kind === 'set' && d.aim ? this.sim.setPreview : d.chosen) === i);
         b.addEventListener('click', () => this.sim.choose(i));
         return b;
       }),
@@ -119,13 +131,16 @@ export class DecisionPanel {
     // Barra de fuerza (saque y remate): verde suave, amarillo medio, rojo muy fuerte. Si no, zona de timing.
     const power = d.meter === 'power';
     this.meter.classList.toggle('power', power);
+    // Colocación: la barra es el tempo.
+    this.tempo.style.display = d.kind === 'set' && d.aim ? 'flex' : 'none';
     this.meter.style.setProperty('--medium', `${TUNING.power.medium * 100}%`);
     this.meter.style.setProperty('--strong', `${TUNING.power.strong * 100}%`);
     this.perfectZone.style.display = this.goodZone.style.display = power ? 'none' : 'block';
     this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
-    this.buttons.style.display = d.aim && d.kind !== 'block' ? 'none' : 'grid';
+    this.buttons.style.display = d.aim && d.kind !== 'block' && d.kind !== 'set' ? 'none' : 'grid';
+    this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = HINTS[d.kind](d);
   }
 

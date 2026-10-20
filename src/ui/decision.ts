@@ -104,6 +104,8 @@ export class DecisionPanel {
     if (!d || this.paused) return;
     if (e.code === 'Space') {
       e.preventDefault();
+      // Tecla mantenida: el teclado repite solo; esas repeticiones no son golpes.
+      if (e.repeat) return;
       this.sim.press(this.clock(e.timeStamp));
       return;
     }

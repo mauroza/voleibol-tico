@@ -140,6 +140,11 @@ export const TUNING = {
     slowScale: 0.3,
     /** Segundos de simulación antes del contacto en que corre el medidor de timing. */
     slowWindow: 0.4,
+    /**
+     * Una tecla en el primer instante de una jugada nueva (s de simulación) es el golpe tardío de la anterior:
+     * no se aplica (si no, la colocación o el remate se "marcan solos").
+     */
+    openGuard: 0.08,
     /** La barra de tempo de la colocación corre más tiempo: da para elegir alta, media o rápida con calma. */
     setWindow: 0.75,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */

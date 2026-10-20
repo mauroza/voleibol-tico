@@ -395,6 +395,8 @@ export class Simulation {
   press(at: number = this.time, team: TeamId | null = this.control): void {
     const d = team ? this.decisions[team] : null;
     if (!d || d.chosen === null || d.pressedAt !== null) return;
+    // Golpe que pertenecía a la jugada anterior (tocado antes o justo al abrirse esta): se ignora. El saque no aplica.
+    if (d.kind !== 'serve' && at < d.startTime + TUNING.decision.openGuard) return;
     d.pressedAt = Math.max(at, d.startTime);
     if (d.kind === 'serve' && this.phase === 'preServe') this.beginUserServe();
   }

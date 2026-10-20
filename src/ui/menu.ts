@@ -178,7 +178,8 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     row2.className = 'menu-online-row';
     row2.append(host, code, join);
     online.append(title, row2, note);
-    el.append(online);
+    // En claude.ai el online no funciona (la página no puede conectarse a internet): se juega en el sitio del juego.
+    if (import.meta.env.MODE !== 'artifact') el.append(online);
   };
 
   let resolveFn: (s: MatchSetup) => void = () => undefined;

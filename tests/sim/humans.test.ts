@@ -56,3 +56,30 @@ describe('tecla tardía', () => {
     expect(sets.slice(0, lateTries).every((t) => t === 'bad')).toBe(true);
   }, 60_000);
 });
+
+describe('bloqueo con ESPACIO', () => {
+  const run = (jump: boolean) => {
+    const sim = new Simulation({ seed: 6, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let blocks = 0;
+    let opened = 0;
+    sim.bus.on((e) => {
+      if (e.type === 'contact' && e.kind === 'block' && e.team === 'A') blocks += 1;
+      if (e.type === 'decision' && e.decision.kind === 'block') opened += 1;
+    });
+    while (sim.phase !== 'matchOver' && sim.time < 1200) {
+      const d = sim.decision;
+      if (d?.kind === 'serve' && sim.time - d.startTime > 0.8) sim.press();
+      else if (d?.kind === 'block' && jump && d.pressedAt === null && d.contactTime! - TUNING.block.jumpLead - sim.time <= 0) sim.press();
+      else if (d && d.kind !== 'block' && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
+      sim.step(TUNING.dt);
+    }
+    return { blocks, opened };
+  };
+  it('sin ESPACIO no salta nadie; saltando a tiempo hay bloqueos', () => {
+    const still = run(false);
+    expect(still.opened).toBeGreaterThan(10);
+    expect(still.blocks).toBe(0);
+    const jumping = run(true);
+    expect(jumping.blocks).toBeGreaterThan(3);
+  }, 120_000);
+});

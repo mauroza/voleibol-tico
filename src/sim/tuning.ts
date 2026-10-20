@@ -3,7 +3,7 @@ export const TUNING = {
   dt: 1 / 120,
   reactionTime: 0.42,
   /** Distancia que un jugador cubre estirándose o lanzándose, sin desplazarse. */
-  reachRadius: 0.8,
+  reachRadius: 0.7,
   minPlanLead: 0.12,
   /** Si la pelota rival va a caer fuera por más de esto, se deja caer. */
   letDropMargin: 0.25,
@@ -14,6 +14,11 @@ export const TUNING = {
   minSeparation: 0.55,
   /** El cuerpo no se acerca a la red a menos de esto (m): nadie cruza la línea central. */
   minNetGap: 0.2,
+  /**
+   * Pabellón: paredes laterales (x), pared del fondo y frente de las tribunas (z, hasta cierta altura) y techo (y).
+   * En juego, tocarlos es fuera; después del punto la pelota rebota en ellos.
+   */
+  hall: { wallX: 17.6, wallZBack: -16.1, standZ: 9.3, standTop: 3.2, ceiling: 11.2, restitution: 0.55 },
   /** Rebotes de la pelota tras el punto: pierde energía vertical y horizontal en cada pique. */
   bounce: { max: 4, restitution: 0.55, friction: 0.78, minUp: 0.8 },
   servePause: 1.0,
@@ -67,7 +72,7 @@ export const TUNING = {
     decoyBite: 0.45,
   },
   attack: {
-    base: 1.12,
+    base: 1.17,
     minSpeed: 21,
     speedRange: 13,
     gravityBonus: 6,
@@ -113,6 +118,11 @@ export const TUNING = {
       strong: { speed: 1.12, risk: 1.5 },
     },
   },
+  /**
+   * Defensa de reflejo ante remates: si la pelota pasa dentro de este radio de un defensor (más amplio cuanto mejor
+   * defiende), la levanta sin alcanzar a moverse. Sale incómoda; si el remate es muy duro puede pasarse al otro lado.
+   */
+  reflex: { radius: 0.75, perDefense: 0.45, minY: 0.25, maxY: 2.1, quality: [0.12, 0.55], overpass: 0.3 },
   /** Pelota que pega en el cuerpo de un defensor: radio del cuerpo y cómo sale (alta y cerca, jugable). */
   bodyHit: { radius: 0.32, quality: [0.1, 0.4], flight: [1.0, 1.5], playable: 0.25 },
   /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */
@@ -134,6 +144,11 @@ export const TUNING = {
   warmup: { toss: 1.1, gap: 0.5 },
   /** Tiempos y cambios por set; recuperación de estamina en un tiempo; la IA cambia a quien baje de `aiSubBelow`. */
   bench: { timeouts: 2, subs: 6, timeoutRest: 0.1, aiSubBelow: 0.45, aiTimeoutStreak: 3 },
+  /**
+   * Arbitraje: en jugadas cerradas los árbitros se pueden equivocar (pelota a pocos cm de la línea, roce leve del
+   * bloqueo). `fingertip`: chance de que un remate que pasa limpio igual roce los dedos del bloqueo. El equipo perjudicado puede pedir challenge (2 por set; solo se gastan los fallidos).
+   */
+  calls: { fingertip: 0.35, lineMargin: 0.25, lineMiss: 0.45, touchMiss: 0.25, window: 2.4, challenges: 2, aiChallengeWrong: 0.75, aiChallengeRight: 0.06 },
   /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
   fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */
@@ -198,6 +213,13 @@ export const TUNING = {
      */
     insideShift: 0.35,
     readError: 0.45,
+    /**
+     * Salto del bloqueo de una persona: lo ideal es saltar este tanto antes del golpe del rematador (s), para estar
+     * arriba cuando la pelota cruza. Ventanas de perfecto y bueno alrededor de ese instante.
+     */
+    jumpLead: 0.15,
+    jumpPerfect: 0.07,
+    jumpGood: 0.17,
     /** Cada metro de estatura promedio del bloqueo sobre el promedio: más tapas. */
     heightStuff: 2.5,
   },

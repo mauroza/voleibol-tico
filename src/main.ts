@@ -12,6 +12,7 @@ import { Hud } from './ui/hud';
 import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, type MatchSetup } from './ui/menu';
 import { PauseMenu, showResult } from './ui/overlays';
 import { TimeoutPanel } from './ui/timeout';
+import { ChallengePanel } from './ui/challenge';
 import { Lockstep, leadForDelay } from './net/lockstep';
 import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
@@ -90,6 +91,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   };
   // Tiempo y cambios: pausa el juego mientras el panel está abierto.
   const timeouts = new TimeoutPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = open || pause.open; }, !online);
+  const challenges = new ChallengePanel(ui, sim, sim.control ?? 'A');
   const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
   const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open || timeouts.open);
 
@@ -158,6 +160,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     if (view.replaying || stopped) frameRate = 0;
     view.render(stopped ? 0 : dtReal);
     timeouts.update();
+    challenges.update();
     const left = sim.warmupLeft;
     warmBanner.style.display = left === null ? 'none' : 'block';
     if (left !== null) {

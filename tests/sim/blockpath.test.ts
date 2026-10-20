@@ -171,3 +171,20 @@ describe('defensores sólidos', () => {
     expect(through).toBeLessThan(samples * 0.002);
   }, 120_000);
 });
+
+describe('pabellón', () => {
+  it('la pelota nunca atraviesa paredes, tribunas ni techo', () => {
+    let worst = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => {
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          const b = sim.ballPos;
+          worst = Math.max(worst, Math.abs(b.x) - 17.9, -16.4 - b.z, b.y - 11.4);
+        };
+      });
+    }
+    expect(worst).toBeLessThanOrEqual(0);
+  }, 120_000);
+});

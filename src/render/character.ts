@@ -197,12 +197,15 @@ export function buildCharacter(look: Look): Rig {
   const spine = joint(hips, 0, 0.06, 0);
   attach(spine, [{ geometry: shared.torso, color: shirt, matrix: placed(0, 0.26, 0, [0, 0, 0], [1.1, 1, 0.85]) }]);
   const ink = contrast(shirt);
-  const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
-  number.position.set(0, 0.32, 0.124);
-  const back = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
-  back.position.set(0, 0.33, -0.125);
-  back.rotation.y = Math.PI;
-  spine.add(number, back);
+  // Árbitros, jueces y entrenadores (número 0) no llevan número ni nombre.
+  if (look.number > 0) {
+    const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
+    number.position.set(0, 0.32, 0.124);
+    const back = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
+    back.position.set(0, 0.33, -0.125);
+    back.rotation.y = Math.PI;
+    spine.add(number, back);
+  }
 
   // Cabeza con cuello, pelo y cara (ojos, cejas y boca) mirando hacia +z.
   const neck = joint(spine, 0, 0.56, 0);

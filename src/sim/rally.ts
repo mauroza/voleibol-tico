@@ -73,6 +73,8 @@ interface Plan {
   dive?: boolean;
   /** La pelota le pega en el cuerpo (no la eligió): sale rebotada. */
   bodyHit?: boolean;
+  /** Defensa de reflejo: el remate le pasó cerca y la levantó sin moverse. */
+  reflex?: boolean;
   block?: BlockOutcome;
 }
 
@@ -170,6 +172,8 @@ export class Simulation {
   private bite: { key: string; time: number } | null = null;
   /** El contacto en curso es un pelotazo en el cuerpo. */
   private bodyHit = false;
+  /** El contacto en curso es una defensa de reflejo. */
+  private reflexing = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
@@ -182,6 +186,8 @@ export class Simulation {
   private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
   private lastAimed = false;
+  /** Instante en que cada equipo de una persona saltó al bloqueo (se limpia con el próximo toque). */
+  private readonly jumpAt: Record<TeamId, number | null> = { A: null, B: null };
   /** Fuerza del último remate (el rojo pica como un bombazo). */
   private lastPower: Power = 'medium';
   private lastShot: AttackShot = 'cross';
@@ -273,19 +279,15 @@ export class Simulation {
     this.subsLeft[team] -= 1;
     const pin = this.player(inKey);
     const pout = this.player(outKey);
-    pin.pos = clone(pout.pos);
+    // El que entra camina desde la banca a su lugar; el que sale camina a la banca (que se reacomoda en fila).
     pin.target = clone(pout.target);
-    // El que sale va a la banca y la banca se reacomoda en fila (nadie queda encima de otro).
-    this.placeBench(team);
+    this.placeBench(team, false);
     // Si sale el que iba a sacar, el saque pasa al que entra: a su lugar de saque y con su decisión (y su estilo).
     if (idx === 0 && this.match.serving === team && this.phase === 'preServe' && !this.pendingServe) {
       const serveSpot = spot(team, pin.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
-      pin.pos = clone(serveSpot);
       pin.target = clone(serveSpot);
-      if (this.decisions[team]?.kind === 'serve') {
-        this.decisions[team] = null;
-        this.openServeDecision();
-      }
+      // El saque se vuelve a abrir cuando el que entra llega a su lugar.
+      if (this.decisions[team]?.kind === 'serve') this.decisions[team] = null;
       if (!this.humans.has(team)) this.aiServe = this.chooseAiServe(inKey);
     }
     this.bus.emit({ type: 'substitution', team, outKey, inKey });
@@ -293,14 +295,22 @@ export class Simulation {
   }
 
   /** Banca del equipo en fila, del lado de su campo, frente a la cámara de transmisión. */
-  private placeBench(team: TeamId): void {
+  private placeBench(team: TeamId, teleport = true): void {
     const court = this.court(team);
     let i = 0;
     for (const p of this.players.values()) {
       if (p.team !== team || court.includes(p.key)) continue;
       p.target = v3(sideSign(team) * (2.5 + 0.7 * i++), 0, -6.5);
-      p.pos = clone(p.target);
+      if (teleport) p.pos = clone(p.target);
     }
+  }
+
+  /** ¿Alguien de la cancha todavía va caminando a su lugar (por ejemplo, el que entró en un cambio)? */
+  get arriving(): boolean {
+    for (const team of TEAM_IDS) {
+      for (const k of this.court(team)) if (distXZ(this.player(k).pos, this.player(k).target) > 0.35) return true;
+    }
+    return false;
   }
 
   /** La IA: tiempo ante una racha rival y cambio del cansado por un suplente fresco del mismo puesto. */
@@ -446,6 +456,7 @@ export class Simulation {
     // Golpe que pertenecía a la jugada anterior (tocado antes o justo al abrirse esta): se ignora. El saque no aplica.
     if (d.kind !== 'serve' && at < d.startTime + TUNING.decision.openGuard) return;
     d.pressedAt = Math.max(at, d.startTime);
+    if (d.kind === 'block') this.jumpAt[this.player(d.playerKey).team] = d.pressedAt;
     if (d.kind === 'serve' && this.phase === 'preServe') this.beginUserServe();
   }
 
@@ -460,6 +471,8 @@ export class Simulation {
       if (this.pendingServe) {
         this.runUp(this.pendingServe);
         if (this.time >= this.pendingServe.at) this.serve();
+      } else if (this.arriving) {
+        // Se espera a que los que entraron en un cambio lleguen a su lugar.
       } else {
         this.phaseTimer -= dt;
         if (this.phaseTimer <= 0) {
@@ -475,6 +488,15 @@ export class Simulation {
       }
     } else if (this.phase === 'inPlay') {
       this.ballPos = positionAt(this.ball, this.time);
+      // Pared, tribuna o techo en juego: es fuera (pierde el último que la tocó) y la pelota rebota.
+      const wall = this.hitWall(this.ball);
+      if (wall) {
+        this.ball = wall;
+        this.plan = null;
+        this.netFaultTime = null;
+        this.endRally(this.last!.team);
+        return;
+      }
       if (this.netFaultTime !== null) {
         if (this.time >= this.netFaultTime) {
           this.dropAtNet(this.netFaultTime);
@@ -487,7 +509,19 @@ export class Simulation {
       }
     } else {
       this.bounceBall();
+      this.ball = this.hitWall(this.ball) ?? this.ball;
       this.ballPos = positionAt(this.ball, Math.min(this.time, landingTime(this.ball)));
+      // Jugada cerrada: se espera el challenge; si nadie lo pide, queda lo que cantaron.
+      const call = this.pendingCall;
+      if (call) {
+        const wronged = otherTeam(call.calledWinner);
+        if (call.aiAt !== null && this.time >= call.aiAt) this.challenge(wronged);
+        else if (this.time >= call.until) {
+          this.pendingCall = null;
+          this.award(call.calledWinner, call.calledReason);
+        }
+        return;
+      }
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
         if (this.match.winner) this.phase = 'matchOver';
@@ -691,6 +725,7 @@ export class Simulation {
       lane.until = landingTime(lane.ball) + tune.gap;
       return;
     }
+    if (lane.stage === 'fly') lane.ball = this.hitWall(lane.ball) ?? lane.ball;
     if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
       // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
       const bomb = lane.bomb && lane.bounces === 0;
@@ -739,6 +774,9 @@ export class Simulation {
     this.threat = 0;
     this.decisions.A = null;
     this.decisions.B = null;
+    this.pendingCall = null;
+    this.fingertip = null;
+    this.jumpAt.A = this.jumpAt.B = null;
     this.blockSetup = null;
     this.blockHold = null;
     this.touchSide = this.match.serving;
@@ -829,6 +867,37 @@ export class Simulation {
       g: GRAVITY,
     };
     this.bounces += 1;
+  }
+
+  /**
+   * ¿La pelota acaba de pasar una pared, el frente de una tribuna o el techo? Devuelve la trayectoria rebotada desde
+   * ese punto (la componente que choca se invierte y pierde energía); null si sigue en el aire libre.
+   */
+  private hitWall(tr: Trajectory): Trajectory | null {
+    const h = TUNING.hall;
+    const t = this.time;
+    if (t <= tr.t0) return null;
+    const p = positionAt(tr, t);
+    const v = v3(tr.v0.x, tr.v0.y - tr.g * (t - tr.t0), tr.v0.z);
+    const out = v3(p.x, p.y, p.z);
+    let hit = false;
+    if (Math.abs(p.x) > h.wallX && Math.sign(v.x) === Math.sign(p.x)) {
+      out.x = Math.sign(p.x) * h.wallX;
+      v.x = -v.x * h.restitution;
+      hit = true;
+    }
+    const intoStand = Math.abs(p.z) > h.standZ && p.y < h.standTop && Math.sign(v.z) === Math.sign(p.z);
+    if ((p.z < h.wallZBack && v.z < 0) || intoStand) {
+      out.z = p.z < h.wallZBack ? h.wallZBack : Math.sign(p.z) * h.standZ;
+      v.z = -v.z * h.restitution;
+      hit = true;
+    }
+    if (p.y > h.ceiling && v.y > 0) {
+      out.y = h.ceiling;
+      v.y = -v.y * h.restitution;
+      hit = true;
+    }
+    return hit ? { p0: out, v0: v, t0: t, g: tr.g } : null;
   }
 
   /** Pique de un balón que llegó al piso: sigue con menos energía, o null si ya casi no sube. */
@@ -962,7 +1031,7 @@ export class Simulation {
   /** Abre una decisión si el próximo contacto es del equipo controlado, o el esquema de bloqueo ante el remate rival. */
   private openDecisionFor(plan: Plan | null): void {
     // El pelotazo en el cuerpo no se decide: pasa solo.
-    if (!plan || plan.bodyHit) return;
+    if (!plan || plan.bodyHit || plan.reflex) return;
     if (this.humans.has(plan.team) && plan.kind !== 'block' && !this.decisions[plan.team]) {
       const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
       this.openDecision(kind, this.contactOptions(plan), plan.time, plan.key);
@@ -990,17 +1059,15 @@ export class Simulation {
     if (plan.kind === 'attack' && this.humans.has(def) && this.blockSetup?.team === def && !this.decisions[def]) {
       const front = this.frontPlayers(def);
       if (front.length === 0) return;
-      const labels = ['Sin bloqueo (defender)', 'Bloqueo simple', 'Bloqueo doble', 'Bloqueo triple'];
-      const options: DecisionOption[] = [3, 2, 1, 0]
-        .filter((n) => n <= front.length)
-        .map((n) => ({ label: labels[n], option: { id: 'block', n } }));
+      // El bloqueo se arma solo según la colocación (rápida 1, media 2, lenta 3); la persona solo decide cuándo saltar.
+      const labels = ['Sin bloqueo', 'Bloqueo simple', 'Bloqueo doble', 'Bloqueo triple'];
+      const n = this.blockSetup.scheme;
+      const options: DecisionOption[] = [{ label: labels[n], option: { id: 'block', n } }];
       this.openDecision('block', options, plan.time, this.blockSetup.keys[0] ?? front[0]);
       // Marca de defensa: dónde espera el remate; un defensor la cubre (se mueve con la mira).
       const d = this.decisions[def] as Decision | null;
       if (d) {
-        // Bloqueo sugerido ya elegido (el tiempo no se detiene); se cambia con 1–4 en cualquier momento.
-        const suggested = options.findIndex((o) => o.option.id === 'block' && o.option.n === this.blockSetup!.scheme);
-        d.chosen = suggested >= 0 ? suggested : 0;
+        d.chosen = 0;
         // La marca arranca en la diagonal profunda, donde suele ir el remate.
         const z = Math.abs(plan.point.z) < 1 ? 0 : -Math.sign(plan.point.z) * 2.6;
         d.aim = { x: sideSign(def) * 6.3, z };
@@ -1072,6 +1139,7 @@ export class Simulation {
   // ---------- contactos ----------
 
   private registerTouch(p: PlayerState, kind: ContactKind, quality: number): void {
+    this.fingertip = null;
     if (kind === 'serve' || kind === 'block') {
       this.touchSide = p.team;
       this.touches = 0;
@@ -1083,6 +1151,8 @@ export class Simulation {
     }
     this.prev = this.last;
     this.last = { key: p.key, team: p.team, kind, quality };
+    // Un toque nuevo termina el bloqueo anterior (salvo el propio toque del bloqueo).
+    if (kind !== 'block' && kind !== 'attack') this.jumpAt.A = this.jumpAt.B = null;
     const cost = TUNING.stamina.cost;
     if (kind === 'attack') {
       this.lastAttacker = p.key;
@@ -1177,6 +1247,7 @@ export class Simulation {
     const at = positionAt(this.ball, t);
     this.plan = null;
     this.diving = !!plan.dive;
+    this.reflexing = !!plan.reflex;
     this.bodyHit = !!plan.bodyHit;
     const ctl = this.resolveDecision(plan);
     switch (plan.kind) {
@@ -1222,7 +1293,22 @@ export class Simulation {
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, kind, q);
     this.intent = null;
-    if (this.bodyHit) {
+    if (this.reflexing && !this.bodyHit) {
+      // Defensa de reflejo: sale como puede. Con un remate muy duro se pasa al otro lado (balón regalado).
+      const rf = TUNING.reflex;
+      const speed = len2(this.ball.v0.x, this.ball.v0.z);
+      const hard = clamp01((speed - 18) / 22);
+      q = this.rng.range(rf.quality[0], rf.quality[1]) * (0.6 + 0.4 * (p.def.attrs.defense / 100)) * (1 - 0.5 * hard);
+      this.last!.quality = q;
+      if (q < rf.overpass * (0.5 + hard)) {
+        const over = toWorld(otherTeam(p.team), this.rng.range(2.5, 7), this.rng.range(-3.5, 3.5), COURT.ballRadius);
+        this.ball = this.launchClearing(at, over, this.rng.range(1.2, 1.6), GRAVITY, t, true);
+      } else {
+        // Incómoda: alta y en el propio campo, lejos del colocador; hay que arreglarla.
+        const up = toWorld(p.team, this.rng.range(2.5, 6.5), this.rng.range(-3.5, 3.5), TUNING.passHeight);
+        this.ball = launch(at, up, this.rng.range(1.2, 1.7), t);
+      }
+    } else if (this.bodyHit) {
       // Pelotazo en el cuerpo: sale alta y cerca, sin dirección; algún compañero puede arreglarla.
       const bh = TUNING.bodyHit;
       q = this.rng.range(bh.quality[0], bh.quality[1]);
@@ -1411,13 +1497,13 @@ export class Simulation {
     } else if (net.kind === 'fault') {
       this.netFaultTime = net.time;
     } else if (net.kind === 'clear') {
-      if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
-        // El salto con ESPACIO es opcional: sin tocarlo el bloqueo sale normal; bien medido, reforzado.
-        if (blockDecision && blockDecision.chosen !== null) {
-          blockTiming = blockDecision.pressedAt === null ? 'good' : judgeTiming(blockDecision.pressedAt, blockDecision.contactTime! - (blockDecision.lead ?? 0));
-        }
-        this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
-      } else if (last.kind === 'attack' && block && block.scheme > 0) {
+      // Bloqueo de una persona: solo salta si tocó ESPACIO; cuanto mejor el momento, mejor el bloqueo.
+      const humanBlock = !!block && this.humans.has(block.team);
+      const jumped = !humanBlock || (blockDecision?.pressedAt ?? null) !== null;
+      if (humanBlock && blockDecision?.pressedAt != null) blockTiming = this.judgeBlockJump(blockDecision);
+      if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0 && jumped) {
+        this.plan = this.planBlock(block, net.time, humanBlock ? blockTiming : null);
+      } else if (last.kind === 'attack' && block && block.scheme > 0 && jumped) {
         // La finta también salta el bloqueo: pasa por encima o al costado de las manos; si no puede, la tocan.
         if (!this.clearBlockPath(block)) this.plan = this.grazeBlock(block, net.time);
       }
@@ -1517,7 +1603,31 @@ export class Simulation {
     }
     const kind: ContactKind = last.kind === 'serve' ? 'reception' : 'dig';
     const nonSetters = court.filter((k) => this.player(k).def.role !== 'S');
-    return this.bestContact(team, nonSetters, low, kind) ?? this.bestContact(team, court, low, kind);
+    return this.bestContact(team, nonSetters, low, kind) ?? this.bestContact(team, court, low, kind)
+      ?? (last.kind === 'attack' ? this.reflexDig(team, court) : null);
+  }
+
+  /**
+   * Remate que nadie alcanza a perseguir: si pasa cerca de un defensor (dentro de su radio de reflejo y a una altura
+   * defendible), la levanta donde está. El primero por el que pase la pelota.
+   */
+  private reflexDig(team: TeamId, court: readonly string[]): Plan | null {
+    const cfg = TUNING.reflex;
+    const tr = this.ball;
+    const end = landingTime(tr);
+    for (let t = Math.max(this.time + TUNING.minPlanLead, tr.t0); t < end; t += 0.01) {
+      const b = positionAt(tr, t);
+      if (sideOfX(b.x) !== team || b.y < cfg.minY || b.y > cfg.maxY) continue;
+      for (const key of court) {
+        const p = this.player(key);
+        if (p.def.role === 'S' && court.length > 1) continue;
+        const r = cfg.radius + cfg.perDefense * (p.def.attrs.defense / 100);
+        const d = len2(b.x - p.pos.x, b.z - p.pos.z);
+        // Lejos del cuerpo: estira los brazos o se lanza (plancha) hacia la pelota.
+        if (d <= r) return { key, team, time: t, point: b, kind: 'dig', low: true, reflex: true, dive: d > 0.95 };
+      }
+    }
+    return null;
   }
 
   private bestContact(team: TeamId, keys: readonly string[], heights: readonly number[], kind: ContactKind, forceLow = false): Plan | null {
@@ -1595,7 +1705,10 @@ export class Simulation {
     if (r < stuff) return plan('stuff');
     if (r < stuff + cfg.touchByN[n]) return plan('soft');
     // Sin toque: el remate tiene que pasar de verdad por fuera de manos y cuerpos; si no hay hueco, roza el bloqueo.
-    return this.clearBlockPath(block) ? null : plan('soft');
+    if (!this.clearBlockPath(block)) return plan('soft');
+    // Pasa, pero a veces rozando la punta de los dedos: no cambia el vuelo, pero si sale es punto del atacante.
+    if (this.rng.chance(TUNING.calls.fingertip)) this.fingertip = block.team;
+    return null;
   }
 
   /**
@@ -1723,6 +1836,8 @@ export class Simulation {
    * de la pelota (queda arriba del brazo derecho); en el bloqueo, pegado a la red.
    */
   private standPoint(plan: Plan): Vec3 {
+    // Reflejo: no hay tiempo de moverse; se queda donde está.
+    if (plan.reflex) return clone(this.player(plan.key).pos);
     const pt = plan.point;
     const toNet = -sideSign(plan.team); // signo de x hacia la red
     const right = -sideSign(plan.team); // signo de z del lado derecho mirando la red
@@ -1863,6 +1978,21 @@ export class Simulation {
     return tr;
   }
 
+  /** Momento del salto del bloqueo: lo ideal es un poco antes del golpe del rematador (está arriba al cruzar). */
+  private judgeBlockJump(d: Decision): Timing {
+    const cfg = TUNING.block;
+    const ideal = d.contactTime! - cfg.jumpLead - (d.lead ?? 0);
+    const off = Math.abs(d.pressedAt! - ideal);
+    return off <= cfg.jumpPerfect ? 'perfect' : off <= cfg.jumpGood ? 'good' : 'bad';
+  }
+
+  /** Bloqueadores de un equipo de una persona y cuándo saltaron (para la animación); null si no saltaron. */
+  blockJump(team: TeamId): { keys: readonly string[]; at: number } | null {
+    const block = [this.blockSetup, this.blockHold].find((b) => b?.team === team);
+    const at = this.jumpAt[team];
+    return block && at !== null ? { keys: block.keys, at } : null;
+  }
+
   /** Altura del golpe: el zaguero (pipe o zona 1) en sistema vuela mucho más alto, tipo Nishida. */
   private attackHeight(p: PlayerState, option: SetOption, outOfSystem: boolean): number {
     const back = !outOfSystem && (option === 'pipe' || option === 'back1');
@@ -1885,12 +2015,100 @@ export class Simulation {
 
   private ballLanded(): void {
     const p = positionAt(this.ball, landingTime(this.ball));
-    this.endRally(isInCourt(p) ? sideOfX(p.x) : this.last!.team);
+    const tip = this.fingertip;
+    this.fingertip = null;
+    // Roce del bloqueo y la pelota afuera: la tocó el bloqueo, punto del atacante.
+    if (tip && !isInCourt(p) && this.last?.kind === 'attack') return this.endRally(tip, p, 'blockOut');
+    this.endRally(isInCourt(p) ? sideOfX(p.x) : this.last!.team, p);
   }
 
-  private endRally(loser: TeamId): void {
-    const winner = otherTeam(loser);
-    const reason = this.pointReason(loser);
+  /** Equipo cuyo bloqueo rozó el último remate (sin desviarlo), o null. */
+  private fingertip: TeamId | null = null;
+
+  /**
+   * Fin del rally. Si la jugada fue cerrada (a pocos cm de la línea o con un roce leve del bloqueo), los árbitros
+   * pueden equivocarse: se canta y se espera unos segundos por si el perjudicado pide challenge antes de dar el punto.
+   */
+  private endRally(loser: TeamId, landing?: Vec3, reason?: PointReason): void {
+    const truthWinner = otherTeam(loser);
+    const truthReason = reason ?? this.pointReason(loser);
+    const cfg = TUNING.calls;
+    let close: { kind: 'line' | 'touch'; margin: number; inside: boolean } | null = null;
+    if (landing) {
+      const dx = COURT.halfLength - Math.abs(landing.x);
+      const dz = COURT.halfWidth - Math.abs(landing.z);
+      const inside = dx >= 0 && dz >= 0;
+      const margin = inside ? Math.min(dx, dz) : Math.max(-Math.min(dx, 0), -Math.min(dz, 0));
+      if (margin < cfg.lineMargin) close = { kind: 'line', margin, inside };
+    }
+    if (truthReason === 'blockOut') close = { kind: 'touch', margin: 0, inside: false };
+    this.phase = 'pointOver';
+    this.phaseTimer = TUNING.pointPause;
+    this.bounces = 0;
+    this.plan = null;
+    this.netFaultTime = null;
+    this.blockSetup = null;
+    this.blockHold = null;
+    for (const t of TEAM_IDS) this.closeDecision(t, 'bad');
+    if (!close) return this.award(truthWinner, truthReason);
+    // Jugada cerrada: ¿se equivocan los árbitros?
+    // Cuanto más cerca de la línea, más fácil que se equivoquen.
+    const miss = this.rng.chance(close.kind === 'line' ? cfg.lineMiss * (1 - close.margin / cfg.lineMargin) : cfg.touchMiss);
+    const calledWinner = miss ? loser : truthWinner;
+    const calledReason: PointReason = !miss ? truthReason : close.kind === 'touch' ? 'attackError' : truthReason === 'attackError' || truthReason === 'serviceError' || truthReason === 'error' ? 'landed' : 'error';
+    this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, until: this.time + cfg.window, aiAt: null };
+    this.bus.emit({ type: 'call', kind: close.kind, calledWinner, calledReason, until: this.pendingCall.until });
+    // La IA perjudicada a veces pide challenge (casi siempre si el árbitro se equivocó).
+    const wronged = otherTeam(calledWinner);
+    if (!this.humans.has(wronged) && this.challengesLeft[wronged] > 0 && this.rng.chance(miss ? cfg.aiChallengeWrong : cfg.aiChallengeRight)) {
+      this.pendingCall.aiAt = this.time + this.rng.range(0.6, 1.6);
+    }
+  }
+
+  /** Jugada cerrada esperando un posible challenge. */
+  private pendingCall: {
+    kind: 'line' | 'touch';
+    margin: number;
+    inside: boolean;
+    truthWinner: TeamId;
+    truthReason: PointReason;
+    calledWinner: TeamId;
+    calledReason: PointReason;
+    until: number;
+    aiAt: number | null;
+  } | null = null;
+  /** Challenges que le quedan a cada equipo en el set. */
+  readonly challengesLeft: Record<TeamId, number> = { A: TUNING.calls.challenges, B: TUNING.calls.challenges };
+
+  /** ¿Se puede pedir challenge ahora? (jugada cerrada pendiente, en contra de ese equipo, con challenges). */
+  canChallenge(team: TeamId): boolean {
+    return !!this.pendingCall && this.pendingCall.calledWinner !== team && this.challengesLeft[team] > 0;
+  }
+
+  /** Identidad del challenge que puede pedir ese equipo ahora (igual en las dos computadoras), o null. */
+  challengeKey(team: TeamId): string | null {
+    return this.canChallenge(team) ? `challenge:${team}:${this.pendingCall!.until}` : null;
+  }
+
+  /** Datos de la jugada cerrada pendiente (para la interfaz). */
+  get callPending(): { kind: 'line' | 'touch'; calledWinner: TeamId; until: number } | null {
+    const c = this.pendingCall;
+    return c ? { kind: c.kind, calledWinner: c.calledWinner, until: c.until } : null;
+  }
+
+  /** Challenge: se revisa la jugada con la verdad (la simulación sabe dónde picó y si hubo toque). */
+  challenge(team: TeamId): void {
+    const c = this.pendingCall;
+    if (!c || !this.canChallenge(team)) return;
+    const overturned = c.calledWinner !== c.truthWinner;
+    if (!overturned) this.challengesLeft[team] -= 1;
+    this.bus.emit({ type: 'challenge', team, overturned, kind: c.kind, margin: c.margin, inside: c.inside, touched: c.kind === 'touch' });
+    this.pendingCall = null;
+    this.award(c.truthWinner, c.truthReason);
+  }
+
+  /** Se anota el punto (y todo lo que trae: racha, estamina, rotación, fin de set). */
+  private award(winner: TeamId, reason: PointReason): void {
     // Autor del punto (remate, ace, tapa o remate que sale del bloqueo) para la racha.
     const last = this.last!;
     const active = reason === 'kill' || reason === 'ace' || reason === 'blockKill';
@@ -1912,18 +2130,12 @@ export class Simulation {
         this.subsLeft[t] = TUNING.bench.subs;
       }
     }
+    if (out.setWinner) for (const t of TEAM_IDS) this.challengesLeft[t] = TUNING.calls.challenges;
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });
     if (out.matchWinner) this.bus.emit({ type: 'matchEnd', winner: out.matchWinner });
-    this.phase = 'pointOver';
     this.phaseTimer = TUNING.pointPause;
-    this.bounces = 0;
-    this.plan = null;
-    this.netFaultTime = null;
-    this.blockSetup = null;
-    this.blockHold = null;
-    for (const t of TEAM_IDS) this.closeDecision(t, 'bad');
   }
 
   private pointReason(loser: TeamId): PointReason {

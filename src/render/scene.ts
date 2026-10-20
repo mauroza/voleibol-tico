@@ -9,6 +9,7 @@ import { Arena } from './arena';
 import { CameraDirector } from './camera';
 import { DIMS, buildCharacter, lookFor, type Rig } from './character';
 import { PlayerStatus } from './status';
+import { Officials } from './officials';
 import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
@@ -152,6 +153,7 @@ export class MatchView {
   /** Online: tiempo de simulación entre el último paso fijo y este cuadro (lo pone el lockstep). */
   renderAhead: () => number = () => 0;
   private status: PlayerStatus | null = null;
+  private officials: Officials | null = null;
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
@@ -297,6 +299,7 @@ export class MatchView {
     this.arena.update(now, dtReal);
     this.fx.update(ballPos, ballSpeed, now);
     this.status?.update(this.camera, now, !!this.replay);
+    this.officials?.update();
     this.speedLines.update(dtReal, !this.replay && this.sim.timeScale <= TUNING.decision.slowScale && this.sim.decision?.chosen != null ? 0.25 : 0);
     this.director.update(dtReal, ballPos);
     this.badge.style.opacity = this.replay ? '1' : '0';
@@ -698,6 +701,14 @@ export class MatchView {
     line(COURT.attackLine, 0, t, 2 * W);
     line(-COURT.attackLine, 0, t, 2 * W);
 
+    // Bancas de los suplentes (asiento a 45 cm), una por equipo.
+    for (const side of [-1, 1]) {
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.08, 0.42), toon('#c9ccd4'));
+      bench.position.set(side * 5.9, 0.45, -6.62);
+      const legs = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.41, 0.3), toon('#5d6270'));
+      legs.position.set(side * 5.9, 0.2, -6.62);
+      this.scene.add(bench, legs);
+    }
     // Red de malla: cuadros de 10 cm (textura repetida con transparencia), banda blanca arriba y abajo.
     const netW = 2 * W + 1;
     const mesh = netTexture();
@@ -738,5 +749,7 @@ export class MatchView {
     }
     this.status = new PlayerStatus(this.sim, this.rigs);
     this.scene.add(this.status.group);
+    this.officials = new Officials(this.sim);
+    this.scene.add(this.officials.group);
   }
 }

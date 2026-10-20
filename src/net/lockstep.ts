@@ -8,7 +8,7 @@ interface Input {
   tick: number;
   seq: number;
   team: TeamId;
-  k: 'choose' | 'aim' | 'press';
+  k: 'choose' | 'aim' | 'press' | 'challenge';
   i?: number;
   x?: number;
   z?: number;
@@ -19,6 +19,11 @@ interface Input {
 
 /** Identidad de una decisión, igual en las dos computadoras (la simulación es la misma). */
 const decisionKey = (d: { kind: string; playerKey: string; startTime: number }) => `${d.kind}:${d.playerKey}:${d.startTime}`;
+/** Lo que ese equipo puede tocar ahora: su decisión abierta o un challenge pendiente (null si nada). */
+const openKey = (sim: Simulation, team: TeamId): string | null => {
+  const d = sim.decisions[team];
+  return d ? decisionKey(d) : sim.challengeKey(team);
+};
 
 /**
  * Ticks de simulación (1/120 s) entre que se toca una tecla y que se aplica: lo que tarda en cruzar la red.
@@ -70,11 +75,12 @@ export class Lockstep {
   private aimClock = 0;
   private shownDecision: unknown = null;
   readonly remote: TeamId;
-  private readonly apply: { choose: Simulation['choose']; setAim: Simulation['setAim']; press: Simulation['press'] };
+  private readonly apply: { choose: Simulation['choose']; setAim: Simulation['setAim']; press: Simulation['press']; challenge: Simulation['challenge'] };
 
   constructor(private readonly sim: Simulation, private readonly net: Transport, readonly local: TeamId, private readonly delay = 14) {
     this.remote = otherTeam(local);
-    this.apply = { choose: sim.choose.bind(sim), setAim: sim.setAim.bind(sim), press: sim.press.bind(sim) };
+    this.apply = { choose: sim.choose.bind(sim), setAim: sim.setAim.bind(sim), press: sim.press.bind(sim), challenge: sim.challenge.bind(sim) };
+    sim.challenge = () => this.push({ k: 'challenge' });
     // Las acciones del jugador local no tocan la simulación directo: se programan para el tick de llegada.
     sim.choose = (i: number) => this.push({ k: 'choose', i });
     sim.setAim = (x: number, z: number) => {
@@ -105,11 +111,11 @@ export class Lockstep {
   }
 
   private push(input: Omit<Input, 'tick' | 'seq' | 'team' | 'dk'>, send = true): void {
-    const d = this.sim.decisions[this.local];
-    if (!d) return;
+    const dk = openKey(this.sim, this.local);
+    if (!dk) return;
     // Nunca antes de lo ya prometido: el rival puede haber simulado hasta ahí.
     const tick = Math.max(this.tick + this.delay, this.promised + 1);
-    const full: Input = { ...input, tick, seq: this.seq++, team: this.local, dk: decisionKey(d) };
+    const full: Input = { ...input, tick, seq: this.seq++, team: this.local, dk };
     this.queue.push(full);
     this.unacked.push(full);
     if (send) this.flush();
@@ -161,7 +167,7 @@ export class Lockstep {
 
   /** ¿El rival puede mandar acciones para este tick? Solo si tiene (o tuvo hace poco) una decisión abierta. */
   private needsRemote(tick: number): boolean {
-    return !!this.sim.decisions[this.remote] || tick - this.lastOpen[this.remote] <= this.delay + 1;
+    return !!openKey(this.sim, this.remote) || tick - this.lastOpen[this.remote] <= this.delay + 1;
   }
 
   /**
@@ -192,7 +198,7 @@ export class Lockstep {
     }
     // Mensajes: ~25 por segundo mientras tenemos una decisión abierta; si no, ~5. El plan gratuito limita el total.
     this.sendClock += dtReal;
-    const deciding = !!mine || this.tick - this.lastOpen[this.local] <= this.delay + 1;
+    const deciding = !!openKey(this.sim, this.local) || this.tick - this.lastOpen[this.local] <= this.delay + 1;
     if (this.sendClock > (deciding ? 0.04 : 0.2)) {
       this.sendClock = 0;
       this.flush();
@@ -209,7 +215,7 @@ export class Lockstep {
       this.sim.step(TUNING.dt);
       this.tick = next;
       this.debt -= TUNING.dt;
-      for (const t of ['A', 'B'] as const) if (this.sim.decisions[t]) this.lastOpen[t] = this.tick;
+      for (const t of ['A', 'B'] as const) if (openKey(this.sim, t)) this.lastOpen[t] = this.tick;
       if (this.tick % 240 === 0) this.checkSync();
       // Con la escala de tiempo nueva (cámara lenta), la deuda se recalcula en el próximo cuadro.
     }
@@ -221,9 +227,9 @@ export class Lockstep {
     if (!due.length) return;
     for (const i of due) {
       // Una tecla que llega cuando su jugada ya pasó no se aplica a la siguiente (sería un golpe que nadie tocó).
-      const open = this.sim.decisions[i.team];
-      if (!open || decisionKey(open) !== i.dk) continue;
-      if (i.k === 'choose') this.apply.choose(i.i!, i.team);
+      if (openKey(this.sim, i.team) !== i.dk) continue;
+      if (i.k === 'challenge') this.apply.challenge(i.team);
+      else if (i.k === 'choose') this.apply.choose(i.i!, i.team);
       else if (i.k === 'aim') this.apply.setAim(i.x!, i.z!, i.team);
       else this.apply.press(i.at!, i.team);
     }

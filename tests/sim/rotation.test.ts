@@ -193,6 +193,9 @@ describe('cambio del sacador', () => {
     expect(sim.decision.playerKey).toBe(server);
     const fresh = sim.bench('A').find((k) => k !== sim.match.libero.A)!;
     expect(sim.substitute('A', server, fresh)).toBe(true);
+    // El que entra camina desde la banca; el saque se reabre cuando llega a su lugar.
+    expect(sim.arriving).toBe(true);
+    for (let i = 0; i < 120 * 10 && !sim.decision; i++) sim.step(TUNING.dt);
     expect(sim.decision?.kind).toBe('serve');
     expect(sim.decision?.playerKey).toBe(fresh);
     // El que entra está en la zona de saque (detrás de la línea de fondo).

@@ -18,6 +18,10 @@ export type SimEvent =
   | { type: 'matchEnd'; winner: TeamId }
   | { type: 'timeout'; team: TeamId }
   | { type: 'warmupEnd' }
+  /** Jugada cerrada: lo que cantaron los árbitros (puede estar mal) y hasta cuándo se puede pedir challenge. */
+  | { type: 'call'; kind: 'line' | 'touch'; calledWinner: TeamId; calledReason: PointReason; until: number }
+  /** Resultado del challenge: si se dio vuelta, y el detalle (distancia a la línea en metros, o si hubo toque). */
+  | { type: 'challenge'; team: TeamId; overturned: boolean; kind: 'line' | 'touch'; margin: number; inside: boolean; touched: boolean }
   | { type: 'substitution'; team: TeamId; outKey: string; inKey: string };
 
 export class EventBus {

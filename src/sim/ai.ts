@@ -33,15 +33,12 @@ export function chooseShot(rng: Rng): AttackShot {
  * Cuántos bloquean según la colocación rival: contra la rápida casi siempre uno (no da tiempo a cerrar);
  * contra pelotas altas o fuera de sistema, doble o triple.
  */
-export function chooseBlockScheme(rng: Rng, option: SetOption, outOfSystem: boolean): number {
-  if (outOfSystem) return rng.weighted([{ item: 2, weight: 0.45 }, { item: 3, weight: 0.5 }, { item: 1, weight: 0.05 }]);
-  switch (option) {
-    case 'quick':
-      return rng.weighted([{ item: 1, weight: 0.75 }, { item: 2, weight: 0.25 }]);
-    case 'semi':
-    case 'zone4fast':
-      return rng.weighted([{ item: 1, weight: 0.35 }, { item: 2, weight: 0.55 }, { item: 3, weight: 0.1 }]);
-    default:
-      return rng.weighted([{ item: 1, weight: 0.1 }, { item: 2, weight: 0.6 }, { item: 3, weight: 0.3 }]);
-  }
+/**
+ * Cuántos bloquean según la colocación: a una bola rápida solo llega uno; a una media, dos; a una lenta (alta o
+ * fuera de sistema), tres. `_rng` se mantiene por compatibilidad de la firma.
+ */
+export function chooseBlockScheme(_rng: Rng, option: SetOption, outOfSystem: boolean): number {
+  if (outOfSystem || option === 'zone4') return 3;
+  if (option === 'quick' || option === 'zone4fast') return 1;
+  return 2;
 }

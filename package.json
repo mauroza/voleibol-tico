@@ -12,6 +12,7 @@
     "sim": "tsx scripts/simulate.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.45.4",
     "three": "0.170.0"
   },
   "devDependencies": {

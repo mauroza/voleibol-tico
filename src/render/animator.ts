@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ContactKind } from '../sim/events';
 import { attackContactHeight, blockReach } from '../sim/players';
+import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
 import { DIMS, type Rig } from './character';
 import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, type Key, type Pose } from './pose';
@@ -182,9 +183,21 @@ export class Animator {
       active = this.action;
       if (!this.jump) this.startJump(decoy.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', attackContactHeight(p.def) - 0.1, 0.3, 1.6));
     } else if (sim.phase === 'preServe' && court[0] === this.key && sim.match.serving === p.team) {
-      // Sacador: lanzamiento sincronizado con el saque de la IA; con el usuario, pelota en la mano hasta que decida.
-      const countdown = sim.serveCountdown;
-      active = { track: TRACKS.serve, at: countdown === null ? Infinity : now + countdown };
+      // Sacador: con el usuario, pelota en la mano hasta que decida; después, la secuencia del tipo de saque.
+      const seq = sim.serveSequence;
+      if (!seq) active = { track: TRACKS.serve, at: Infinity };
+      else if (seq.type === 'safe') active = { track: TRACKS.serve, at: seq.contactTime };
+      else {
+        // Suspensión: gesto de remate con salto largo; flotado: saltito y brazo seco.
+        const jump = seq.type === 'jump';
+        const track = jump ? TRACKS.spike : TRACKS.serveFloat;
+        if (this.action?.track !== track || Math.abs(this.action.at - seq.contactTime) > 0.05) this.action = { track, at: seq.contactTime };
+        active = this.action;
+        if (!this.jump && seq.contactTime - now < 0.5) {
+          const h = TUNING.serve[seq.type].contactHeight;
+          this.startJump(seq.contactTime + 0.01, jump ? SPIKE_AIR * 1.15 : 0.5, this.liftToReach(track, 'R', h, jump ? 0.4 : 0.1, jump ? 1.5 : 0.5), jump);
+        }
+      }
     } else if (this.action) {
       active = this.action;
     }

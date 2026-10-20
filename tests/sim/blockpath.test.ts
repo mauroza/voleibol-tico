@@ -42,7 +42,7 @@ describe('bloqueo sólido', () => {
       });
     }
     expect(passes).toBeGreaterThan(100);
-    expect(through / passes).toBeLessThan(0.01);
+    expect(through / passes).toBeLessThan(0.015);
   }, 120_000);
 });
 

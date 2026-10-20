@@ -28,7 +28,7 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
   set: (d) => (d.aim
     ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
-  attack: () => `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red = finta`,
+  attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red = finta`,
   block: (d) => (d.chosen === null
     ? `Elige bloqueo con 1–${d.options.length} · mueve la marca de defensa (azul) a donde esperas el remate`
     : 'Mueve la marca de defensa · ESPACIO al saltar (zona verde)'),
@@ -122,7 +122,8 @@ export class DecisionPanel {
     // Confirmación inmediata: la barra se congela y el título muestra lo elegido.
     this.el.classList.toggle('pressed', d.pressedAt !== null);
     const p = this.sim.player(d.playerKey);
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
+    const what = d.options[0].option.id === 'free' ? 'Balón libre' : AIM_TITLES[d.kind];
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
     this.buttons.replaceChildren(

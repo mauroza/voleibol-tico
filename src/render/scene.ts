@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { landingTime } from '../sim/ball';
 import { COURT } from '../sim/court';
 import { AVG_HEIGHT, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
@@ -15,6 +16,44 @@ import { TUNING } from '../sim/tuning';
 import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
 import { meterOf, powerZone, type Power } from '../sim/decision';
 import { toon } from './toon';
+
+/**
+ * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
+ */
+function ballTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f6f3e6';
+  g.fillRect(0, 0, 512, 256);
+  const bands = ['#ffcf2e', '#1f5fbf', '#f6f3e6'];
+  // Tres grupos de paneles, cada uno con tres franjas onduladas.
+  for (let group = 0; group < 3; group++) {
+    const x0 = (group * 512) / 3;
+    for (let b = 0; b < 3; b++) {
+      g.fillStyle = bands[(b + group) % 3];
+      g.beginPath();
+      for (let y = 0; y <= 256; y += 4) {
+        const wave = Math.sin((y / 256) * Math.PI * 2 + group) * 14;
+        g.lineTo(x0 + b * 56 + wave, y);
+      }
+      for (let y = 256; y >= 0; y -= 4) {
+        const wave = Math.sin((y / 256) * Math.PI * 2 + group) * 14;
+        g.lineTo(x0 + (b + 1) * 56 + wave, y);
+      }
+      g.closePath();
+      g.fill();
+      g.strokeStyle = '#2b2b2b55';
+      g.lineWidth = 2;
+      g.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
 
 interface SetMarker {
   group: THREE.Group;
@@ -74,6 +113,8 @@ export class MatchView {
   private readonly speedLines: SpeedLines;
   private readonly flashEl = document.createElement('div');
   private readonly rigs = new Map<string, Rig>();
+  private readonly spinAxis = new THREE.Vector3();
+  private spinTime = 0;
   private status: PlayerStatus | null = null;
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
@@ -113,7 +154,7 @@ export class MatchView {
     this.scene.add(this.arena.group);
     this.buildCourt();
     this.buildPlayers();
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(COURT.ballRadius * 1.6, 20, 14), toon('#ffd23f'));
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(COURT.ballRadius * 1.6, 32, 20), toon('#ffffff', ballTexture()));
     this.ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.18, 20),
       new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 }),
@@ -190,6 +231,7 @@ export class MatchView {
       this.userRing.position.set(u.x, 0.02, u.z);
     }
     this.ball.position.copy(ballPos);
+    this.spinBall();
     this.updateAim();
     this.updateSetMarkers();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
@@ -265,21 +307,52 @@ export class MatchView {
    * Antes del saque la pelota va en la mano izquierda del sacador (la simulación solo sabe dónde está el jugador).
    * En el último tramo del saque de la IA, la pelota sube desde la mano y baja al punto de golpe.
    */
+  /**
+   * Efecto de la pelota en vuelo: el remate y el saque en suspensión giran hacia adelante muy rápido, el pase y la
+   * colocación apenas; el flotado no gira y baila de un lado a otro (el baile se apaga al llegar).
+   */
+  private spinBall(): void {
+    const sim = this.sim;
+    const t = sim.time;
+    const dt = Math.max(0, t - this.spinTime);
+    this.spinTime = t;
+    if (sim.phase !== 'inPlay' || this.replay) return;
+    const kind = sim.lastContact?.kind;
+    const v = sim.ball.v0;
+    const flat = Math.hypot(v.x, v.z) || 1;
+    const floater = kind === 'serve' && sim.servedType === 'float';
+    if (floater) {
+      const land = landingTime(sim.ball);
+      const k = Math.min(1, Math.max(0, (t - sim.ball.t0) / Math.max(0.1, land - sim.ball.t0)));
+      const sway = Math.sin(k * Math.PI) * 0.28 * Math.sin((t - sim.ball.t0) * Math.PI * 2 * 1.7);
+      this.ball.position.x += (-v.z / flat) * sway;
+      this.ball.position.z += (v.x / flat) * sway;
+      return;
+    }
+    const rate = kind === 'attack' || (kind === 'serve' && sim.servedType === 'jump') ? 28 : kind === 'serve' ? 10 : 5;
+    // Eje del efecto: horizontal y perpendicular a la dirección de vuelo (topspin).
+    this.spinAxis.set(v.z / flat, 0, -v.x / flat);
+    this.ball.rotateOnWorldAxis(this.spinAxis, rate * dt);
+  }
+
   private serveBall(out: THREE.Vector3): void {
     if (this.sim.phase !== 'preServe') return;
     const key = this.sim.court(this.sim.match.serving)[0];
     const rig = this.byKey.get(key)!.rig;
     rig.root.updateMatrixWorld(true);
     const hand = rig.joints.elbowL.localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.09, 0.05));
-    const countdown = this.sim.serveCountdown;
-    if (countdown === null || countdown > SERVE_TOSS) {
+    const seq = this.sim.serveSequence;
+    // El lanzamiento dura casi toda la secuencia; el de suspensión sube muchísimo más.
+    const toss = seq ? TUNING.serveWindup[seq.type] * 0.92 : SERVE_TOSS;
+    const countdown = seq ? seq.contactTime - this.sim.time : null;
+    if (!seq || countdown === null || countdown > toss) {
       out.copy(hand);
       return;
     }
-    const k = 1 - countdown / SERVE_TOSS;
+    const k = 1 - countdown / toss;
     const p = this.sim.player(key).pos;
-    const apex = 3.4;
-    const contact = 2.7;
+    const apex = seq.type === 'jump' ? 5.6 : seq.type === 'float' ? 3.9 : 3.4;
+    const contact = TUNING.serve[seq.type].contactHeight;
     const y = k < 0.65
       ? hand.y + (apex - hand.y) * (1 - (1 - k / 0.65) ** 2)
       : apex - (apex - contact) * ((k - 0.65) / 0.35) ** 2;

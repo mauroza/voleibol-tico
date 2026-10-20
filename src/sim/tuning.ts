@@ -28,10 +28,17 @@ export const TUNING = {
     hard: { perfect: 0.5, good: 0.42, bad: 0.08 },
   },
   serve: {
-    float: { base: 1.0, risk: 0.15, speed: 15, gravityBonus: 0, contactHeight: 2.6, noise: 1.5 },
-    jump: { base: 1.05, risk: 0.32, speed: 21, gravityBonus: 6, contactHeight: 3.1, noise: 2.0 },
+    float: { base: 1.0, risk: 0.15, speed: 13.5, gravityBonus: 0, contactHeight: 2.95, noise: 1.5 },
+    jump: { base: 1.05, risk: 0.32, speed: 22, gravityBonus: 6, contactHeight: 3.25, noise: 2.0 },
     safe: { base: 0.8, risk: 0.05, speed: 11, gravityBonus: 0, contactHeight: 2.3, noise: 1.2 },
   },
+  /**
+   * Secuencia de saque (segundos del lanzamiento al golpe) y carrera hacia la red: el de suspensión lanza muy alto,
+   * corre tres pasos y salta largo; el flotado en salto da dos pasos y un saltito; el seguro, de pie.
+   */
+  serveWindup: { safe: 0.9, float: 1.0, jump: 1.35 },
+  serveRunUp: { safe: 0, float: 0.6, jump: 1.25 },
+  serveRunTime: { safe: 0, float: 0.4, jump: 0.6 },
   pass: { base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8 },
   set: {
     base: 1.05,

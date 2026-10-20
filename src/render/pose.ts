@@ -153,7 +153,7 @@ const legs = (hip: number, knee: number, spread = 0.1): Pose => ({
  * Pistas de gestos técnicos. Tiempos relativos al momento clave:
  * remate, colocación y recepción → contacto; bloqueo → ápice del salto; saque → golpe.
  */
-export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'plancha' | 'serve', readonly Key[]> = {
+export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'plancha' | 'serve' | 'serveFloat', readonly Key[]> = {
   // Carrera, penúltimo paso con brazos atrás, impulso con braceo, "arco y flecha", golpe, seguimiento y caída.
   spike: [
     { t: -0.62, pose: { spine: [0.35, 0, 0], neck: [-0.35, 0, 0], ...both(0.3, 0.1, -0.3), ...legs(-0.5, 0.7) } },
@@ -228,6 +228,15 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'planc
     { t: 0.45, pose: { spine: [1.5, 0, 0], neck: [-1.1, 0, 0], ...both(-2.7, -0.2, 0), hipL: [1.3, 0, 0.12], kneeL: [0.3, 0, 0], hipR: [1.25, 0, -0.12], kneeR: [0.5, 0, 0] } },
     { t: 0.9, pose: { spine: [0.9, 0, 0], neck: [-0.6, 0, 0], ...both(-0.6, -0.3, 0), ...legs(-1.2, 2.0, 0.2) } },
     { t: 1.35, pose: POSES.ready },
+  ],
+  // Flotado en salto: dos pasos, saltito, brazo recto que golpea seco y se frena (sin seguimiento).
+  serveFloat: [
+    { t: -1.0, pose: { spine: [0.1, 0, 0], neck: [-0.2, 0, 0], shoulderL: [-1.1, 0, 0.1], elbowL: [-0.3, 0, 0], shoulderR: [-0.3, 0, -0.1], elbowR: [-0.4, 0, 0], ...legs(-0.3, 0.35, 0.1) } },
+    { t: -0.6, pose: { spine: [0.0, 0.15, 0], neck: [-0.4, 0, 0], shoulderL: [-2.6, 0, 0.1], elbowL: [0, 0, 0], shoulderR: [-1.0, 0, -0.2], elbowR: [-0.6, 0, 0], hipL: [-0.6, 0, 0.1], kneeL: [0.7, 0, 0], hipR: [0.3, 0, -0.1], kneeR: [0.3, 0, 0] } },
+    { t: -0.25, pose: { spine: [-0.2, 0.3, 0], neck: [-0.5, 0, 0], shoulderL: [-2.4, 0, 0.2], elbowL: [-0.2, 0, 0], shoulderR: [-2.9, 0, -0.4], elbowR: [-1.6, 0, 0], ...legs(-0.7, 1.0, 0.12) } },
+    { t: 0, pose: { spine: [0.05, -0.1, 0], neck: [-0.4, 0, 0], shoulderL: [-1.2, 0, 0.3], elbowL: [-0.6, 0, 0], shoulderR: [-2.95, 0, -0.1], elbowR: [-0.02, 0, 0], ...legs(-0.25, 0.3, 0.12) } },
+    { t: 0.25, pose: { spine: [0.1, -0.1, 0], neck: [-0.35, 0, 0], shoulderL: [-0.8, 0, 0.3], elbowL: [-0.6, 0, 0], shoulderR: [-2.6, 0, -0.05], elbowR: [-0.1, 0, 0], ...legs(-0.6, 0.9, 0.12) } },
+    { t: 0.8, pose: POSES.ready },
   ],
   // Saque: pelota en la mano izquierda, lanzamiento, brazo armado, golpe y seguimiento.
   serve: [

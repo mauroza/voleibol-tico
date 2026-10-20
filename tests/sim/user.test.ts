@@ -149,7 +149,7 @@ describe('remate apuntado', () => {
     sim.bus.on((e) => { if (e.type === 'contact' && e.kind === 'attack' && e.team === 'A' && target) justHit = true; });
     while (sim.phase !== 'matchOver') {
       const d = sim.decision;
-      if (d?.kind === 'attack' && !target) {
+      if (d?.kind === 'attack' && d.options[0].option.id === 'aim' && !target) {
         expect(d.aim).not.toBeNull();
         expect(d.chosen).toBe(0);
         target = aim(d);
@@ -210,6 +210,8 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
         // Medidor triangular: arriba (≈1) = rojo; al inicio (≈0.3) = verde.
         while (serveMeter(sim.time - d.startTime) < (zone === 'strong' ? 0.95 : 0.3)) sim.step(TUNING.dt);
         sim.press();
+        // El golpe llega al final de la secuencia de saque (lanzamiento y carrera).
+        while (sim.phase === 'preServe') sim.step(TUNING.dt);
         speeds[zone].push(horizontalSpeed(sim));
         if (zone === 'strong') {
           const land = positionAt(sim.ball, landingTime(sim.ball));
@@ -225,7 +227,7 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
   it('remate: rojo pega más fuerte que verde', () => {
     const speed = (late: boolean) => {
       const sim = fresh(5);
-      const d = until(sim, (x) => x.kind === 'attack' && !!x.aim);
+      const d = until(sim, (x) => x.kind === 'attack' && x.options[0].option.id === 'aim');
       // Rojo: al final de la barra; verde: apenas entra la barra.
       sim.press(late ? d.contactTime! - 0.02 : d.contactTime! - 0.35);
       while (sim.decision === d) sim.step(TUNING.dt);

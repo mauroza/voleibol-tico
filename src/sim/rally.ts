@@ -1,5 +1,5 @@
 import type { TeamDef } from '../data/teams';
-import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type SetOption, type Zone } from './actions';
+import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type ServeType, type SetOption, type Zone } from './actions';
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
@@ -119,11 +119,19 @@ export class Simulation {
   private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
   /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
   private decoyRun: { key: string; time: number } | null = null;
+  /** Saque en curso: lanzamiento y carrera hasta el golpe en `at`. */
+  private pendingServe: { type: ServeType; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3 } | null = null;
+  /** Saque que hará la IA en este punto (para animarlo antes). */
+  private aiServe: { type: ServeType; zone: Zone } | null = null;
+  /** Tipo del último saque (la pelota del flotado baila; la del de suspensión gira). */
+  servedType: ServeType | null = null;
   /** El contacto en curso es una plancha. */
   private diving = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
+  /** El último remate fue apuntado por el usuario. */
+  private lastAimed = false;
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
@@ -180,6 +188,11 @@ export class Simulation {
     return value * (s.attrAtZero + (1 - s.attrAtZero) * p.stamina) * fire;
   }
 
+  /** Último contacto (para efectos visuales de la pelota). */
+  get lastContact(): Readonly<{ key: string; team: TeamId; kind: ContactKind; quality: number }> | null {
+    return this.last;
+  }
+
   get upcoming(): Readonly<PlannedContact> | null {
     return this.plan;
   }
@@ -191,7 +204,16 @@ export class Simulation {
 
   /** Segundos hasta el saque de la IA (para animar el lanzamiento); null si no hay saque automático pendiente. */
   get serveCountdown(): number | null {
-    return this.phase === 'preServe' && this.match.serving !== this.control ? Math.max(0, this.phaseTimer) : null;
+    const seq = this.serveSequence;
+    return seq ? Math.max(0, seq.contactTime - this.time) : null;
+  }
+
+  /** Saque que se viene: tipo e instante del golpe (null mientras el usuario no decide). */
+  get serveSequence(): { type: ServeType; contactTime: number } | null {
+    if (this.phase !== 'preServe') return null;
+    if (this.pendingServe) return { type: this.pendingServe.type, contactTime: this.pendingServe.at };
+    if (this.aiServe) return { type: this.aiServe.type, contactTime: this.time + Math.max(0, this.phaseTimer) + TUNING.serveWindup[this.aiServe.type] };
+    return null;
   }
 
   /**
@@ -263,7 +285,7 @@ export class Simulation {
     const d = this.decision;
     if (!d || d.chosen === null || d.pressedAt !== null) return;
     d.pressedAt = Math.max(at, d.startTime);
-    if (d.kind === 'serve' && this.phase === 'preServe') this.serve();
+    if (d.kind === 'serve' && this.phase === 'preServe') this.beginUserServe();
   }
 
   step(dt: number): void {
@@ -272,11 +294,18 @@ export class Simulation {
     this.movePlayers(dt);
     if (this.phase === 'preServe') {
       this.ballPos = this.serverHand();
-      this.phaseTimer -= dt;
-      if (this.phaseTimer <= 0) {
-        if (this.match.serving !== this.control) this.serve();
-        else if (!this.decision) this.openServeDecision();
-        else if (this.time - this.decision.startTime > TUNING.decision.serveTimeout) this.serve();
+      if (this.pendingServe) {
+        this.runUp(this.pendingServe);
+        if (this.time >= this.pendingServe.at) this.serve();
+      } else {
+        this.phaseTimer -= dt;
+        if (this.phaseTimer <= 0) {
+          if (this.match.serving !== this.control) {
+            const ai = this.aiServe ?? chooseServe(this.rng, this.player(this.court(this.match.serving)[0]).def);
+            this.beginServe(ai.type, ai.zone, this.aiTiming(this.match.serving), null, false);
+          } else if (!this.decision) this.openServeDecision();
+          else if (this.time - this.decision.startTime > TUNING.decision.serveTimeout) this.beginUserServe();
+        }
       }
     } else if (this.phase === 'inPlay') {
       this.ballPos = positionAt(this.ball, this.time);
@@ -312,6 +341,8 @@ export class Simulation {
   private resetForServe(): void {
     this.phase = 'preServe';
     this.phaseTimer = TUNING.servePause;
+    this.pendingServe = null;
+    this.aiServe = this.match.serving !== this.control ? chooseServe(this.rng, this.player(courtPlayers(this.match, this.match.serving)[0]).def) : null;
     this.plan = null;
     this.netFaultTime = null;
     this.last = null;
@@ -535,6 +566,10 @@ export class Simulation {
         // Remate apuntado: la mira empieza en el mejor hueco; la barra es la fuerza.
         const t = this.pickAttackTarget(otherTeam(plan.team), plan.point, 'cross');
         this.aimDecision(opened, { x: t.x, z: t.z }, otherTeam(plan.team), 'power');
+      } else if (opened && plan.kind === 'free') {
+        // Balón libre: se apunta a dónde mandarla en el campo rival; la barra es el timing.
+        const deep = spot(otherTeam(plan.team), [7, 0]);
+        this.aimDecision(opened, { x: deep.x, z: deep.z }, otherTeam(plan.team), 'timing');
       } else if (opened && plan.kind === 'set') {
         // Abanico de colocación: la mira elige al atacante y la barra, el tempo (alta, media, rápida).
         const first = this.setOptionPoint(opened, 0);
@@ -644,33 +679,57 @@ export class Simulation {
     this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team: p.team, kind, quality });
   }
 
+  /** El usuario presionó (o se le acabó el tiempo): la barra decide el tipo y empieza la secuencia. */
+  private beginUserServe(): void {
+    const d = this.decision?.kind === 'serve' ? this.decision : null;
+    if (!d || this.pendingServe) return;
+    // La posición del medidor al presionar es la fuerza: verde = seguro, amarillo = flotado en salto, rojo = suspensión.
+    const power: Power = d.pressedAt === null ? 'medium' : powerZone(serveMeter(d.pressedAt - d.startTime));
+    const timing: Timing = d.pressedAt === null ? 'bad' : powerTiming(power);
+    const aim = d.aim;
+    this.closeDecision(timing, power);
+    this.beginServe(TUNING.power.serveType[power], 1, timing, aim, true);
+  }
+
+  private beginServe(type: ServeType, zone: Zone, timing: Timing, aim: { x: number; z: number } | null, user: boolean): void {
+    const server = this.player(this.court(this.match.serving)[0]);
+    this.pendingServe = { type, zone, timing, aim, at: this.time + TUNING.serveWindup[type], user, from: clone(server.pos) };
+  }
+
+  /** Carrera del sacador hacia la red en el final de la secuencia (salta desde atrás de la línea de fondo). */
+  private runUp(ps: NonNullable<Simulation['pendingServe']>): void {
+    const run = TUNING.serveRunUp[ps.type];
+    if (run <= 0) return;
+    const server = this.player(this.court(this.match.serving)[0]);
+    const runTime = TUNING.serveRunTime[ps.type];
+    const k = clamp01((this.time - (ps.at - runTime)) / runTime);
+    const toward = -sideSign(this.match.serving);
+    server.pos.x = ps.from.x + toward * run * k * (2 - k);
+    server.pos.z = ps.from.z;
+    server.target = clone(server.pos);
+  }
+
   private serve(): void {
     const team = this.match.serving;
     const server = this.player(this.court(team)[0]);
-    let choice = chooseServe(this.rng, server.def);
-    let timing: Timing;
-    const d = this.decision?.kind === 'serve' ? this.decision : null;
-    let serveAim: { x: number; z: number } | null = null;
-    if (d) {
-      // La posición del medidor al presionar es la fuerza: verde = seguro, amarillo = flotado, rojo = en salto.
-      const power: Power = d.pressedAt === null ? 'medium' : powerZone(serveMeter(d.pressedAt - d.startTime));
-      choice = { type: TUNING.power.serveType[power], zone: choice.zone };
-      timing = d.pressedAt === null ? 'bad' : powerTiming(power);
-      serveAim = d.aim;
-      this.closeDecision(timing, power);
-    } else {
-      timing = this.aiTiming(team);
-    }
+    const ps = this.pendingServe!;
+    this.pendingServe = null;
+    this.aiServe = null;
+    this.servedType = ps.type;
+    const choice = { type: ps.type, zone: ps.zone };
+    const timing = ps.timing;
+    const serveAim = ps.aim;
     const cfg = TUNING.serve[choice.type];
     const cost = TUNING.stamina.cost;
     this.tire(server.key, choice.type === 'jump' ? cost.jumpServe : choice.type === 'float' ? cost.floatServe : cost.safeServe);
-    const from = v3(server.pos.x, cfg.contactHeight, server.pos.z);
+    // Golpe un poco adelante del cuerpo (en el salto, ya en el aire sobre la línea de fondo).
+    const from = v3(server.pos.x - sideSign(team) * 0.3, cfg.contactHeight, server.pos.z);
     let q = computeQuality(
       { base: cfg.base, prevQuality: 1, timing, attribute: this.attr(server, server.def.attrs.serve), pressure: 0 },
       this.rng,
     );
     this.phase = 'inPlay';
-    q = this.boosted(q, d ? timing : undefined);
+    q = this.boosted(q, ps.user ? timing : undefined);
     this.registerTouch(server, 'serve', q);
     const opp = otherTeam(team);
     const isError = this.rng.chance(errorChance(cfg.risk, q));
@@ -797,6 +856,7 @@ export class Simulation {
     this.intent = null;
     const pw = aim ? TUNING.power.spike[ctl?.power ?? 'medium'] : { speed: 1, risk: 1, noise: 1 };
     const isError = this.rng.chance(errorChance(cfg.shots[shot].risk * (aim ? TUNING.decision.aimRiskFactor * pw.risk : 1), q));
+    this.lastAimed = !!aim;
     const aimed = aim ? v3(aim.x, COURT.ballRadius, aim.z) : this.pickAttackTarget(opp, at, shot);
     const target = isError ? this.errorTarget(opp, at) : this.keepOnSide(opp, this.noisy(aimed, cfg.noise * (1 - q) * pw.noise));
     if (shot === 'tip') {
@@ -821,7 +881,8 @@ export class Simulation {
     this.intent = null;
     const opp = otherTeam(p.team);
     const isError = this.rng.chance(errorChance(TUNING.free.risk, q));
-    const target = isError ? this.errorTarget(opp, at) : toWorld(opp, this.rng.range(5, 8), this.rng.range(-3, 3), COURT.ballRadius);
+    const aimed = ctl?.aim ? v3(ctl.aim.x, COURT.ballRadius, ctl.aim.z) : toWorld(opp, this.rng.range(5, 8), this.rng.range(-3, 3), COURT.ballRadius);
+    const target = isError ? this.errorTarget(opp, at) : this.keepOnSide(opp, this.noisy(aimed, 1.2 * (1 - q)));
     this.ball = this.launchClearing(at, target, TUNING.free.flightTime, GRAVITY, t, !isError);
     this.threat = 0.1;
   }
@@ -1089,8 +1150,11 @@ export class Simulation {
     const land = positionAt(tr, tr.t0 + T);
     const inside = Math.abs(land.z) <= COURT.halfWidth;
     // Primero abrir el ángulo; si no alcanza, por encima de las manos (más arco, más lento).
-    for (const stretch of [1, 1.12, 1.25, 1.4]) {
-      for (let k = stretch === 1 ? 1 : 0; k <= 20; k++) {
+    // El remate apuntado del usuario apenas se corrige: si apuntó contra el bloqueo, lo bloquean.
+    const userAim = this.lastAimed;
+    const maxSteps = userAim ? 3 : 20;
+    for (const stretch of userAim ? [1, 1.12] : [1, 1.12, 1.25, 1.4]) {
+      for (let k = stretch === 1 ? 1 : 0; k <= maxSteps; k++) {
         for (const dir of [1, -1]) {
           const z = land.z + dir * k * 0.2;
           if (inside && Math.abs(z) > COURT.halfWidth - 0.15) continue;

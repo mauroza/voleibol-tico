@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { landingTime } from '../sim/ball';
+import { landingTime, positionAt } from '../sim/ball';
 import { COURT } from '../sim/court';
 import { AVG_HEIGHT, isTall, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
@@ -147,6 +147,8 @@ export class MatchView {
   private readonly rigs = new Map<string, Rig>();
   private readonly spinAxis = new THREE.Vector3();
   private spinTime = 0;
+  /** Online: tiempo de simulación entre el último paso fijo y este cuadro (lo pone el lockstep). */
+  renderAhead: () => number = () => 0;
   private status: PlayerStatus | null = null;
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
@@ -250,6 +252,13 @@ export class MatchView {
       for (const a of this.animators) a.update();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
+      // Online la simulación avanza en pasos fijos: la pelota se dibuja en el instante exacto del cuadro
+      // (entre dos pasos), así no tiembla con la cámara lenta ni con distintas velocidades.
+      const ahead = this.renderAhead();
+      if (ahead > 0 && this.sim.phase === 'inPlay') {
+        const p = positionAt(this.sim.ball, this.sim.time + ahead);
+        ballPos.set(p.x, p.y, p.z);
+      }
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
@@ -364,7 +373,8 @@ export class MatchView {
     const rate = kind === 'attack' || (kind === 'serve' && sim.servedType === 'jump') ? 28 : kind === 'serve' ? 10 : 5;
     // Eje del efecto: horizontal y perpendicular a la dirección de vuelo (topspin).
     this.spinAxis.set(v.z / flat, 0, -v.x / flat);
-    this.ball.rotateOnWorldAxis(this.spinAxis, rate * dt);
+    // Tope de giro por cuadro: muy rápido, la textura "parpadea" (efecto estroboscópico) y la pelota se ve deformada.
+    this.ball.rotateOnWorldAxis(this.spinAxis, Math.min(rate * dt, 0.22));
   }
 
   private serveBall(out: THREE.Vector3): void {

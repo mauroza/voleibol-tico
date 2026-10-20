@@ -253,6 +253,17 @@ export class Simulation {
     pin.target = clone(pout.target);
     pout.pos = v3(sideSign(team) * 5.5, 0, -6.5);
     pout.target = clone(pout.pos);
+    // Si sale el que iba a sacar, el saque pasa al que entra: a su lugar de saque y con su decisión (y su estilo).
+    if (idx === 0 && this.match.serving === team && this.phase === 'preServe' && !this.pendingServe) {
+      const serveSpot = spot(team, pin.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
+      pin.pos = clone(serveSpot);
+      pin.target = clone(serveSpot);
+      if (this.decisions[team]?.kind === 'serve') {
+        this.decisions[team] = null;
+        this.openServeDecision();
+      }
+      if (!this.humans.has(team)) this.aiServe = this.chooseAiServe(inKey);
+    }
     this.bus.emit({ type: 'substitution', team, outKey, inKey });
     return true;
   }
@@ -368,8 +379,10 @@ export class Simulation {
     if (!d || !d.aim || !d.aimSide || d.pressedAt !== null) return;
     const s = sideSign(d.aimSide);
     const own = d.aimSide === this.player(d.playerKey).team;
-    const depth = own ? COURT.halfLength + 0.5 : COURT.halfLength + 2;
-    const width = own ? COURT.halfWidth + 0.5 : COURT.halfWidth + 1.5;
+    // El saque apunta solo a la cancha rival (con un margen corto afuera); el remate puede irse más lejos.
+    const serve = d.kind === 'serve';
+    const depth = own ? COURT.halfLength + 0.5 : COURT.halfLength + (serve ? 1 : 2);
+    const width = own ? COURT.halfWidth + 0.5 : COURT.halfWidth + (serve ? 1 : 1.5);
     // La colocación puede apuntar al campo rival: es la segunda del colocador.
     const near = d.kind === 'set' ? -4 : 0.3;
     d.aim = { x: s * clamp(s * x, near, depth), z: clamp(z, -width, width) };

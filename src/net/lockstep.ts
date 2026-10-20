@@ -46,6 +46,10 @@ export class Lockstep {
   private remoteSeq = -1;
   private readonly lastOpen: Record<TeamId, number> = { A: -1e9, B: -1e9 };
   private debt = 0;
+  /** Tiempo de simulación pendiente (menos de un paso): para dibujar la pelota entre dos pasos. */
+  get pendingTime(): number {
+    return this.debt;
+  }
   private sendClock = 0;
   private readonly hashes = new Map<number, string>();
   private readonly remoteHashes = new Map<number, string>();

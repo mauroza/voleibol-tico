@@ -183,3 +183,19 @@ describe('tiempos y cambios', () => {
     expect(subs).toBeGreaterThan(0);
   }, 60_000);
 });
+
+describe('cambio del sacador', () => {
+  it('si cambio al que va a sacar, el saque y la mira pasan al que entra', () => {
+    const sim = new Simulation({ seed: 3, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    while (!sim.decision) sim.step(TUNING.dt);
+    expect(sim.decision.kind).toBe('serve');
+    const server = sim.match.lineups.A[0];
+    expect(sim.decision.playerKey).toBe(server);
+    const fresh = sim.bench('A').find((k) => k !== sim.match.libero.A)!;
+    expect(sim.substitute('A', server, fresh)).toBe(true);
+    expect(sim.decision?.kind).toBe('serve');
+    expect(sim.decision?.playerKey).toBe(fresh);
+    // El que entra está en la zona de saque (detrás de la línea de fondo).
+    expect(Math.abs(sim.player(fresh).pos.x)).toBeGreaterThan(9);
+  });
+});

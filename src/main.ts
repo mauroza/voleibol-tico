@@ -55,6 +55,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   if (online) ui.append(pingEl);
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
+  if (lockstep) view.renderAhead = () => lockstep.pendingTime;
   const hud = new Hud(ui, sim);
   // Reloj entre cuadros: la tecla se juzga en el instante real en que se tocó, no en el del último cuadro.
   let frameStamp = performance.now();

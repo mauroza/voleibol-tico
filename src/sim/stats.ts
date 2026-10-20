@@ -45,7 +45,7 @@ export function attachStats(bus: EventBus, control: TeamId | null): MatchStats {
       } else if (e.kind === 'attack') attacker = e.team;
       else if (e.kind === 'block') blocker = e.team;
     } else if (e.type === 'decisionResolved') {
-      s.user[e.timing] += 1;
+      if (e.team === control) s.user[e.timing] += 1;
     } else if (e.type === 'point') {
       const loser: TeamId = e.winner === 'A' ? 'B' : 'A';
       s.teams[e.winner].points += 1;

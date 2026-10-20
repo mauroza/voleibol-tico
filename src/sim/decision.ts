@@ -40,6 +40,8 @@ export interface Decision {
   aimSide: TeamId | null;
   /** 'timing': acertar el verde; 'power': la posición de la barra al presionar es la fuerza (verde, amarillo, rojo). */
   meter: 'timing' | 'power';
+  /** Online: la barra termina este tanto antes del contacto (s), para que la tecla viaje por la red a tiempo. */
+  lead?: number;
   /** Colocación: el usuario fijó la opción con una tecla (si no, sale de la mira y del tempo de la barra). */
   locked?: boolean;
 }
@@ -93,5 +95,5 @@ export function meterOf(d: Decision, now: number): number {
   const t = d.pressedAt ?? now;
   if (d.kind === 'serve') return serveMeter(t - d.startTime);
   if (d.contactTime === null) return 0;
-  return contactMeter(t, d.contactTime, d.kind === 'set' ? TUNING.decision.setWindow : TUNING.decision.slowWindow);
+  return contactMeter(t, d.contactTime - (d.lead ?? 0), d.kind === 'set' ? TUNING.decision.setWindow : TUNING.decision.slowWindow);
 }

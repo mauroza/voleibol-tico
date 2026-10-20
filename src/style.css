@@ -100,3 +100,15 @@ button { font: inherit; cursor: pointer; }
 .sub-stamina { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: #ffffff1a; overflow: hidden; }
 .sub-stamina span { display: block; height: 100%; }
 .timeout-box h2 { font-size: 20px; text-wrap: balance; }
+.menu-online { width: min(560px, 100%); background: #0f1526; border: 1px solid #4dc3ff55; border-radius: 12px; padding: 12px 14px; margin-bottom: 24px; box-sizing: border-box; }
+.menu-online h2 { margin: 0 0 8px; font-size: 16px; color: #4dc3ff; text-transform: uppercase; letter-spacing: 1px; }
+.menu-online-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.menu-online-row button { padding: 10px 14px; border-radius: 10px; border: 1px solid #4dc3ff88; background: #13213a; color: #fff; font-weight: 700; cursor: pointer; }
+.menu-online-row .menu-online-host { background: #4dc3ff; color: #08111f; }
+.menu-online-code { flex: 1; min-width: 120px; padding: 10px; border-radius: 10px; border: 1px solid #ffffff33; background: #0a1020; color: #fff; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; }
+.menu-online-note { margin: 8px 0 0; font-size: 12px; color: #aab4d0; }
+.lobby-code { font-size: 44px; font-weight: 900; letter-spacing: 8px; color: #ffe14d; text-align: center; margin: 8px 0; user-select: all; }
+.lobby-status { text-align: center; color: #cfd6ea; }
+.lobby-status.error { color: #ff6b6b; }
+.net-status { position: fixed; top: 38%; left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: rgba(10, 14, 24, 0.85);
+              color: #ffe14d; font-weight: 700; opacity: 0; transition: opacity 0.2s; pointer-events: none; }

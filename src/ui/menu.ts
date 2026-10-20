@@ -12,6 +12,8 @@ export const PACE_TEMPO: Record<Pace, TempoProfile> = { calm: 'clasico', normal:
 const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Fluido', real: 'Rápido (online)' };
 
 export interface MatchSetup {
+  /** Online 1 vs 1: crear sala o unirse con un código. */
+  online?: { mode: 'host' } | { mode: 'join'; code: string };
   team: number;
   rival: number;
   setsToWin: 1 | 2;
@@ -131,12 +133,52 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
 
     const play = document.createElement('button');
     play.className = 'menu-play';
-    play.textContent = 'Jugar';
+    play.textContent = 'Jugar contra la IA';
     play.addEventListener('click', () => {
       el.remove();
-      resolveFn({ ...setup });
+      resolveFn({ ...setup, online: undefined });
     });
     el.append(play);
+
+    // Online 1 vs 1 con código de sala.
+    const online = document.createElement('div');
+    online.className = 'menu-online';
+    const title = document.createElement('h2');
+    title.textContent = 'Online 1 vs 1';
+    const host = document.createElement('button');
+    host.className = 'menu-online-host';
+    host.textContent = 'Crear sala';
+    host.title = 'Juegas con tu equipo; tu rival con el equipo rival elegido';
+    host.addEventListener('click', () => {
+      el.remove();
+      resolveFn({ ...setup, online: { mode: 'host' } });
+    });
+    const code = document.createElement('input');
+    code.className = 'menu-online-code';
+    code.placeholder = 'Código (ej. TICO42)';
+    code.maxLength = 8;
+    code.autocomplete = 'off';
+    const join = document.createElement('button');
+    join.textContent = 'Unirse';
+    const tryJoin = () => {
+      const value = code.value.trim().toUpperCase();
+      if (value.length < 4) {
+        code.focus();
+        return;
+      }
+      el.remove();
+      resolveFn({ ...setup, online: { mode: 'join', code: value } });
+    };
+    join.addEventListener('click', tryJoin);
+    code.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryJoin(); });
+    const note = document.createElement('p');
+    note.className = 'menu-online-note';
+    note.textContent = 'El que crea la sala elige los equipos: juega con "Tu equipo" y el invitado con "Rival".';
+    const row2 = document.createElement('div');
+    row2.className = 'menu-online-row';
+    row2.append(host, code, join);
+    online.append(title, row2, note);
+    el.append(online);
   };
 
   let resolveFn: (s: MatchSetup) => void = () => undefined;

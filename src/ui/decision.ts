@@ -77,7 +77,7 @@ export class DecisionPanel {
 
     window.addEventListener('keydown', (e) => this.onKey(e));
     sim.bus.on((e) => {
-      if (e.type === 'decisionResolved') {
+      if (e.type === 'decisionResolved' && e.team === sim.control) {
         this.feedback.textContent = e.label ?? (e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing]);
         this.feedback.dataset.timing = e.power ? `power-${e.power}` : e.timing;
         this.feedbackUntil = performance.now() + 1000;

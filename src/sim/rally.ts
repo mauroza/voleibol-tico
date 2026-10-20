@@ -62,6 +62,8 @@ interface Plan {
   low: boolean;
   /** Plancha: se lanza al piso para salvarla. */
   dive?: boolean;
+  /** La pelota le pega en el cuerpo (no la eligió): sale rebotada. */
+  bodyHit?: boolean;
   block?: BlockOutcome;
 }
 
@@ -127,6 +129,8 @@ export class Simulation {
   servedType: ServeType | null = null;
   /** El contacto en curso es una plancha. */
   private diving = false;
+  /** El contacto en curso es un pelotazo en el cuerpo. */
+  private bodyHit = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
@@ -560,7 +564,8 @@ export class Simulation {
 
   /** Abre una decisión si el próximo contacto es del equipo controlado, o el esquema de bloqueo ante el remate rival. */
   private openDecisionFor(plan: Plan | null): void {
-    if (!this.control || !plan || this.decision) return;
+    // El pelotazo en el cuerpo no se decide: pasa solo.
+    if (!this.control || !plan || this.decision || plan.bodyHit) return;
     if (plan.team === this.control && plan.kind !== 'block') {
       const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
       this.openDecision(kind, this.contactOptions(plan), plan.time, plan.key);
@@ -752,6 +757,7 @@ export class Simulation {
     const at = positionAt(this.ball, t);
     this.plan = null;
     this.diving = !!plan.dive;
+    this.bodyHit = !!plan.bodyHit;
     const ctl = this.resolveDecision(plan);
     switch (plan.kind) {
       case 'reception':
@@ -782,7 +788,13 @@ export class Simulation {
     const hp = TUNING.decision.highPass;
     const attribute = this.attr(p, kind === 'reception' ? p.def.attrs.reception : p.def.attrs.defense);
     let q = computeQuality(
-      { base: low ? cfg.lowContactBase : cfg.base, prevQuality: 1, timing: ctl?.timing ?? this.aiTiming(p.team), attribute, pressure: this.threat },
+      {
+        base: low ? cfg.lowContactBase : cfg.base,
+        prevQuality: 1,
+        timing: ctl?.timing ?? this.aiTiming(p.team),
+        attribute,
+        pressure: Math.min(1, this.threat * (kind === 'reception' ? cfg.servePressure : 1)),
+      },
       this.rng,
     );
     // Salvada en plancha: la pelota sigue viva, pero el pase sale peor.
@@ -790,13 +802,36 @@ export class Simulation {
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, kind, q);
     this.intent = null;
-    if (this.rng.chance(errorChance(cfg.risk * (high ? hp.riskFactor : 1), q))) {
+    if (this.bodyHit) {
+      // Pelotazo en el cuerpo: sale alta y cerca, sin dirección; algún compañero puede arreglarla.
+      const bh = TUNING.bodyHit;
+      q = this.rng.range(bh.quality[0], bh.quality[1]);
+      this.last!.quality = q;
+      if (this.rng.chance(bh.playable * (0.6 + 0.8 * (p.def.attrs.defense / 100)))) {
+        const pop = v3(at.x + sideSign(p.team) * this.rng.range(-1, 2.5), TUNING.passHeight, at.z + this.rng.range(-2, 2));
+        this.ball = launch(at, this.keepOnSide(p.team, pop), this.rng.range(bh.flight[0], bh.flight[1]), t);
+      } else {
+        // Rebote que se va: hacia atrás o al costado, fuera del alcance.
+        const out = v3(at.x + sideSign(p.team) * this.rng.range(2, 6), COURT.ballRadius, at.z + this.rng.range(-5, 5));
+        this.ball = launch(at, out, 0.7, t);
+      }
+    } else if (kind === 'reception' && q < cfg.shank) {
+      // Recepción que se va: la pelota sale despedida hacia afuera, bajita (casi siempre ace).
+      const side = this.rng.chance(0.5) ? 1 : -1;
+      const out = v3(at.x + sideSign(p.team) * this.rng.range(1, 5), COURT.ballRadius, side * (COURT.halfWidth + this.rng.range(0.5, 3)));
+      this.ball = launch(at, out, 0.8, t);
+    } else if (this.rng.chance(errorChance(cfg.risk * (high ? hp.riskFactor : 1), q))) {
       const wild = v3(at.x + this.rng.range(-6, 6), COURT.ballRadius, at.z + this.rng.range(-6, 6));
       this.ball = launch(at, wild, 1.0, t);
     } else {
       const noise = cfg.noise * (1 - q) * (high ? hp.noiseFactor : 1);
       const aim = ctl?.aim;
-      const goal = aim ? v3(aim.x, TUNING.setHeight, aim.z) : spot(p.team, p.def.role === 'S' ? LIBERO_SET_SPOT : SETTER_SPOT, TUNING.setHeight);
+      let goal = aim ? v3(aim.x, TUNING.setHeight, aim.z) : spot(p.team, p.def.role === 'S' ? LIBERO_SET_SPOT : SETTER_SPOT, TUNING.setHeight);
+      // Pase fuera de zona: se va lejos de la red y a un costado; hay que arreglarla (colocación alta o de otro).
+      if (q < cfg.offZone) {
+        const miss = (cfg.offZone - q) * cfg.offZoneDrift;
+        goal = v3(goal.x + sideSign(p.team) * miss * this.rng.range(0.4, 1), goal.y, goal.z + this.rng.range(-1, 1) * miss * 0.8);
+      }
       const target = this.keepOnSide(p.team, this.noisy(goal, noise));
       // Pase dirigido: más tiempo de vuelo cuanto más lejos se manda.
       const flight = aim ? clamp(0.9 + distXZ(at, target) * 0.09, 1.0, 1.9) : high ? hp.flightTime : cfg.flightTime;
@@ -959,6 +994,11 @@ export class Simulation {
       }
       this.plan ??= this.planTouch(otherTeam(sideOfX(this.ball.p0.x)));
     }
+    // Una pelota que viene del otro lado y atraviesa a un jugador le pega: sale rebotada y la jugada sigue.
+    if (this.plan?.kind !== 'block' && this.netFaultTime === null) {
+      const hit = this.bodyHitPlan(this.plan);
+      if (hit) this.plan = hit;
+    }
     if (blockDecision) this.closeDecision(blockTiming);
     if (this.plan?.kind === 'attack') this.setupBlock(otherTeam(this.plan.team), this.plan);
     this.setFormations();
@@ -1112,6 +1152,36 @@ export class Simulation {
     if (r < stuff + cfg.touchByN[n]) return plan('soft');
     // Sin toque: el remate tiene que pasar de verdad por fuera de manos y cuerpos; si no hay hueco, roza el bloqueo.
     return this.clearBlockPath(block) ? null : plan('soft');
+  }
+
+  /**
+   * ¿La pelota pega en el cuerpo de algún jugador del lado que la recibe antes del contacto planeado (o de caer)?
+   * Mira a cada uno donde estará (camina hacia su lugar) y recorre la trayectoria de a 15 ms.
+   */
+  private bodyHitPlan(plan: Plan | null): Plan | null {
+    const tr = this.ball;
+    const end = plan ? plan.time : landingTime(tr);
+    const net = checkNet(tr);
+    const start = net.kind === 'none' ? this.time : Math.max(this.time, net.time);
+    const team = sideOfX(positionAt(tr, end).x);
+    if (this.last?.team === team) return null;
+    const r = TUNING.bodyHit.radius;
+    for (let t = start + 0.05; t < end - 0.02; t += 0.015) {
+      const b = positionAt(tr, t);
+      if (sideOfX(b.x) !== team || Math.abs(b.x) < 1) continue;
+      for (const key of this.court(team)) {
+        if (plan && key === plan.key) continue;
+        const p = this.player(key);
+        const step = Math.min(distXZ(p.pos, p.target), moveSpeed(p.def) * (t - this.time));
+        const d = distXZ(p.pos, p.target) || 1;
+        const x = p.pos.x + ((p.target.x - p.pos.x) / d) * step;
+        const z = p.pos.z + ((p.target.z - p.pos.z) / d) * step;
+        if (b.y < p.def.height && Math.hypot(b.x - x, b.z - z) < r) {
+          return { key, team, time: t, point: b, kind: this.last?.kind === 'serve' ? 'reception' : 'dig', low: true, bodyHit: true };
+        }
+      }
+    }
+    return null;
   }
 
   /** La pelota roza las manos del bloqueador más cercano a su paso. */

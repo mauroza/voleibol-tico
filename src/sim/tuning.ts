@@ -1,7 +1,7 @@
 /** Todas las constantes de balance en un solo lugar. Ajustar con `npm run sim`. */
 export const TUNING = {
   dt: 1 / 120,
-  reactionTime: 0.35,
+  reactionTime: 0.42,
   /** Distancia que un jugador cubre estirándose o lanzándose, sin desplazarse. */
   reachRadius: 0.8,
   minPlanLead: 0.12,
@@ -39,7 +39,16 @@ export const TUNING = {
   serveWindup: { safe: 0.9, float: 1.0, jump: 1.35 },
   serveRunUp: { safe: 0, float: 0.6, jump: 1.25 },
   serveRunTime: { safe: 0, float: 0.4, jump: 0.6 },
-  pass: { base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8 },
+  pass: {
+    base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8,
+    /** El saque presiona más a la recepción que un remate a la defensa (multiplica la presión). */
+    servePressure: 1.6,
+    /** Recepción por debajo de esto: la pelota sale despedida (casi siempre ace). */
+    shank: 0.3,
+    /** Debajo de esta calidad el pase queda fuera de zona: lejos de la red y hacia un costado. */
+    offZone: 0.62,
+    offZoneDrift: 6,
+  },
   set: {
     base: 1.05,
     noise: 2.0,
@@ -53,7 +62,7 @@ export const TUNING = {
     decoyPull: 0.3,
   },
   attack: {
-    base: 1.08,
+    base: 1.12,
     minSpeed: 21,
     speedRange: 13,
     gravityBonus: 6,
@@ -83,6 +92,8 @@ export const TUNING = {
     },
     serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
   },
+  /** Pelota que pega en el cuerpo de un defensor: radio del cuerpo y cómo sale (alta y cerca, jugable). */
+  bodyHit: { radius: 0.32, quality: [0.1, 0.4], flight: [1.0, 1.5], playable: 0.25 },
   /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */
   dive: { extra: 1.5, minDefense: 55, quality: 0.85 },
   /** Estamina: costo de cada acción, recuperación y efecto del cansancio (atributos y altura del salto). */

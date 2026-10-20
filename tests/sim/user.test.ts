@@ -198,7 +198,7 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
     throw new Error('No apareció la decisión');
   }
 
-  it('saque apuntado: rojo es saque en salto (rápido), verde es seguro (lento) y van hacia la mira', () => {
+  it('saque apuntado: cada uno con su estilo; rojo más rápido que verde y van hacia la mira', () => {
     const speeds: Record<string, number[]> = { strong: [], soft: [] };
     let near = 0;
     for (let seed = 1; seed <= 6; seed++) {
@@ -220,7 +220,7 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
       }
     }
     const avg = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
-    expect(avg(speeds.strong)).toBeGreaterThan(avg(speeds.soft) * 1.3);
+    expect(avg(speeds.strong)).toBeGreaterThan(avg(speeds.soft) * 1.15);
     expect(near).toBeGreaterThanOrEqual(4);
   });
 

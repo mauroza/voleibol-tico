@@ -122,9 +122,9 @@ export class Simulation {
   /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
   private decoyRun: { key: string; time: number } | null = null;
   /** Saque en curso: lanzamiento y carrera hasta el golpe en `at`. */
-  private pendingServe: { type: ServeType; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3 } | null = null;
+  private pendingServe: { type: ServeType; power: Power; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3 } | null = null;
   /** Saque que hará la IA en este punto (para animarlo antes). */
-  private aiServe: { type: ServeType; zone: Zone } | null = null;
+  private aiServe: { type: ServeType; power: Power; zone: Zone } | null = null;
   /** Tipo del último saque (la pelota del flotado baila; la del de suspensión gira). */
   servedType: ServeType | null = null;
   /** El contacto en curso es una plancha. */
@@ -307,8 +307,8 @@ export class Simulation {
         this.phaseTimer -= dt;
         if (this.phaseTimer <= 0) {
           if (this.match.serving !== this.control) {
-            const ai = this.aiServe ?? chooseServe(this.rng, this.player(this.court(this.match.serving)[0]).def);
-            this.beginServe(ai.type, ai.zone, this.aiTiming(this.match.serving), null, false);
+            const ai = this.aiServe ?? this.chooseAiServe();
+            this.beginServe(ai.type, ai.power, ai.zone, this.aiTiming(this.match.serving), null, false);
           } else if (!this.decision) this.openServeDecision();
           else if (this.time - this.decision.startTime > TUNING.decision.serveTimeout) this.beginUserServe();
         }
@@ -348,7 +348,7 @@ export class Simulation {
     this.phase = 'preServe';
     this.phaseTimer = TUNING.servePause;
     this.pendingServe = null;
-    this.aiServe = this.match.serving !== this.control ? chooseServe(this.rng, this.player(courtPlayers(this.match, this.match.serving)[0]).def) : null;
+    this.aiServe = this.match.serving !== this.control ? this.chooseAiServe(courtPlayers(this.match, this.match.serving)[0]) : null;
     this.plan = null;
     this.netFaultTime = null;
     this.last = null;
@@ -697,12 +697,25 @@ export class Simulation {
     const timing: Timing = d.pressedAt === null ? 'bad' : powerTiming(power);
     const aim = d.aim;
     this.closeDecision(timing, power);
-    this.beginServe(TUNING.power.serveType[power], 1, timing, aim, true);
+    const server = this.player(this.court(this.match.serving)[0]);
+    this.beginServe(server.def.serveStyle, power, 1, timing, aim, true);
   }
 
-  private beginServe(type: ServeType, zone: Zone, timing: Timing, aim: { x: number; z: number } | null, user: boolean): void {
+  /** La IA saca con su estilo; la fuerza, al azar (más fuerte si saca bien). */
+  private chooseAiServe(key = this.court(this.match.serving)[0]): { type: ServeType; power: Power; zone: Zone } {
+    const def = this.player(key).def;
+    const { zone } = chooseServe(this.rng, def);
+    const power = this.rng.weighted<Power>([
+      { item: 'soft', weight: 0.2 },
+      { item: 'medium', weight: 0.55 },
+      { item: 'strong', weight: 0.1 + 0.3 * (def.attrs.serve / 100) },
+    ]);
+    return { type: def.serveStyle, power, zone };
+  }
+
+  private beginServe(type: ServeType, power: Power, zone: Zone, timing: Timing, aim: { x: number; z: number } | null, user: boolean): void {
     const server = this.player(this.court(this.match.serving)[0]);
-    this.pendingServe = { type, zone, timing, aim, at: this.time + TUNING.serveWindup[type], user, from: clone(server.pos) };
+    this.pendingServe = { type, power, zone, timing, aim, at: this.time + TUNING.serveWindup[type], user, from: clone(server.pos) };
   }
 
   /** Carrera del sacador hacia la red en el final de la secuencia (salta desde atrás de la línea de fondo). */
@@ -728,7 +741,9 @@ export class Simulation {
     const choice = { type: ps.type, zone: ps.zone };
     const timing = ps.timing;
     const serveAim = ps.aim;
-    const cfg = TUNING.serve[choice.type];
+    const base = TUNING.serve[choice.type];
+    const pw = TUNING.power.serve[ps.power];
+    const cfg = { ...base, speed: base.speed * pw.speed, risk: base.risk * pw.risk };
     const cost = TUNING.stamina.cost;
     this.tire(server.key, choice.type === 'jump' ? cost.jumpServe : choice.type === 'float' ? cost.floatServe : cost.safeServe);
     // Golpe un poco adelante del cuerpo (en el salto, ya en el aire sobre la línea de fondo).

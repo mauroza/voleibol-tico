@@ -60,7 +60,7 @@ describe('5-1 y rotaciones', () => {
     const receivers: Role[] = [];
     let setterFirst = 0;
     let liberoSets = 0;
-    for (let seed = 1; seed <= 8; seed++) {
+    for (let seed = 1; seed <= 16; seed++) {
       runMatch(opts(seed), (sim) => {
         let first: Role | null = null;
         sim.bus.on((e) => {

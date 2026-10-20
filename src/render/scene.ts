@@ -324,7 +324,7 @@ export class MatchView {
     if (floater) {
       const land = landingTime(sim.ball);
       const k = Math.min(1, Math.max(0, (t - sim.ball.t0) / Math.max(0.1, land - sim.ball.t0)));
-      const sway = Math.sin(k * Math.PI) * 0.28 * Math.sin((t - sim.ball.t0) * Math.PI * 2 * 1.7);
+      const sway = Math.sin(k * Math.PI) * 0.45 * Math.sin((t - sim.ball.t0) * Math.PI * 2 * 1.25);
       this.ball.position.x += (-v.z / flat) * sway;
       this.ball.position.z += (v.x / flat) * sway;
       return;
@@ -351,7 +351,7 @@ export class MatchView {
     }
     const k = 1 - countdown / toss;
     const p = this.sim.player(key).pos;
-    const apex = seq.type === 'jump' ? 5.6 : seq.type === 'float' ? 3.9 : 3.4;
+    const apex = seq.type === 'jump' ? 6.2 : seq.type === 'float' ? 3.7 : 3.4;
     const contact = TUNING.serve[seq.type].contactHeight;
     const y = k < 0.65
       ? hand.y + (apex - hand.y) * (1 - (1 - k / 0.65) ** 2)

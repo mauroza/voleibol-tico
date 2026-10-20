@@ -88,7 +88,7 @@ export function makeTeam(spec: TeamSpec): TeamDef {
       const value = attrs[key] + (bonus[key] ?? 0) + rng.range(-variance, variance);
       attrs[key] = Math.round(Math.min(99, Math.max(1, value)));
     }
-    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, specialty: 'serve', skin: 0, hair: 0, armSleeve: 0, legSleeve: 0, sleeveColor: 0 };
+    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, specialty: 'serve', serveStyle: 'float', skin: 0, hair: 0, armSleeve: 0, legSleeve: 0, sleeveColor: 0 };
   });
   // Físico con su propio generador: no altera los atributos ya sorteados.
   const body = createRng(seed * 7919 + 13);
@@ -106,6 +106,9 @@ export function makeTeam(spec: TeamSpec): TeamDef {
   for (const p of roster) {
     p.specialty = looks.pick(ROLE_SPECIALTIES[p.role]);
     p.attrs[p.specialty] = Math.min(99, p.attrs[p.specialty] + SPECIALTY_BONUS);
+    // Saque propio: los sacadores fuertes, los opuestos y la figura sacan en suspensión; el resto, flotado.
+    const jumpChance = (p.attrs.serve - 55) / 35 + (p.role === 'OP' ? 0.3 : 0) + (p.star ? 0.5 : 0) - (p.role === 'L' || p.role === 'S' ? 0.4 : 0);
+    p.serveStyle = looks.chance(Math.min(0.95, Math.max(0.05, jumpChance))) ? 'jump' : 'float';
     p.skin = weighted(looks.next(), skinWeights);
     // Pelo: la mayoría natural, uno de cada tres llamativo; algunos rapados.
     p.hair = weighted(looks.next(), [0.24, 0.16, 0.1, 0.05, 0.05, 0.05, 0.06, 0.05, 0.04, 0.04, 0.04, 0.12]);

@@ -90,7 +90,12 @@ export const TUNING = {
       medium: { speed: 1, risk: 1, noise: 1 },
       strong: { speed: 1.32, risk: 1.35, noise: 1.15 },
     },
-    serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
+    /** Saque: la barra es la fuerza dentro del estilo del sacador (velocidad y riesgo). */
+    serve: {
+      soft: { speed: 0.85, risk: 0.5 },
+      medium: { speed: 1, risk: 1 },
+      strong: { speed: 1.12, risk: 1.5 },
+    },
   },
   /** Pelota que pega en el cuerpo de un defensor: radio del cuerpo y cómo sale (alta y cerca, jugable). */
   bodyHit: { radius: 0.32, quality: [0.1, 0.4], flight: [1.0, 1.5], playable: 0.25 },

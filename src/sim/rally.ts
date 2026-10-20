@@ -3,7 +3,7 @@ import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type Serve
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
-import { contactMeter, judgeTiming, meterOf, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
+import { judgeTiming, meterOf, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
@@ -11,7 +11,7 @@ import { AVG_HEIGHT, attackContactHeight, blockReach, isTall, moveSpeed, type Pl
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
 import { createRng, type Rng } from './rng';
 import { TUNING } from './tuning';
-import { clamp, clamp01, clone, distXZ, v3, type Vec3 } from './vec';
+import { clamp, clamp01, clone, distXZ, len2, v3, type Vec3 } from './vec';
 
 export type TempoProfile = keyof typeof TUNING.decision.profiles;
 
@@ -21,6 +21,8 @@ export interface SimOptions {
   teamA: TeamDef;
   teamB: TeamDef;
   firstServer?: TeamId;
+  /** Online: adelanto de las barras de timing (segundos de simulación). */
+  inputLead?: number;
   /** Ritmo de las decisiones (por defecto, el clásico con cámara lenta marcada). */
   tempo?: TempoProfile;
   /**
@@ -104,6 +106,8 @@ export class Simulation {
   readonly teams: Record<TeamId, TeamDef>;
   readonly control: TeamId | null;
   readonly tempo: TempoProfile;
+  /** Online: adelanto de las barras (s de simulación) que cubre el viaje de la tecla por la red. */
+  readonly inputLead: number;
   phase: Phase = 'preServe';
   time = 0;
   ball: Trajectory = { p0: v3(), v0: v3(), t0: 0, g: GRAVITY };
@@ -169,6 +173,7 @@ export class Simulation {
     this.control = opts.control ?? null;
     this.humans = new Set(opts.humans ?? (opts.control ? [opts.control] : []));
     this.tempo = opts.tempo ?? 'clasico';
+    this.inputLead = opts.inputLead ?? 0;
     this.teams = { A: opts.teamA, B: opts.teamB };
     for (const team of TEAM_IDS) {
       for (const def of this.teams[team].roster) {
@@ -507,7 +512,7 @@ export class Simulation {
     for (const p of this.players.values()) {
       const dx = p.target.x - p.pos.x;
       const dz = p.target.z - p.pos.z;
-      const d = Math.hypot(dx, dz);
+      const d = len2(dx, dz);
       if (d < 1e-6) continue;
       const len = Math.min(d, moveSpeed(p.def) * dt);
       p.pos.x += (dx / d) * len;
@@ -556,7 +561,7 @@ export class Simulation {
           const b = ps[j].pos;
           let dx = b.x - a.x;
           let dz = b.z - a.z;
-          let d = Math.hypot(dx, dz);
+          let d = len2(dx, dz);
           if (d >= min) continue;
           if (d < 1e-6) {
             dx = 0;
@@ -578,7 +583,7 @@ export class Simulation {
   // ---------- decisiones del usuario ----------
 
   private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null, playerKey: string): void {
-    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null, aim: null, aimSide: null, meter: 'timing' };
+    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null, aim: null, aimSide: null, meter: 'timing', lead: this.inputLead };
     const team = this.player(playerKey).team;
     this.decisions[team] = decision;
     this.bus.emit({ type: 'decision', team, decision });
@@ -626,7 +631,7 @@ export class Simulation {
     d.options.forEach((o) => {
       if (o.option.id !== 'set') return;
       const at = spot(team, ATTACK_POINTS[o.option.choice.option]);
-      const dist = Math.hypot(at.x - aim.x, at.z - aim.z);
+      const dist = len2(at.x - aim.x, at.z - aim.z);
       if (dist < near) {
         near = dist;
         attacker = o.option.choice.attackerKey;
@@ -762,10 +767,10 @@ export class Simulation {
       return { option: d.options[index].option, timing, aim: null };
     }
     const option = d.chosen === null ? null : d.options[d.chosen].option;
-    let timing: Timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time);
+    let timing: Timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time - (d.lead ?? 0));
     let power: Power | undefined;
     if (d.meter === 'power') {
-      power = d.pressedAt === null ? 'medium' : powerZone(contactMeter(d.pressedAt, plan.time));
+      power = d.pressedAt === null ? 'medium' : powerZone(meterOf(d, this.time));
       timing = d.pressedAt === null ? 'bad' : powerTiming(power);
     }
     const aim = d.aim;
@@ -1114,7 +1119,7 @@ export class Simulation {
       if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
         // El salto con ESPACIO es opcional: sin tocarlo el bloqueo sale normal; bien medido, reforzado.
         if (blockDecision && blockDecision.chosen !== null) {
-          blockTiming = blockDecision.pressedAt === null ? 'good' : judgeTiming(blockDecision.pressedAt, blockDecision.contactTime!);
+          blockTiming = blockDecision.pressedAt === null ? 'good' : judgeTiming(blockDecision.pressedAt, blockDecision.contactTime! - (blockDecision.lead ?? 0));
         }
         this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
       } else if (last.kind === 'attack' && block && block.scheme > 0) {
@@ -1319,7 +1324,7 @@ export class Simulation {
         const d = distXZ(p.pos, p.target) || 1;
         const x = p.pos.x + ((p.target.x - p.pos.x) / d) * step;
         const z = p.pos.z + ((p.target.z - p.pos.z) / d) * step;
-        if (b.y < p.def.height && Math.hypot(b.x - x, b.z - z) < r) {
+        if (b.y < p.def.height && len2(b.x - x, b.z - z) < r) {
           return { key, team, time: t, point: b, kind: this.last?.kind === 'serve' ? 'reception' : 'dig', low: true, bodyHit: true };
         }
       }
@@ -1437,7 +1442,7 @@ export class Simulation {
         const reach = plan.low ? c.diveReach : c.bumpReach;
         const vx = this.ball.v0.x;
         const vz = this.ball.v0.z;
-        const len = Math.hypot(vx, vz);
+        const len = len2(vx, vz);
         if (len < 0.5) return v3(pt.x - toNet * reach, 0, pt.z);
         return v3(pt.x + (vx / len) * reach, 0, pt.z + (vz / len) * reach);
       }
@@ -1515,10 +1520,15 @@ export class Simulation {
     return v3(s * this.rng.range(3, 8), COURT.ballRadius, side * (COURT.halfWidth + this.rng.range(0.4, 1.5))); // afuera lateral
   }
 
+  /** Punto al azar dentro de un círculo (por rechazo, sin trigonometría: igual en todos los navegadores). */
   private noisy(p: Vec3, radius: number): Vec3 {
-    const a = this.rng.range(0, Math.PI * 2);
-    const r = radius * Math.sqrt(this.rng.next());
-    return v3(p.x + Math.cos(a) * r, p.y, p.z + Math.sin(a) * r);
+    let x = 0;
+    let z = 0;
+    do {
+      x = this.rng.range(-1, 1);
+      z = this.rng.range(-1, 1);
+    } while (x * x + z * z > 1);
+    return v3(p.x + x * radius, p.y, p.z + z * radius);
   }
 
   private keepOnSide(team: TeamId, p: Vec3): Vec3 {

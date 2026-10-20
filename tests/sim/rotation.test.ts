@@ -119,3 +119,31 @@ describe('colocación en abanico', () => {
     expect(setToMiddle(0.38)).toBe('Semi-rápida al centro');
   }, 60_000);
 });
+
+describe('cada colocación termina en remate', () => {
+  it('pipe, zaguero, tensa y rápida llegan al remate (no se vuelven balón libre)', () => {
+    const res: Record<string, { sets: number; attacks: number }> = {};
+    for (let seed = 1; seed <= 20; seed++) {
+      runMatch(opts(seed), (sim) => {
+        const s = sim as unknown as { doSet: (...a: unknown[]) => void; intent: { option: string } | null };
+        let opt: string | null = null;
+        const orig = s.doSet.bind(sim);
+        s.doSet = (...a: unknown[]) => {
+          orig(...a);
+          opt = s.intent?.option ?? null;
+          if (opt) (res[opt] ??= { sets: 0, attacks: 0 }).sets += 1;
+        };
+        sim.bus.on((e) => {
+          if (e.type !== 'contact' || e.kind === 'set' || !opt) return;
+          if (e.kind === 'attack') res[opt].attacks += 1;
+          opt = null;
+        });
+      });
+    }
+    for (const [option, r] of Object.entries(res)) {
+      if (r.sets < 5) continue;
+      expect(r.attacks / r.sets, option).toBeGreaterThan(0.95);
+    }
+    expect(res.pipe?.sets ?? 0).toBeGreaterThan(5);
+  }, 120_000);
+});

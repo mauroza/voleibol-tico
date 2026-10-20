@@ -69,6 +69,8 @@ export const TUNING = {
     tipFlightTime: 0.9,
     /** La figura del equipo remata más rápido y la pelota pica más alto. */
     starSpeed: 1.1,
+    /** El atacante sabe a dónde va la colocación: arranca casi sin demora. */
+    approachReaction: 0.05,
     /** Cada metro de estatura sobre el promedio: remate más rápido. */
     heightSpeed: 0.9,
     /** Ataque de zaguero tipo Nishida: salto largo desde lejos de la línea y mucho más alto. */

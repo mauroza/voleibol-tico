@@ -1074,7 +1074,7 @@ export class Simulation {
     if (n === 3) {
       const attacker = this.intent?.key;
       if (attacker && court.includes(attacker)) {
-        const r = this.reach(attacker, [this.attackHeight(this.player(attacker), this.intent!.option, this.intent!.outOfSystem)]);
+        const r = this.reach(attacker, [this.attackHeight(this.player(attacker), this.intent!.option, this.intent!.outOfSystem)], TUNING.attack.approachReaction);
         if (r) return { key: attacker, team, time: r.time, point: r.point, kind: 'attack', low: false };
       }
       return this.bestContact(team, court, low, 'free');
@@ -1113,7 +1113,8 @@ export class Simulation {
   }
 
   /** Primer contacto alcanzable por el jugador entre las alturas dadas (en orden de preferencia). */
-  private reach(key: string, heights: readonly number[]): Reach | null {
+  /** `reaction`: demora antes de arrancar; el atacante que espera su colocación ya sabe a dónde va (casi nula). */
+  private reach(key: string, heights: readonly number[], reaction: number = TUNING.reactionTime): Reach | null {
     const p = this.player(key);
     for (let i = 0; i < heights.length; i++) {
       const time = timeAtHeightDescending(this.ball, heights[i]);
@@ -1124,7 +1125,7 @@ export class Simulation {
       // El defensor que cubre la marca de defensa lee el remate: llega mejor si la pelota va cerca de la marca.
       const read = [this.blockHold, this.blockSetup].find((bk) => bk?.focus && bk.focusKey === key && bk.team === p.team);
       const reads = !!read?.focus && distXZ(v3(read.focus.x, 0, read.focus.z), point) < TUNING.defense.focusRadius;
-      const available = time - this.time - TUNING.reactionTime + (reads ? TUNING.defense.reactionBonus : 0);
+      const available = time - this.time - reaction + (reads ? TUNING.defense.reactionBonus : 0);
       const distance = Math.max(0, distXZ(p.pos, point) - TUNING.reachRadius - (reads ? TUNING.defense.reachBonus : 0));
       const slack = available - distance / moveSpeed(p.def);
       if (slack >= 0) return { time, point, slack, low: i > 0 };

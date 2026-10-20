@@ -3,7 +3,7 @@ export const TUNING = {
   dt: 1 / 120,
   reactionTime: 0.42,
   /** Distancia que un jugador cubre estirándose o lanzándose, sin desplazarse. */
-  reachRadius: 0.8,
+  reachRadius: 0.7,
   minPlanLead: 0.12,
   /** Si la pelota rival va a caer fuera por más de esto, se deja caer. */
   letDropMargin: 0.25,
@@ -67,7 +67,7 @@ export const TUNING = {
     decoyBite: 0.45,
   },
   attack: {
-    base: 1.12,
+    base: 1.17,
     minSpeed: 21,
     speedRange: 13,
     gravityBonus: 6,
@@ -113,6 +113,11 @@ export const TUNING = {
       strong: { speed: 1.12, risk: 1.5 },
     },
   },
+  /**
+   * Defensa de reflejo ante remates: si la pelota pasa dentro de este radio de un defensor (más amplio cuanto mejor
+   * defiende), la levanta sin alcanzar a moverse. Sale incómoda; si el remate es muy duro puede pasarse al otro lado.
+   */
+  reflex: { radius: 0.75, perDefense: 0.45, minY: 0.25, maxY: 2.1, quality: [0.12, 0.55], overpass: 0.3 },
   /** Pelota que pega en el cuerpo de un defensor: radio del cuerpo y cómo sale (alta y cerca, jugable). */
   bodyHit: { radius: 0.32, quality: [0.1, 0.4], flight: [1.0, 1.5], playable: 0.25 },
   /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */

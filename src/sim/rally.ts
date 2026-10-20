@@ -73,6 +73,8 @@ interface Plan {
   dive?: boolean;
   /** La pelota le pega en el cuerpo (no la eligió): sale rebotada. */
   bodyHit?: boolean;
+  /** Defensa de reflejo: el remate le pasó cerca y la levantó sin moverse. */
+  reflex?: boolean;
   block?: BlockOutcome;
 }
 
@@ -170,6 +172,8 @@ export class Simulation {
   private bite: { key: string; time: number } | null = null;
   /** El contacto en curso es un pelotazo en el cuerpo. */
   private bodyHit = false;
+  /** El contacto en curso es una defensa de reflejo. */
+  private reflexing = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
@@ -966,7 +970,7 @@ export class Simulation {
   /** Abre una decisión si el próximo contacto es del equipo controlado, o el esquema de bloqueo ante el remate rival. */
   private openDecisionFor(plan: Plan | null): void {
     // El pelotazo en el cuerpo no se decide: pasa solo.
-    if (!plan || plan.bodyHit) return;
+    if (!plan || plan.bodyHit || plan.reflex) return;
     if (this.humans.has(plan.team) && plan.kind !== 'block' && !this.decisions[plan.team]) {
       const kind: DecisionKind = plan.kind === 'reception' || plan.kind === 'dig' ? 'pass' : plan.kind === 'set' ? 'set' : 'attack';
       this.openDecision(kind, this.contactOptions(plan), plan.time, plan.key);
@@ -1181,6 +1185,7 @@ export class Simulation {
     const at = positionAt(this.ball, t);
     this.plan = null;
     this.diving = !!plan.dive;
+    this.reflexing = !!plan.reflex;
     this.bodyHit = !!plan.bodyHit;
     const ctl = this.resolveDecision(plan);
     switch (plan.kind) {
@@ -1226,7 +1231,22 @@ export class Simulation {
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, kind, q);
     this.intent = null;
-    if (this.bodyHit) {
+    if (this.reflexing && !this.bodyHit) {
+      // Defensa de reflejo: sale como puede. Con un remate muy duro se pasa al otro lado (balón regalado).
+      const rf = TUNING.reflex;
+      const speed = len2(this.ball.v0.x, this.ball.v0.z);
+      const hard = clamp01((speed - 18) / 22);
+      q = this.rng.range(rf.quality[0], rf.quality[1]) * (0.6 + 0.4 * (p.def.attrs.defense / 100)) * (1 - 0.5 * hard);
+      this.last!.quality = q;
+      if (q < rf.overpass * (0.5 + hard)) {
+        const over = toWorld(otherTeam(p.team), this.rng.range(2.5, 7), this.rng.range(-3.5, 3.5), COURT.ballRadius);
+        this.ball = this.launchClearing(at, over, this.rng.range(1.2, 1.6), GRAVITY, t, true);
+      } else {
+        // Incómoda: alta y en el propio campo, lejos del colocador; hay que arreglarla.
+        const up = toWorld(p.team, this.rng.range(2.5, 6.5), this.rng.range(-3.5, 3.5), TUNING.passHeight);
+        this.ball = launch(at, up, this.rng.range(1.2, 1.7), t);
+      }
+    } else if (this.bodyHit) {
       // Pelotazo en el cuerpo: sale alta y cerca, sin dirección; algún compañero puede arreglarla.
       const bh = TUNING.bodyHit;
       q = this.rng.range(bh.quality[0], bh.quality[1]);
@@ -1521,7 +1541,31 @@ export class Simulation {
     }
     const kind: ContactKind = last.kind === 'serve' ? 'reception' : 'dig';
     const nonSetters = court.filter((k) => this.player(k).def.role !== 'S');
-    return this.bestContact(team, nonSetters, low, kind) ?? this.bestContact(team, court, low, kind);
+    return this.bestContact(team, nonSetters, low, kind) ?? this.bestContact(team, court, low, kind)
+      ?? (last.kind === 'attack' ? this.reflexDig(team, court) : null);
+  }
+
+  /**
+   * Remate que nadie alcanza a perseguir: si pasa cerca de un defensor (dentro de su radio de reflejo y a una altura
+   * defendible), la levanta donde está. El primero por el que pase la pelota.
+   */
+  private reflexDig(team: TeamId, court: readonly string[]): Plan | null {
+    const cfg = TUNING.reflex;
+    const tr = this.ball;
+    const end = landingTime(tr);
+    for (let t = Math.max(this.time + TUNING.minPlanLead, tr.t0); t < end; t += 0.01) {
+      const b = positionAt(tr, t);
+      if (sideOfX(b.x) !== team || b.y < cfg.minY || b.y > cfg.maxY) continue;
+      for (const key of court) {
+        const p = this.player(key);
+        if (p.def.role === 'S' && court.length > 1) continue;
+        const r = cfg.radius + cfg.perDefense * (p.def.attrs.defense / 100);
+        const d = len2(b.x - p.pos.x, b.z - p.pos.z);
+        // Lejos del cuerpo: estira los brazos o se lanza (plancha) hacia la pelota.
+        if (d <= r) return { key, team, time: t, point: b, kind: 'dig', low: true, reflex: true, dive: d > 0.95 };
+      }
+    }
+    return null;
   }
 
   private bestContact(team: TeamId, keys: readonly string[], heights: readonly number[], kind: ContactKind, forceLow = false): Plan | null {
@@ -1727,6 +1771,8 @@ export class Simulation {
    * de la pelota (queda arriba del brazo derecho); en el bloqueo, pegado a la red.
    */
   private standPoint(plan: Plan): Vec3 {
+    // Reflejo: no hay tiempo de moverse; se queda donde está.
+    if (plan.reflex) return clone(this.player(plan.key).pos);
     const pt = plan.point;
     const toNet = -sideSign(plan.team); // signo de x hacia la red
     const right = -sideSign(plan.team); // signo de z del lado derecho mirando la red

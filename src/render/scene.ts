@@ -581,10 +581,12 @@ export class MatchView {
     } else {
       // Remate fuerte (tenso, con efecto) o finta (globo corto).
       const tall = isTall(this.sim.player(d.playerKey).def);
-      const tip = Math.abs(x) < (tall ? TUNING.attack.tallTipDepth : TUNING.attack.tipDepth);
+      // Adelante: finta mientras la barra está en verde; en amarillo o rojo, remate en picada.
+      const front = Math.abs(x) < (tall ? TUNING.attack.tallTipDepth : TUNING.attack.tipDepth);
+      const tip = front && powerZone(meterOf(d, this.sim.time)) === 'soft';
       from.set(up!.point.x, up!.point.y, up!.point.z);
       T = tip ? TUNING.attack.tipFlightTime : Math.max(0.15, Math.hypot(x - from.x, z - from.z) / (TUNING.attack.minSpeed + TUNING.attack.speedRange * 0.5));
-      g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus + (tall ? TUNING.attack.tallGravity : 0);
+      g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus + (tall ? TUNING.attack.tallGravity : 0) + (front ? TUNING.attack.frontGravity : 0);
       spread = TUNING.attack.noise * 0.35;
     }
     this.aimSpread.scale.setScalar(spread);

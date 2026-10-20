@@ -87,6 +87,8 @@ export const TUNING = {
     tallHeight: 2.0,
     tallTipDepth: 1.8,
     tallGravity: 6,
+    /** Remate fuerte a la zona de adelante (entre la línea de 3 m y la red): baja en picada. */
+    frontGravity: 9,
     noise: 2.0,
     targetSamples: 8,
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
@@ -99,7 +101,7 @@ export const TUNING = {
     spike: {
       soft: { speed: 0.75, risk: 0.6, noise: 0.7 },
       medium: { speed: 1, risk: 1, noise: 1 },
-      strong: { speed: 1.32, risk: 1.35, noise: 1.15 },
+      strong: { speed: 1.45, risk: 1.35, noise: 1.15 },
     },
     /** Saque: la barra es la fuerza dentro del estilo del sacador (velocidad y riesgo). */
     serve: {

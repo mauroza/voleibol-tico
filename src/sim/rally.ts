@@ -109,6 +109,7 @@ interface WarmLane {
   option: SetOption;
   ball: Trajectory;
   plan: Plan | null;
+  bounces: number;
 }
 
 export class Simulation {
@@ -515,7 +516,7 @@ export class Simulation {
       }
       queues[team] = q;
     }
-    const lane = (start: number): WarmLane => ({ stage: 'idle', until: this.time + start, hitter: '', option: 'zone4', ball: this.restingBall(), plan: null });
+    const lane = (start: number): WarmLane => ({ stage: 'idle', until: this.time + start, hitter: '', option: 'zone4', ball: this.restingBall(), plan: null, bounces: 0 });
     // Los dos equipos a la vez, un poco desfasados para que no rematen en el mismo instante.
     this.warm = { left: seconds, queues, lanes: { A: lane(1.2), B: lane(2.4) } };
     this.warmFormation(true);
@@ -657,7 +658,13 @@ export class Simulation {
       const at = pos();
       const target = this.noisy(v3(aim.x, COURT.ballRadius, aim.z), 0.4 * pw.noise);
       const speed = (cfg.minSpeed + cfg.speedRange * 0.7 * (p.def.attrs.attackPower / 100)) * pw.speed;
-      lane.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus, this.time, true);
+      // Igual que en el partido: adelante y en verde es finta; si no, remate (en picada si va corto).
+      const front = Math.abs(aim.x) < (isTall(p.def) ? cfg.tallTipDepth : cfg.tipDepth);
+      if (front && power === 'soft') lane.ball = this.launchClearing(at, target, cfg.tipFlightTime, GRAVITY, this.time, true);
+      else {
+        const steep = (isTall(p.def) ? cfg.tallGravity : 0) + (front ? cfg.frontGravity : 0);
+        lane.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + steep, this.time, true);
+      }
       this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team, kind: 'attack', quality: power === 'strong' ? 0.95 : 0.75, warmup: true, at });
       this.tire(p.key, TUNING.stamina.cost.attack * 0.3);
       // Pasa al final de la fila.
@@ -665,10 +672,18 @@ export class Simulation {
       q.push(q.shift()!);
       lane.plan = null;
       lane.stage = 'fly';
+      lane.bounces = 0;
       lane.until = landingTime(lane.ball) + tune.gap;
       return;
     }
     if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
+      // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
+      const next = lane.bounces < TUNING.bounce.max ? this.nextBounce(lane.ball) : null;
+      if (next) {
+        lane.ball = next;
+        lane.bounces += 1;
+        return;
+      }
       lane.stage = 'idle';
       this.warmFormation();
     }
@@ -795,6 +810,15 @@ export class Simulation {
       g: GRAVITY,
     };
     this.bounces += 1;
+  }
+
+  /** Pique de un balón que llegó al piso: sigue con menos energía, o null si ya casi no sube. */
+  private nextBounce(tr: Trajectory, restitution = TUNING.bounce.restitution): Trajectory | null {
+    const land = landingTime(tr);
+    const vy = tr.v0.y - tr.g * (land - tr.t0);
+    if (-vy * restitution < TUNING.bounce.minUp) return null;
+    const p = positionAt(tr, land);
+    return { p0: v3(p.x, COURT.ballRadius, p.z), v0: v3(tr.v0.x * TUNING.bounce.friction, -vy * restitution, tr.v0.z * TUNING.bounce.friction), t0: land, g: GRAVITY };
   }
 
   /** Nadie ocupa el lugar de un compañero: separación mínima entre los jugadores en cancha de cada equipo. */
@@ -1252,8 +1276,10 @@ export class Simulation {
     const opp = otherTeam(p.team);
     const aim = ctl?.option?.id === 'aim' && ctl.aim ? ctl.aim : null;
     // Con mira: cerca de la red es finta; si no, remate. Sin mira, la IA (o la opción elegida) decide el tiro.
+    // Con mira: adelante (cerca de la red) es finta solo si se golpea en verde; en amarillo o rojo es remate en picada.
+    const front = !!aim && Math.abs(aim.x) < (isTall(p.def) ? cfg.tallTipDepth : cfg.tipDepth);
     const shot: AttackShot = aim
-      ? (Math.abs(aim.x) < (isTall(p.def) ? cfg.tallTipDepth : cfg.tipDepth) ? 'tip' : 'cross')
+      ? (front && ctl?.power === 'soft' ? 'tip' : 'cross')
       : ctl?.option?.id === 'shot' ? ctl.option.shot : chooseShot(this.rng);
     let q = computeQuality(
       {
@@ -1280,7 +1306,8 @@ export class Simulation {
     } else {
       const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed * (p.def.star ? cfg.starSpeed : 1) * (1 + cfg.heightSpeed * (p.def.height - AVG_HEIGHT));
       // En picada: el alto le pega más de arriba hacia abajo (más gravedad efectiva = trayectoria más empinada).
-      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + (isTall(p.def) ? cfg.tallGravity : 0), t, !isError);
+      const steep = (isTall(p.def) ? cfg.tallGravity : 0) + (front ? cfg.frontGravity : 0);
+      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + steep, t, !isError);
       this.threat = q * clamp01(speed / 28);
     }
   }

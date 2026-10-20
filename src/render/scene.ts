@@ -165,7 +165,7 @@ export class MatchView {
   private replay: { playhead: number; to: number } | null = null;
   private replayPointTime = 0;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
-  private pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+  private pixelRatio = Math.min(window.devicePixelRatio, window.matchMedia?.('(pointer: coarse)').matches ? 1.25 : 1.5);
   private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {
@@ -675,6 +675,9 @@ export class MatchView {
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
+    // Pantalla más angosta que 3:2 (tablet, teléfono en vertical): se abre el ángulo para ver el mismo ancho de cancha.
+    const wide = 1.5;
+    this.camera.fov = w / h >= wide ? 45 : Math.min(105, (2 * Math.atan(Math.tan((45 * Math.PI) / 360) * (wide / (w / h))) * 180) / Math.PI);
     this.camera.updateProjectionMatrix();
   }
 

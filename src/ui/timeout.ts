@@ -2,6 +2,7 @@ import type { TeamId } from '../sim/court';
 import { SPECIALTY_LABELS } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { ROLE_LABELS } from './menu';
+import { IS_TOUCH } from './touch';
 
 /**
  * Tiempo y cambios: con la pelota muerta, T (o el botón) pide tiempo y pausa el juego.
@@ -50,7 +51,7 @@ export class TimeoutPanel {
   }
 
   update(): void {
-    this.button.textContent = `T · Tiempo (${this.sim.timeouts[this.team]}) · Cambios ${this.sim.subsLeft[this.team]}`;
+    this.button.textContent = `${IS_TOUCH ? '' : 'T · '}Tiempo (${this.sim.timeouts[this.team]}) · Cambios ${this.sim.subsLeft[this.team]}`;
     this.button.disabled = !this.sim.deadBall || this.sim.timeouts[this.team] <= 0;
     // En el calentamiento no hay tiempos.
     this.button.style.visibility = this.sim.phase === 'warmup' ? 'hidden' : '';

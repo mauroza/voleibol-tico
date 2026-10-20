@@ -1,6 +1,7 @@
 import type { TeamId } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 import { TUNING } from '../sim/tuning';
+import { IS_TOUCH } from './touch';
 
 /**
  * Challenge y roces: tras una jugada cerrada (pelota a centímetros de la línea o roce leve del bloqueo) aparece
@@ -55,7 +56,7 @@ export class ChallengePanel {
     this.button.style.display = can ? '' : 'none';
     if (can && call) {
       const kind = call.kind === 'touch' ? '¿Roce del bloqueo?' : '¿Dentro o fuera?';
-      (this.button.firstChild as HTMLElement).textContent = `C · Challenge — ${kind} (quedan ${this.sim.challengesLeft[this.team]})`;
+      (this.button.firstChild as HTMLElement).textContent = `${IS_TOUCH ? '' : 'C · '}Challenge — ${kind} (quedan ${this.sim.challengesLeft[this.team]})`;
       this.bar.style.transform = `scaleX(${Math.max(0, Math.min(1, (call.until - this.sim.time) / TUNING.calls.window))})`;
     }
     this.verdict.style.opacity = performance.now() < this.verdictUntil ? '1' : '0';

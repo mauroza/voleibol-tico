@@ -3,3 +3,5 @@ dist
 dist-artifact
 .env.local
 bot.log
+bot2.log
+bot3.log

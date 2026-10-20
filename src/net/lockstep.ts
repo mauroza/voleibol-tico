@@ -13,7 +13,12 @@ interface Input {
   x?: number;
   z?: number;
   at?: number;
+  /** Jugada para la que se tocó (tipo, jugador e inicio): si al llegar ya es otra, la tecla no se aplica. */
+  dk: string;
 }
+
+/** Identidad de una decisión, igual en las dos computadoras (la simulación es la misma). */
+const decisionKey = (d: { kind: string; playerKey: string; startTime: number }) => `${d.kind}:${d.playerKey}:${d.startTime}`;
 
 /**
  * Ticks de simulación (1/120 s) entre que se toca una tecla y que se aplica: lo que tarda en cruzar la red.
@@ -95,11 +100,12 @@ export class Lockstep {
     this.push({ k: 'aim', x, z }, false);
   }
 
-  private push(input: Omit<Input, 'tick' | 'seq' | 'team'>, send = true): void {
-    if (!this.sim.decisions[this.local]) return;
+  private push(input: Omit<Input, 'tick' | 'seq' | 'team' | 'dk'>, send = true): void {
+    const d = this.sim.decisions[this.local];
+    if (!d) return;
     // Nunca antes de lo ya prometido: el rival puede haber simulado hasta ahí.
     const tick = Math.max(this.tick + this.delay, this.promised + 1);
-    const full: Input = { ...input, tick, seq: this.seq++, team: this.local };
+    const full: Input = { ...input, tick, seq: this.seq++, team: this.local, dk: decisionKey(d) };
     this.queue.push(full);
     this.unacked.push(full);
     if (send) this.flush();
@@ -210,6 +216,9 @@ export class Lockstep {
     const due = this.queue.filter((i) => i.tick === tick).sort((a, b) => (a.team === b.team ? a.seq - b.seq : a.team < b.team ? -1 : 1));
     if (!due.length) return;
     for (const i of due) {
+      // Una tecla que llega cuando su jugada ya pasó no se aplica a la siguiente (sería un golpe que nadie tocó).
+      const open = this.sim.decisions[i.team];
+      if (!open || decisionKey(open) !== i.dk) continue;
       if (i.k === 'choose') this.apply.choose(i.i!, i.team);
       else if (i.k === 'aim') this.apply.setAim(i.x!, i.z!, i.team);
       else this.apply.press(i.at!, i.team);

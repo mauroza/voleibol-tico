@@ -29,7 +29,7 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
     ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
   attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red: verde = finta, amarillo/rojo = remate en picada`,
-  block: (d) => `Bloqueo sugerido ya elegido · 1–${d.options.length} para cambiarlo · mouse: marca de defensa (azul) · ESPACIO al saltar = bloqueo reforzado (opcional)`,
+  block: (d) => `${d.options[0].label} (según la colocación) · ESPACIO para saltar: atina el momento, un poco antes del golpe del rematador · mouse: marca de defensa (azul)`,
 };
 
 const POWER_FEEDBACK: Record<Power, string> = { soft: 'Suave', medium: 'Fuerte', strong: '¡POTENTE!' };
@@ -139,7 +139,8 @@ export class DecisionPanel {
         return b;
       }),
     );
-    this.meter.style.visibility = d.chosen === null ? 'hidden' : 'visible';
+    // El bloqueo no tiene barra: se salta mirando al rematador.
+    this.meter.style.visibility = d.chosen === null || d.kind === 'block' ? 'hidden' : 'visible';
     // Barra de fuerza (saque y remate): verde suave, amarillo medio, rojo muy fuerte. Si no, zona de timing.
     const power = d.meter === 'power';
     this.meter.classList.toggle('power', power);
@@ -151,7 +152,7 @@ export class DecisionPanel {
     this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
-    this.buttons.style.display = d.aim && d.kind !== 'block' && d.kind !== 'set' ? 'none' : 'grid';
+    this.buttons.style.display = (d.aim && d.kind !== 'set') || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = HINTS[d.kind](d);
   }

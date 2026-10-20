@@ -11,6 +11,8 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 const SPIKE_AIR = 0.82;
 const BLOCK_AIR = 0.64;
 const BLOCK_DELAY = 0.12;
+/** Del ESPACIO al punto más alto del salto del bloqueo (s de juego). */
+const BLOCK_RISE = 0.27;
 
 /** Gesto en curso: una pista anclada a un instante clave de la simulación. */
 interface Action {
@@ -170,6 +172,16 @@ export class Animator {
         aim = { target, arms: 'both', weight: ease(1 - lead / 0.3) * 0.85 };
       } else {
         aim = { target, arms: 'both', weight: ease(1 - lead / 0.35) * 0.95 };
+      }
+    } else if (block && inPlay && block.keys.includes(this.key) && sim.humans.has(p.team)) {
+      // Bloqueo de una persona: listos en la red con los brazos arriba; saltan cuando toca ESPACIO.
+      const jump = sim.blockJump(p.team);
+      if (!jump) active = { track: TRACKS.block, at: Infinity };
+      else {
+        const apex = jump.at + BLOCK_RISE;
+        if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - apex) > 0.05) this.action = { track: TRACKS.block, at: apex };
+        active = this.action;
+        if (!this.jump) this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', blockReach(p.def), 0.2, 1.1));
       }
     } else if (block && inPlay && block.keys.includes(this.key)) {
       const apex = block.attackTime + BLOCK_DELAY;

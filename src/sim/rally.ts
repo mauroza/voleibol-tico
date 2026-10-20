@@ -182,6 +182,8 @@ export class Simulation {
   private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
   private lastAimed = false;
+  /** Instante en que cada equipo de una persona saltó al bloqueo (se limpia con el próximo toque). */
+  private readonly jumpAt: Record<TeamId, number | null> = { A: null, B: null };
   /** Fuerza del último remate (el rojo pica como un bombazo). */
   private lastPower: Power = 'medium';
   private lastShot: AttackShot = 'cross';
@@ -446,6 +448,7 @@ export class Simulation {
     // Golpe que pertenecía a la jugada anterior (tocado antes o justo al abrirse esta): se ignora. El saque no aplica.
     if (d.kind !== 'serve' && at < d.startTime + TUNING.decision.openGuard) return;
     d.pressedAt = Math.max(at, d.startTime);
+    if (d.kind === 'block') this.jumpAt[this.player(d.playerKey).team] = d.pressedAt;
     if (d.kind === 'serve' && this.phase === 'preServe') this.beginUserServe();
   }
 
@@ -739,6 +742,7 @@ export class Simulation {
     this.threat = 0;
     this.decisions.A = null;
     this.decisions.B = null;
+    this.jumpAt.A = this.jumpAt.B = null;
     this.blockSetup = null;
     this.blockHold = null;
     this.touchSide = this.match.serving;
@@ -990,17 +994,15 @@ export class Simulation {
     if (plan.kind === 'attack' && this.humans.has(def) && this.blockSetup?.team === def && !this.decisions[def]) {
       const front = this.frontPlayers(def);
       if (front.length === 0) return;
-      const labels = ['Sin bloqueo (defender)', 'Bloqueo simple', 'Bloqueo doble', 'Bloqueo triple'];
-      const options: DecisionOption[] = [3, 2, 1, 0]
-        .filter((n) => n <= front.length)
-        .map((n) => ({ label: labels[n], option: { id: 'block', n } }));
+      // El bloqueo se arma solo según la colocación (rápida 1, media 2, lenta 3); la persona solo decide cuándo saltar.
+      const labels = ['Sin bloqueo', 'Bloqueo simple', 'Bloqueo doble', 'Bloqueo triple'];
+      const n = this.blockSetup.scheme;
+      const options: DecisionOption[] = [{ label: labels[n], option: { id: 'block', n } }];
       this.openDecision('block', options, plan.time, this.blockSetup.keys[0] ?? front[0]);
       // Marca de defensa: dónde espera el remate; un defensor la cubre (se mueve con la mira).
       const d = this.decisions[def] as Decision | null;
       if (d) {
-        // Bloqueo sugerido ya elegido (el tiempo no se detiene); se cambia con 1–4 en cualquier momento.
-        const suggested = options.findIndex((o) => o.option.id === 'block' && o.option.n === this.blockSetup!.scheme);
-        d.chosen = suggested >= 0 ? suggested : 0;
+        d.chosen = 0;
         // La marca arranca en la diagonal profunda, donde suele ir el remate.
         const z = Math.abs(plan.point.z) < 1 ? 0 : -Math.sign(plan.point.z) * 2.6;
         d.aim = { x: sideSign(def) * 6.3, z };
@@ -1083,6 +1085,8 @@ export class Simulation {
     }
     this.prev = this.last;
     this.last = { key: p.key, team: p.team, kind, quality };
+    // Un toque nuevo termina el bloqueo anterior (salvo el propio toque del bloqueo).
+    if (kind !== 'block' && kind !== 'attack') this.jumpAt.A = this.jumpAt.B = null;
     const cost = TUNING.stamina.cost;
     if (kind === 'attack') {
       this.lastAttacker = p.key;
@@ -1411,13 +1415,13 @@ export class Simulation {
     } else if (net.kind === 'fault') {
       this.netFaultTime = net.time;
     } else if (net.kind === 'clear') {
-      if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
-        // El salto con ESPACIO es opcional: sin tocarlo el bloqueo sale normal; bien medido, reforzado.
-        if (blockDecision && blockDecision.chosen !== null) {
-          blockTiming = blockDecision.pressedAt === null ? 'good' : judgeTiming(blockDecision.pressedAt, blockDecision.contactTime! - (blockDecision.lead ?? 0));
-        }
-        this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
-      } else if (last.kind === 'attack' && block && block.scheme > 0) {
+      // Bloqueo de una persona: solo salta si tocó ESPACIO; cuanto mejor el momento, mejor el bloqueo.
+      const humanBlock = !!block && this.humans.has(block.team);
+      const jumped = !humanBlock || (blockDecision?.pressedAt ?? null) !== null;
+      if (humanBlock && blockDecision?.pressedAt != null) blockTiming = this.judgeBlockJump(blockDecision);
+      if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0 && jumped) {
+        this.plan = this.planBlock(block, net.time, humanBlock ? blockTiming : null);
+      } else if (last.kind === 'attack' && block && block.scheme > 0 && jumped) {
         // La finta también salta el bloqueo: pasa por encima o al costado de las manos; si no puede, la tocan.
         if (!this.clearBlockPath(block)) this.plan = this.grazeBlock(block, net.time);
       }
@@ -1861,6 +1865,21 @@ export class Simulation {
       tr = launch(from, to, time, t0, g);
     }
     return tr;
+  }
+
+  /** Momento del salto del bloqueo: lo ideal es un poco antes del golpe del rematador (está arriba al cruzar). */
+  private judgeBlockJump(d: Decision): Timing {
+    const cfg = TUNING.block;
+    const ideal = d.contactTime! - cfg.jumpLead - (d.lead ?? 0);
+    const off = Math.abs(d.pressedAt! - ideal);
+    return off <= cfg.jumpPerfect ? 'perfect' : off <= cfg.jumpGood ? 'good' : 'bad';
+  }
+
+  /** Bloqueadores de un equipo de una persona y cuándo saltaron (para la animación); null si no saltaron. */
+  blockJump(team: TeamId): { keys: readonly string[]; at: number } | null {
+    const block = [this.blockSetup, this.blockHold].find((b) => b?.team === team);
+    const at = this.jumpAt[team];
+    return block && at !== null ? { keys: block.keys, at } : null;
   }
 
   /** Altura del golpe: el zaguero (pipe o zona 1) en sistema vuela mucho más alto, tipo Nishida. */

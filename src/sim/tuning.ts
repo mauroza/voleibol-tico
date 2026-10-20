@@ -198,6 +198,13 @@ export const TUNING = {
      */
     insideShift: 0.35,
     readError: 0.45,
+    /**
+     * Salto del bloqueo de una persona: lo ideal es saltar este tanto antes del golpe del rematador (s), para estar
+     * arriba cuando la pelota cruza. Ventanas de perfecto y bueno alrededor de ese instante.
+     */
+    jumpLead: 0.15,
+    jumpPerfect: 0.07,
+    jumpGood: 0.17,
     /** Cada metro de estatura promedio del bloqueo sobre el promedio: más tapas. */
     heightStuff: 2.5,
   },

@@ -2052,7 +2052,8 @@ export class Simulation {
     for (const t of TEAM_IDS) this.closeDecision(t, 'bad');
     if (!close) return this.award(truthWinner, truthReason);
     // Jugada cerrada: ¿se equivocan los árbitros?
-    const miss = this.rng.chance(close.kind === 'line' ? cfg.lineMiss : cfg.touchMiss);
+    // Cuanto más cerca de la línea, más fácil que se equivoquen.
+    const miss = this.rng.chance(close.kind === 'line' ? cfg.lineMiss * (1 - close.margin / cfg.lineMargin) : cfg.touchMiss);
     const calledWinner = miss ? loser : truthWinner;
     const calledReason: PointReason = !miss ? truthReason : close.kind === 'touch' ? 'attackError' : truthReason === 'attackError' || truthReason === 'serviceError' || truthReason === 'error' ? 'landed' : 'error';
     this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, until: this.time + cfg.window, aiAt: null };

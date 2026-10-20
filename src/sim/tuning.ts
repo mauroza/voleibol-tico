@@ -148,7 +148,7 @@ export const TUNING = {
    * Arbitraje: en jugadas cerradas los árbitros se pueden equivocar (pelota a pocos cm de la línea, roce leve del
    * bloqueo). `fingertip`: chance de que un remate que pasa limpio igual roce los dedos del bloqueo. El equipo perjudicado puede pedir challenge (2 por set; solo se gastan los fallidos).
    */
-  calls: { fingertip: 0.22, lineMargin: 0.1, lineMiss: 0.3, touchMiss: 0.25, window: 2.4, challenges: 2, aiChallengeWrong: 0.75, aiChallengeRight: 0.06 },
+  calls: { fingertip: 0.35, lineMargin: 0.25, lineMiss: 0.45, touchMiss: 0.25, window: 2.4, challenges: 2, aiChallengeWrong: 0.75, aiChallengeRight: 0.06 },
   /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
   fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */

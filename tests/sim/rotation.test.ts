@@ -25,6 +25,8 @@ describe('5-1 y rotaciones', () => {
       let before: Record<string, string[]> = { A: [...sim.match.lineups.A], B: [...sim.match.lineups.B] };
       let serving = sim.match.serving;
       sim.bus.on((e) => {
+        // Un cambio reemplaza al jugador en su misma posición.
+        if (e.type === 'substitution') before[e.team] = before[e.team].map((k) => (k === e.outKey ? e.inKey : k));
         if (e.type !== 'point' || e.sets.A + e.sets.B > 0) return;
         const w = e.winner;
         if (w !== serving) {
@@ -146,4 +148,37 @@ describe('cada colocación termina en remate', () => {
     }
     expect(res.pipe?.sets ?? 0).toBeGreaterThan(5);
   }, 120_000);
+});
+
+describe('tiempos y cambios', () => {
+  it('cambia un titular por un suplente en su posición, con límite por set y solo entre puntos', () => {
+    const sim = new Simulation({ seed: 3, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    const out = sim.match.lineups.A[1];
+    const bench = sim.bench('A');
+    expect(bench.length).toBeGreaterThan(3);
+    expect(bench).not.toContain(sim.match.libero.A);
+    expect(sim.callTimeout('A')).toBe(true);
+    expect(sim.timeouts.A).toBe(1);
+    expect(sim.substitute('A', out, bench[0])).toBe(true);
+    expect(sim.match.lineups.A[1]).toBe(bench[0]);
+    expect(sim.subsLeft.A).toBe(5);
+    // No se puede con la pelota en juego.
+    while (sim.phase !== 'inPlay') {
+      const d = sim.decision;
+      if (d?.kind === 'serve') sim.press();
+      sim.step(TUNING.dt);
+    }
+    expect(sim.substitute('A', sim.match.lineups.A[2], sim.bench('A')[0])).toBe(false);
+    expect(sim.callTimeout('A')).toBe(false);
+  });
+
+  it('la IA cambia a los cansados por suplentes del mismo puesto', () => {
+    let subs = 0;
+    runMatch(opts(5), (sim) => sim.bus.on((e) => {
+      if (e.type !== 'substitution') return;
+      subs += 1;
+      expect(sim.player(e.inKey).def.role).toBe(sim.player(e.outKey).def.role);
+    }));
+    expect(subs).toBeGreaterThan(0);
+  }, 60_000);
 });

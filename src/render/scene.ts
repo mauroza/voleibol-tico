@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { landingTime } from '../sim/ball';
 import { COURT } from '../sim/court';
-import { AVG_HEIGHT, shirtName } from '../sim/players';
+import { AVG_HEIGHT, isTall, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
@@ -52,6 +52,38 @@ function ballTexture(): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
+  return t;
+}
+
+/** Un cuadro de la malla de la red (10 cm): hilo oscuro sobre fondo transparente. */
+function netTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 32;
+  c.height = 32;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = 'rgba(20, 20, 24, 0.85)';
+  g.lineWidth = 3;
+  g.strokeRect(0, 0, 32, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** Franjas rojas y blancas de la antena (18 franjas de 10 cm). */
+function antennaTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 36;
+  const g = c.getContext('2d')!;
+  for (let i = 0; i < 18; i++) {
+    g.fillStyle = i % 2 === 0 ? '#e01e2d' : '#ffffff';
+    g.fillRect(0, i * 2, 4, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
@@ -521,10 +553,11 @@ export class MatchView {
       spread = 0.6;
     } else {
       // Remate fuerte (tenso, con efecto) o finta (globo corto).
-      const tip = Math.abs(x) < TUNING.attack.tipDepth;
+      const tall = isTall(this.sim.player(d.playerKey).def);
+      const tip = Math.abs(x) < (tall ? TUNING.attack.tallTipDepth : TUNING.attack.tipDepth);
       from.set(up!.point.x, up!.point.y, up!.point.z);
       T = tip ? TUNING.attack.tipFlightTime : Math.max(0.15, Math.hypot(x - from.x, z - from.z) / (TUNING.attack.minSpeed + TUNING.attack.speedRange * 0.5));
-      g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus;
+      g = tip ? 9.81 : 9.81 + TUNING.attack.gravityBonus + (tall ? TUNING.attack.tallGravity : 0);
       spread = TUNING.attack.noise * 0.35;
     }
     this.aimSpread.scale.setScalar(spread);
@@ -636,17 +669,25 @@ export class MatchView {
     line(COURT.attackLine, 0, t, 2 * W);
     line(-COURT.attackLine, 0, t, 2 * W);
 
+    // Red de malla: cuadros de 10 cm (textura repetida con transparencia), banda blanca arriba y abajo.
+    const netW = 2 * W + 1;
+    const mesh = netTexture();
+    mesh.repeat.set(netW * 10, 10);
     const net = new THREE.Mesh(
-      new THREE.PlaneGeometry(2 * W + 1, 1),
-      new THREE.MeshBasicMaterial({ color: '#111111', transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+      new THREE.PlaneGeometry(netW, 1),
+      new THREE.MeshBasicMaterial({ map: mesh, transparent: true, side: THREE.DoubleSide, depthWrite: false }),
     );
     net.rotation.y = Math.PI / 2;
     net.position.set(0, COURT.netHeight - 0.5, 0);
-    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, 2 * W + 1), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, netW), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
     tape.position.set(0, COURT.netHeight, 0);
-    this.scene.add(net, tape);
+    const bottom = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.05, netW), new THREE.MeshBasicMaterial({ color: '#f2f2f2' }));
+    bottom.position.set(0, COURT.netHeight - 1, 0);
+    this.scene.add(net, tape, bottom);
+    // Antenas reglamentarias: 1.8 m, franjas rojas y blancas de 10 cm, 80 cm sobre la red.
+    const stripes = antennaTexture();
     for (const z of [-COURT.antennaZ, COURT.antennaZ]) {
-      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1.8), new THREE.MeshBasicMaterial({ color: '#ff3355' }));
+      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.8, 10), new THREE.MeshBasicMaterial({ map: stripes }));
       antenna.position.set(0, COURT.netHeight - 0.1, z);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, COURT.netHeight + 0.2), toon('#cccccc'));
       post.position.set(0, (COURT.netHeight + 0.2) / 2, Math.sign(z) * (W + 1));

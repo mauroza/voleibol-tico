@@ -11,6 +11,7 @@ import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
 import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, type MatchSetup } from './ui/menu';
 import { PauseMenu, showResult } from './ui/overlays';
+import { TimeoutPanel } from './ui/timeout';
 
 const ui = document.getElementById('hud')!;
 showMenu(ui).then(start);
@@ -50,8 +51,10 @@ function start(setup: MatchSetup): void {
     pause.set(p);
     panel.paused = p;
   };
+  // Tiempo y cambios: pausa el juego mientras el panel está abierto.
+  const timeouts = new TimeoutPanel(ui, sim, 'A', (open) => { panel.paused = open || pause.open; });
   const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
-  const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open);
+  const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open || timeouts.open);
 
   sim.bus.on((e) => {
     if (e.type !== 'matchEnd') return;
@@ -85,7 +88,8 @@ function start(setup: MatchSetup): void {
     aim.update(dtReal);
     // Paso variable: la simulación avanza exactamente lo que duró el cuadro (fluido a 60, 144 o 165 Hz).
     // En pausa o repetición espera; la cámara lenta de decisión ignora la aceleración x4.
-    if (!view.replaying && !pause.open) {
+    const stopped = pause.open || timeouts.open;
+    if (!view.replaying && !stopped) {
       frameRate = pace * (sim.timeScale < 1 ? sim.timeScale : speed);
       let remaining = dtReal * frameRate;
       while (remaining > 1e-6) {
@@ -95,8 +99,9 @@ function start(setup: MatchSetup): void {
       }
     }
     frameStamp = now;
-    if (view.replaying || pause.open) frameRate = 0;
-    view.render(pause.open ? 0 : dtReal);
+    if (view.replaying || stopped) frameRate = 0;
+    view.render(stopped ? 0 : dtReal);
+    timeouts.update();
     hud.update();
     panel.update();
     sound?.update(dtReal);

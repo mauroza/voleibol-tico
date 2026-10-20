@@ -7,7 +7,7 @@ import { contactMeter, judgeTiming, meterOf, powerTiming, powerZone, serveMeter,
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
-import { AVG_HEIGHT, attackContactHeight, blockReach, moveSpeed, type PlayerState } from './players';
+import { AVG_HEIGHT, attackContactHeight, blockReach, isTall, moveSpeed, type PlayerState } from './players';
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
 import { createRng, type Rng } from './rng';
 import { TUNING } from './tuning';
@@ -136,6 +136,11 @@ export class Simulation {
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
+  /** Tiempos y cambios que le quedan a cada equipo en el set. */
+  readonly timeouts: Record<TeamId, number> = { A: TUNING.bench.timeouts, B: TUNING.bench.timeouts };
+  readonly subsLeft: Record<TeamId, number> = { A: TUNING.bench.subs, B: TUNING.bench.subs };
+  /** Puntos seguidos de cada equipo (la IA pide tiempo ante una racha rival). */
+  private run: { team: TeamId | null; count: number } = { team: null, count: 0 };
   /** Contacto anterior al último (para saber si un toque del defensor vino de un remate o de un saque). */
   private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
@@ -180,6 +185,70 @@ export class Simulation {
   /** Finta de rápida en curso: quién y cuándo salta. */
   get decoy(): Readonly<{ key: string; time: number }> | null {
     return this.decoyRun;
+  }
+
+  /** Se puede pedir tiempo o hacer cambios solo con la pelota muerta (entre puntos). */
+  get deadBall(): boolean {
+    return this.phase === 'preServe' || this.phase === 'pointOver';
+  }
+
+  /** Suplentes disponibles (sin el líbero). */
+  bench(team: TeamId): string[] {
+    const lineup = this.match.lineups[team];
+    return [...this.players.values()]
+      .filter((p) => p.team === team && !lineup.includes(p.key) && p.key !== this.match.libero[team])
+      .map((p) => p.key);
+  }
+
+  /** Tiempo: los de la cancha recuperan un poco de estamina. */
+  callTimeout(team: TeamId): boolean {
+    if (!this.deadBall || this.timeouts[team] <= 0) return false;
+    this.timeouts[team] -= 1;
+    for (const k of this.match.lineups[team]) {
+      const p = this.player(k);
+      p.stamina = Math.min(1, p.stamina + TUNING.bench.timeoutRest);
+    }
+    this.bus.emit({ type: 'timeout', team });
+    return true;
+  }
+
+  /** Cambio: entra un suplente por un titular (en su misma posición de la rotación). */
+  substitute(team: TeamId, outKey: string, inKey: string): boolean {
+    const lineup = this.match.lineups[team];
+    const idx = lineup.indexOf(outKey);
+    if (!this.deadBall || this.subsLeft[team] <= 0 || idx < 0 || !this.bench(team).includes(inKey)) return false;
+    lineup[idx] = inKey;
+    const reps = this.match.liberoReplaces[team];
+    const r = reps.indexOf(outKey);
+    if (r >= 0) reps[r] = inKey;
+    this.subsLeft[team] -= 1;
+    const pin = this.player(inKey);
+    const pout = this.player(outKey);
+    pin.pos = clone(pout.pos);
+    pin.target = clone(pout.target);
+    pout.pos = v3(sideSign(team) * 5.5, 0, -6.5);
+    pout.target = clone(pout.pos);
+    this.bus.emit({ type: 'substitution', team, outKey, inKey });
+    return true;
+  }
+
+  /** La IA: tiempo ante una racha rival y cambio del cansado por un suplente fresco del mismo puesto. */
+  private aiBench(team: TeamId): void {
+    const cfg = TUNING.bench;
+    if (this.run.team && this.run.team !== team && this.run.count >= cfg.aiTimeoutStreak && this.timeouts[team] > 0) {
+      this.callTimeout(team);
+      this.run.count = 0;
+    }
+    if (this.subsLeft[team] <= 0) return;
+    for (const k of [...this.match.lineups[team]]) {
+      const tired = this.player(k);
+      if (tired.stamina >= cfg.aiSubBelow) continue;
+      const fresh = this.bench(team)
+        .map((b) => this.player(b))
+        .filter((b) => b.def.role === tired.def.role && b.stamina > tired.stamina + 0.25)
+        .sort((a, b) => b.stamina - a.stamina)[0];
+      if (fresh && this.substitute(team, k, fresh.key)) return;
+    }
   }
 
   /** En racha: anotó muchos de los últimos puntos de su equipo (aura roja). */
@@ -353,6 +422,7 @@ export class Simulation {
 
   private resetForServe(): void {
     this.phase = 'preServe';
+    for (const t of TEAM_IDS) if (t !== this.control) this.aiBench(t);
     this.phaseTimer = TUNING.servePause;
     this.pendingServe = null;
     this.aiServe = this.match.serving !== this.control ? this.chooseAiServe(courtPlayers(this.match, this.match.serving)[0]) : null;
@@ -379,7 +449,7 @@ export class Simulation {
         let target: Vec3;
         // Ambas bancas del lado lejano de la cámara de transmisión (z negativo).
         if (idx < 0) target = v3(sideSign(team) * (2.5 + 0.7 * bench++), 0, -6.5);
-        else if (!receiving && idx === 0) target = spot(team, SERVE_SPOT);
+        else if (!receiving && idx === 0) target = spot(team, p.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
         else target = spot(team, receiving ? reception[idx] : DEFENSE_SPOTS[idx]);
         p.pos = clone(target);
         p.target = clone(target);
@@ -903,7 +973,7 @@ export class Simulation {
     const aim = ctl?.option?.id === 'aim' && ctl.aim ? ctl.aim : null;
     // Con mira: cerca de la red es finta; si no, remate. Sin mira, la IA (o la opción elegida) decide el tiro.
     const shot: AttackShot = aim
-      ? (Math.abs(aim.x) < cfg.tipDepth ? 'tip' : 'cross')
+      ? (Math.abs(aim.x) < (isTall(p.def) ? cfg.tallTipDepth : cfg.tipDepth) ? 'tip' : 'cross')
       : ctl?.option?.id === 'shot' ? ctl.option.shot : chooseShot(this.rng);
     let q = computeQuality(
       {
@@ -929,7 +999,8 @@ export class Simulation {
       this.threat = 0.3 * q;
     } else {
       const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed * (p.def.star ? cfg.starSpeed : 1) * (1 + cfg.heightSpeed * (p.def.height - AVG_HEIGHT));
-      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus, t, !isError);
+      // En picada: el alto le pega más de arriba hacia abajo (más gravedad efectiva = trayectoria más empinada).
+      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + (isTall(p.def) ? cfg.tallGravity : 0), t, !isError);
       this.threat = q * clamp01(speed / 28);
     }
   }
@@ -1480,7 +1551,14 @@ export class Simulation {
       p.stamina = Math.min(1, p.stamina + (onCourt ? TUNING.stamina.perPoint : TUNING.stamina.bench));
     }
     const out = awardPoint(this.match, winner);
-    if (out.setWinner) for (const p of this.players.values()) p.stamina = Math.min(1, p.stamina + TUNING.stamina.perSet);
+    this.run = this.run.team === winner ? { team: winner, count: this.run.count + 1 } : { team: winner, count: 1 };
+    if (out.setWinner) {
+      for (const p of this.players.values()) p.stamina = Math.min(1, p.stamina + TUNING.stamina.perSet);
+      for (const t of TEAM_IDS) {
+        this.timeouts[t] = TUNING.bench.timeouts;
+        this.subsLeft[t] = TUNING.bench.subs;
+      }
+    }
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });

@@ -36,9 +36,11 @@ export const TUNING = {
    * Secuencia de saque (segundos del lanzamiento al golpe) y carrera hacia la red: el de suspensión lanza muy alto,
    * corre tres pasos y salta largo; el flotado en salto da dos pasos y un saltito; el seguro, de pie.
    */
-  serveWindup: { safe: 0.9, float: 1.0, jump: 1.35 },
-  serveRunUp: { safe: 0, float: 0.6, jump: 1.25 },
-  serveRunTime: { safe: 0, float: 0.4, jump: 0.6 },
+  serveWindup: { safe: 0.9, float: 1.0, jump: 1.5 },
+  serveRunUp: { safe: 0, float: 0.6, jump: 2.3 },
+  serveRunTime: { safe: 0, float: 0.4, jump: 0.8 },
+  /** El que saca en suspensión se para más atrás (unos pasos detrás de la línea) para tomar carrera. */
+  jumpServeDepth: 11.6,
   pass: {
     base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8,
     /** El saque presiona más a la recepción que un remate a la defensa (multiplica la presión). */
@@ -81,6 +83,10 @@ export const TUNING = {
     starRestitution: 0.68,
     /** Apuntar a menos de esta distancia de la red (m) es una finta. */
     tipDepth: 3.0,
+    /** Los de 2 m o más la hunden: pueden pegar fuerte corto (hasta 1.8 m de la red) y la pelota baja más empinada. */
+    tallHeight: 2.0,
+    tallTipDepth: 1.8,
+    tallGravity: 6,
     noise: 2.0,
     targetSamples: 8,
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },
@@ -119,6 +125,8 @@ export const TUNING = {
     attrAtZero: 0.7,
     jumpLoss: 0.18,
   },
+  /** Tiempos y cambios por set; recuperación de estamina en un tiempo; la IA cambia a quien baje de `aiSubBelow`. */
+  bench: { timeouts: 2, subs: 6, timeoutRest: 0.1, aiSubBelow: 0.45, aiTimeoutStreak: 3 },
   /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
   fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */

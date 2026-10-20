@@ -124,6 +124,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
         <li><b>Saque:</b> cada jugador tiene su estilo (en suspensión o flotado, se ve en el panel). La barra es la fuerza: <span style="color:#5dff8f">verde suave y seguro</span>, <span style="color:#ff3b3b">rojo potente y arriesgado</span>.</li>
         <li>Cada jugador tiene su <b>fuerte</b>, una <b>barra de estamina</b> (saltar cansa) y, si anota seguido, se <b style="color:#ff3b3b">enciende</b> con un aura roja. Ritmo: <b>Fluido</b> por defecto; <b>Rápido (online)</b> casi sin cámara lenta.</li>
         <li>Cuando te rematan: elige el bloqueo y pon la <b style="color:#4dc3ff">marca de defensa</b> donde esperas el remate; un compañero la cubre y llega mejor.</li>
+        <li><b>T</b> pide tiempo entre puntos (2 por set): ahí puedes hacer cambios (6 por set) mirando la estamina de cada uno.</li>
         <li><b>Esc</b> pausa · <b>M</b> silencio · <b>F</b> acelera x4 · Gamepad: cruceta elige, <b>A</b> timing, <b>Start</b> pausa.</li>
       </ul>`;
     el.append(how);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { COURT } from '../sim/court';
-import { AVG_HEIGHT } from '../sim/players';
+import { AVG_HEIGHT, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
@@ -464,7 +464,7 @@ export class MatchView {
   private buildPlayers(): void {
     for (const p of this.sim.players.values()) {
       const team = this.sim.teams[p.team];
-      const rig = buildCharacter(lookFor(p.def.number, team.primary, team.secondary, p.def.role === 'L'));
+      const rig = buildCharacter(lookFor(p.def, shirtName(p.def), team.primary, team.secondary, p.def.role === 'L'));
       // Estatura: diferencia exagerada un poco para que se note en la cancha.
       rig.root.scale.setScalar(1 + ((p.def.height - AVG_HEIGHT) / AVG_HEIGHT) * 1.6);
       const a = new Animator(p.key, rig, this.sim);

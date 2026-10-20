@@ -59,6 +59,15 @@ const FIRST = ['Andrés', 'José', 'Luis', 'Carlos', 'Daniel', 'Esteban', 'Kevin
 const LAST = ['Mora', 'Rodríguez', 'Jiménez', 'Vargas', 'Rojas', 'Solís', 'Quesada', 'Araya', 'Chaves', 'Calderón',
   'Brenes', 'Zúñiga', 'Arias', 'Montero', 'Salas', 'Ulate', 'Alfaro', 'Cordero', 'Villalobos', 'Murillo'];
 
+function weighted(r: number, weights: readonly number[]): number {
+  let acc = 0;
+  for (let i = 0; i < weights.length; i++) {
+    acc += weights[i];
+    if (r < acc) return i;
+  }
+  return weights.length - 1;
+}
+
 export function makeTeam(spec: TeamSpec): TeamDef {
   const { seed, variance = 6, ...info } = spec;
   const rng = createRng(seed);
@@ -69,7 +78,7 @@ export function makeTeam(spec: TeamSpec): TeamDef {
       const value = attrs[key] + (bonus[key] ?? 0) + rng.range(-variance, variance);
       attrs[key] = Math.round(Math.min(99, Math.max(1, value)));
     }
-    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0 };
+    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, skin: 0, hair: 0 };
   });
   // Físico con su propio generador: no altera los atributos ya sorteados.
   const body = createRng(seed * 7919 + 13);
@@ -80,6 +89,13 @@ export function makeTeam(spec: TeamSpec): TeamDef {
     p.star = true;
     p.height = Math.round((p.height + 0.04) * 100) / 100;
     for (const key of Object.keys(STAR_BONUS) as (keyof Attributes)[]) p.attrs[key] = Math.min(99, p.attrs[key] + STAR_BONUS[key]!);
+  }
+  // Apariencia con otro generador: piel de todos los tonos (Limón con más afrocostarricenses).
+  const looks = createRng(seed * 104729 + 7);
+  const skinWeights = spec.id === 'LI' ? [0.05, 0.1, 0.15, 0.2, 0.25, 0.25] : [0.16, 0.26, 0.26, 0.14, 0.1, 0.08];
+  for (const p of roster) {
+    p.skin = weighted(looks.next(), skinWeights);
+    p.hair = weighted(looks.next(), [0.45, 0.25, 0.12, 0.18]);
   }
   const ids = roster.map((p) => p.id);
   return { ...info, roster, lineup: ids.slice(0, 6), libero: ids[6], liberoReplaces: [ids[2], ids[5]] };

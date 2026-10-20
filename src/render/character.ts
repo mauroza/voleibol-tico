@@ -12,11 +12,20 @@ export const DIMS = {
   forearm: 0.29,
 } as const;
 
-/** Figura tipo pictograma: un solo color por jugador y su número en el pecho. */
+/** Uniforme y apariencia de un jugador. */
 export interface Look {
-  color: string;
+  shirt: string;
+  shorts: string;
+  skin: string;
+  /** null: rapado. */
+  hair: string | null;
   number: number;
+  name: string;
 }
+
+/** Tonos de piel, de claro a muy oscuro. */
+export const SKIN_TONES = ['#f3d2b3', '#e2b48c', '#c98e62', '#a06a42', '#6e4428', '#43281a'] as const;
+const HAIR_COLORS = ['#1b1512', '#3a2618', '#5e3b22'] as const;
 
 export interface Rig {
   root: THREE.Group;
@@ -26,9 +35,23 @@ export interface Rig {
   joints: Record<JointName, THREE.Object3D>;
 }
 
-/** Color del equipo; el líbero usa el color secundario para distinguirse. */
-export function lookFor(number: number, primary: string, secondary: string, libero: boolean): Look {
-  return { color: libero ? secondary : primary, number };
+/** Camisa del color del equipo (el líbero, del secundario) y pantaloneta que contraste. */
+export function lookFor(p: { number: number; skin: number; hair: number }, name: string, primary: string, secondary: string, libero: boolean): Look {
+  return {
+    shirt: libero ? secondary : primary,
+    shorts: shortsFor(primary, secondary),
+    skin: SKIN_TONES[Math.min(SKIN_TONES.length - 1, Math.max(0, p.skin))],
+    hair: p.hair >= HAIR_COLORS.length ? null : HAIR_COLORS[p.hair],
+    number: p.number,
+    name,
+  };
+}
+
+/** La pantaloneta usa el secundario si contrasta con la camisa; si no, azul marino. */
+function shortsFor(primary: string, secondary: string): string {
+  const a = new THREE.Color(primary);
+  const b = new THREE.Color(secondary);
+  return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) > 0.6 ? secondary : '#1c2440';
 }
 
 /** Color legible sobre el color del jugador. */
@@ -59,6 +82,35 @@ function numberMaterial(n: number, ink: string): THREE.MeshToonMaterial {
   return m;
 }
 
+const backMaterials = new Map<string, THREE.MeshToonMaterial>();
+/** Espalda de la camisa: apellido arriba y número grande debajo, como en la liga. */
+function backMaterial(name: string, n: number, ink: string): THREE.MeshToonMaterial {
+  const key = `${name}:${n}:${ink}`;
+  let m = backMaterials.get(key);
+  if (!m) {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const g = c.getContext('2d')!;
+    g.fillStyle = ink;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    let size = 46;
+    g.font = `bold ${size}px system-ui, sans-serif`;
+    while (g.measureText(name).width > 236 && size > 20) g.font = `bold ${(size -= 2)}px system-ui, sans-serif`;
+    g.fillText(name, 128, 42);
+    g.font = 'bold 150px system-ui, sans-serif';
+    g.fillText(String(n), 128, 165);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    m = toon('#fff', t);
+    m.transparent = true;
+    backMaterials.set(key, m);
+  }
+  return m;
+}
+
 // ---------- geometrías compartidas (redondeadas, sin detalles) ----------
 
 const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 3, 8);
@@ -71,10 +123,24 @@ const shared = {
   thigh: limb(0.078, DIMS.thigh - 0.06),
   shin: limb(0.07, DIMS.shin - 0.04),
   foot: limb(0.06, 0.12),
+  neck: new THREE.CylinderGeometry(0.048, 0.055, 0.12, 10),
+  /** Manga corta de la camisa y pierna de la pantaloneta. */
+  sleeve: new THREE.CylinderGeometry(0.074, 0.068, 0.15, 12),
+  shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 12),
+  kneePad: new THREE.SphereGeometry(0.072, 10, 8),
+  /** Pelo: casquete sobre la cabeza. */
+  hair: new THREE.SphereGeometry(0.153, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45),
+  eye: new THREE.SphereGeometry(0.021, 8, 6),
+  mouth: new THREE.CapsuleGeometry(0.008, 0.04, 2, 6),
+  brow: new THREE.CapsuleGeometry(0.0055, 0.035, 2, 4),
 };
 
-/** Número del pecho (en el plano frontal del tronco). */
+/** Número del pecho (en el plano frontal del tronco) y espalda con nombre y número. */
 const CHEST_NUMBER = new THREE.PlaneGeometry(0.17, 0.17);
+const BACK_PRINT = new THREE.PlaneGeometry(0.27, 0.27);
+const FACE_INK = '#24160f';
+const SHOE = '#f4f4f4';
+const PAD = '#22252b';
 
 function joint(parent: THREE.Object3D, x: number, y: number, z: number): THREE.Object3D {
   const j = new THREE.Object3D();
@@ -92,32 +158,49 @@ function attach(parent: THREE.Object3D, parts: Part[]): void {
 }
 
 /**
- * Figura humana tipo pictograma: cabeza separada del tronco, extremidades redondeadas, todo de un color.
- * Una malla fusionada por articulación (unas 22 llamadas de dibujo por jugador).
+ * Jugador estilizado: piel, camisa de manga corta con número y apellido, pantaloneta, rodilleras, zapatos,
+ * pelo y una cara sencilla. Una malla fusionada (color por vértice) por articulación: pocas llamadas de dibujo.
  */
 export function buildCharacter(look: Look): Rig {
-  const c = look.color;
+  const { shirt, shorts, skin } = look;
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
   const hips = joint(body, 0, DIMS.thigh + DIMS.shin + DIMS.foot, 0);
-  attach(hips, [{ geometry: shared.pelvis, color: c, matrix: placed(0, 0.02, 0, [0, 0, 0], [1.15, 0.8, 0.85]) }]);
+  attach(hips, [{ geometry: shared.pelvis, color: shorts, matrix: placed(0, 0.02, 0, [0, 0, 0], [1.2, 0.85, 0.9]) }]);
 
   const spine = joint(hips, 0, 0.06, 0);
-  attach(spine, [{ geometry: shared.torso, color: c, matrix: placed(0, 0.26, 0, [0, 0, 0], [1.1, 1, 0.85]) }]);
-  const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, contrast(c)));
+  attach(spine, [{ geometry: shared.torso, color: shirt, matrix: placed(0, 0.26, 0, [0, 0, 0], [1.1, 1, 0.85]) }]);
+  const ink = contrast(shirt);
+  const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
   number.position.set(0, 0.32, 0.124);
-  spine.add(number);
+  const back = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
+  back.position.set(0, 0.33, -0.125);
+  back.rotation.y = Math.PI;
+  spine.add(number, back);
 
-  // La cabeza queda separada del tronco, como en un pictograma.
+  // Cabeza con cuello, pelo y cara (ojos, cejas y boca) mirando hacia +z.
   const neck = joint(spine, 0, 0.56, 0);
-  attach(neck, [{ geometry: shared.head, color: c, matrix: placed(0, 0.16, 0.01) }]);
+  const head: Part[] = [
+    { geometry: shared.neck, color: skin, matrix: placed(0, -0.02, 0) },
+    { geometry: shared.head, color: skin, matrix: placed(0, 0.16, 0.01) },
+    { geometry: shared.eye, color: FACE_INK, matrix: placed(0.05, 0.18, 0.138, [0, 0, 0], [1, 1.25, 0.6]) },
+    { geometry: shared.eye, color: FACE_INK, matrix: placed(-0.05, 0.18, 0.138, [0, 0, 0], [1, 1.25, 0.6]) },
+    { geometry: shared.brow, color: FACE_INK, matrix: placed(0.05, 0.228, 0.128, [0, 0, Math.PI / 2 - 0.12]) },
+    { geometry: shared.brow, color: FACE_INK, matrix: placed(-0.05, 0.228, 0.128, [0, 0, Math.PI / 2 + 0.12]) },
+    { geometry: shared.mouth, color: '#5a2420', matrix: placed(0, 0.1, 0.14, [0, 0, Math.PI / 2], [1, 1, 0.6]) },
+  ];
+  if (look.hair) head.push({ geometry: shared.hair, color: look.hair, matrix: placed(0, 0.165, -0.005, [-0.42, 0, 0]) });
+  attach(neck, head);
 
   const arm = (side: 1 | -1) => {
     const shoulder = joint(spine, side * 0.2, 0.46, 0);
-    attach(shoulder, [{ geometry: shared.upperArm, color: c, matrix: placed(0, -DIMS.upperArm / 2, 0) }]);
+    attach(shoulder, [
+      { geometry: shared.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
+      { geometry: shared.sleeve, color: shirt, matrix: placed(0, -0.075, 0) },
+    ]);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
-    attach(elbow, [{ geometry: shared.forearm, color: c, matrix: placed(0, -DIMS.forearm / 2, 0) }]);
+    attach(elbow, [{ geometry: shared.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }]);
     return { shoulder, elbow };
   };
   const L = arm(1);
@@ -125,11 +208,15 @@ export function buildCharacter(look: Look): Rig {
 
   const leg = (side: 1 | -1) => {
     const hip = joint(hips, side * 0.1, -0.02, 0);
-    attach(hip, [{ geometry: shared.thigh, color: c, matrix: placed(0, -DIMS.thigh / 2, 0) }]);
+    attach(hip, [
+      { geometry: shared.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
+      { geometry: shared.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
+    ]);
     const knee = joint(hip, 0, -DIMS.thigh, 0);
     attach(knee, [
-      { geometry: shared.shin, color: c, matrix: placed(0, -DIMS.shin / 2, 0) },
-      { geometry: shared.foot, color: c, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.02, 0.06, [Math.PI / 2, 0, 0]) },
+      { geometry: shared.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) },
+      { geometry: shared.kneePad, color: PAD, matrix: placed(0, -0.02, 0.025, [0, 0, 0], [1, 1.15, 0.9]) },
+      { geometry: shared.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.02, 0.06, [Math.PI / 2, 0, 0]) },
     ]);
     return { hip, knee };
   };

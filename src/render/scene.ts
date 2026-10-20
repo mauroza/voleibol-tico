@@ -519,7 +519,8 @@ export class MatchView {
 
   private updateAim(): void {
     const d = this.replay ? null : this.sim.decision;
-    const up = this.sim.upcoming;
+    // En el calentamiento cada equipo tiene su propia jugada: se busca la del jugador que decide.
+    const up = this.sim.phase === 'warmup' && d ? this.sim.upcomingFor(d.playerKey) : this.sim.upcoming;
     const ready = d?.aim && (d.kind === 'serve' || d.kind === 'block' || (up && up.key === d.playerKey));
     if (!d?.aim || !ready) {
       this.aimGroup.visible = false;

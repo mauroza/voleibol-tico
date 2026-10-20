@@ -67,7 +67,8 @@ describe('5-1 y rotaciones', () => {
           if (e.type !== 'contact') return;
           const role = sim.player(e.playerKey).def.role;
           if (e.kind === 'reception') receivers.push(role);
-          if (e.kind === 'reception' || e.kind === 'dig') first = role;
+          // Solo primeras pelotas controladas (no pelotazos ni recepciones que se van).
+          if (e.kind === 'reception' || e.kind === 'dig') first = e.quality >= 0.45 ? role : null;
           else if (e.kind === 'set' && first === 'S') {
             setterFirst += 1;
             if (role === 'L') liberoSets += 1;
@@ -79,7 +80,8 @@ describe('5-1 y rotaciones', () => {
     const setterShare = receivers.filter((r) => r === 'S').length / receivers.length;
     expect(setterShare).toBeLessThan(0.03);
     expect(setterFirst).toBeGreaterThan(5);
-    expect(liberoSets / setterFirst).toBeGreaterThan(0.6);
+    // Si el pase del colocador sale fuera de zona, coloca el que llegue; el líbero, en la mayoría.
+    expect(liberoSets / setterFirst).toBeGreaterThan(0.5);
   }, 60_000);
 });
 

@@ -95,7 +95,8 @@ export function makeTeam(spec: TeamSpec): TeamDef {
   const skinWeights = spec.id === 'LI' ? [0.05, 0.1, 0.15, 0.2, 0.25, 0.25] : [0.16, 0.26, 0.26, 0.14, 0.1, 0.08];
   for (const p of roster) {
     p.skin = weighted(looks.next(), skinWeights);
-    p.hair = weighted(looks.next(), [0.45, 0.25, 0.12, 0.18]);
+    // Pelo: la mayoría natural, uno de cada tres llamativo; algunos rapados.
+    p.hair = weighted(looks.next(), [0.24, 0.16, 0.1, 0.05, 0.05, 0.05, 0.06, 0.05, 0.04, 0.04, 0.04, 0.12]);
   }
   const ids = roster.map((p) => p.id);
   return { ...info, roster, lineup: ids.slice(0, 6), libero: ids[6], liberoReplaces: [ids[2], ids[5]] };

@@ -97,7 +97,8 @@ describe('Simulation', () => {
         };
       });
     }
-    expect(sizes).toEqual(new Set([1, 2, 3]));
+    // También puede quedar sin bloqueo si el único bloqueador se comió la finta del central.
+    for (const n of [1, 2, 3]) expect(sizes.has(n)).toBe(true);
     expect(zoneChecks).toBeGreaterThan(0);
   });
 

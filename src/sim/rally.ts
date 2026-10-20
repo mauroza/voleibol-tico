@@ -1213,7 +1213,8 @@ export class Simulation {
       // Sin colocador (tomó la primera), coloca el líbero desde atrás.
       const libero = court.find((k) => this.player(k).def.role === 'L');
       if (libero) {
-        const r = this.reach(libero, [TUNING.setHeight]);
+        // El líbero ya sabe que le toca (vio al colocador tomar la primera): sale antes.
+        const r = this.reach(libero, [TUNING.setHeight, TUNING.passHeight], 0.15);
         if (r) return { key: libero, team, time: r.time, point: r.point, kind: 'set', low: false };
       }
       return this.bestContact(team, court.filter((k) => k !== setter), [TUNING.setHeight], 'set')

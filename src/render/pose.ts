@@ -130,6 +130,12 @@ export const POSES = {
     shoulderL: [-0.6, 0, 0.18], shoulderR: [-0.6, 0, -0.18], elbowL: [-0.75, 0, 0], elbowR: [-0.75, 0, 0],
     hipL: [-0.55, 0, 0.14], hipR: [-0.55, 0, -0.14], kneeL: [0.95, 0, 0], kneeR: [0.95, 0, 0],
   },
+  /** Sentado en la banca: muslos horizontales, manos sobre las rodillas. */
+  sit: {
+    spine: [0.12, 0, 0], neck: [-0.15, 0, 0],
+    shoulderL: [-0.55, 0, 0.12], shoulderR: [-0.55, 0, -0.12], elbowL: [-1.1, 0, 0], elbowR: [-1.1, 0, 0],
+    hipL: [-1.5, 0, 0.12], hipR: [-1.5, 0, -0.12], kneeL: [1.5, 0, 0], kneeR: [1.5, 0, 0],
+  },
   celebrate: {
     spine: [-0.2, 0, 0], neck: [-0.4, 0, 0],
     shoulderL: [-2.7, 0, 0.55], shoulderR: [-2.7, 0, -0.55], elbowL: [-0.25, 0, 0], elbowR: [-0.25, 0, 0],

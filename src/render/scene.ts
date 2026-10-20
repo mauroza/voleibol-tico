@@ -698,6 +698,14 @@ export class MatchView {
     line(COURT.attackLine, 0, t, 2 * W);
     line(-COURT.attackLine, 0, t, 2 * W);
 
+    // Bancas de los suplentes (asiento a 45 cm), una por equipo.
+    for (const side of [-1, 1]) {
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.08, 0.42), toon('#c9ccd4'));
+      bench.position.set(side * 5.9, 0.45, -6.62);
+      const legs = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.41, 0.3), toon('#5d6270'));
+      legs.position.set(side * 5.9, 0.2, -6.62);
+      this.scene.add(bench, legs);
+    }
     // Red de malla: cuadros de 10 cm (textura repetida con transparencia), banda blanca arriba y abajo.
     const netW = 2 * W + 1;
     const mesh = netTexture();

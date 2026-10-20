@@ -279,19 +279,15 @@ export class Simulation {
     this.subsLeft[team] -= 1;
     const pin = this.player(inKey);
     const pout = this.player(outKey);
-    pin.pos = clone(pout.pos);
+    // El que entra camina desde la banca a su lugar; el que sale camina a la banca (que se reacomoda en fila).
     pin.target = clone(pout.target);
-    // El que sale va a la banca y la banca se reacomoda en fila (nadie queda encima de otro).
-    this.placeBench(team);
+    this.placeBench(team, false);
     // Si sale el que iba a sacar, el saque pasa al que entra: a su lugar de saque y con su decisión (y su estilo).
     if (idx === 0 && this.match.serving === team && this.phase === 'preServe' && !this.pendingServe) {
       const serveSpot = spot(team, pin.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
-      pin.pos = clone(serveSpot);
       pin.target = clone(serveSpot);
-      if (this.decisions[team]?.kind === 'serve') {
-        this.decisions[team] = null;
-        this.openServeDecision();
-      }
+      // El saque se vuelve a abrir cuando el que entra llega a su lugar.
+      if (this.decisions[team]?.kind === 'serve') this.decisions[team] = null;
       if (!this.humans.has(team)) this.aiServe = this.chooseAiServe(inKey);
     }
     this.bus.emit({ type: 'substitution', team, outKey, inKey });
@@ -299,14 +295,22 @@ export class Simulation {
   }
 
   /** Banca del equipo en fila, del lado de su campo, frente a la cámara de transmisión. */
-  private placeBench(team: TeamId): void {
+  private placeBench(team: TeamId, teleport = true): void {
     const court = this.court(team);
     let i = 0;
     for (const p of this.players.values()) {
       if (p.team !== team || court.includes(p.key)) continue;
       p.target = v3(sideSign(team) * (2.5 + 0.7 * i++), 0, -6.5);
-      p.pos = clone(p.target);
+      if (teleport) p.pos = clone(p.target);
     }
+  }
+
+  /** ¿Alguien de la cancha todavía va caminando a su lugar (por ejemplo, el que entró en un cambio)? */
+  get arriving(): boolean {
+    for (const team of TEAM_IDS) {
+      for (const k of this.court(team)) if (distXZ(this.player(k).pos, this.player(k).target) > 0.35) return true;
+    }
+    return false;
   }
 
   /** La IA: tiempo ante una racha rival y cambio del cansado por un suplente fresco del mismo puesto. */
@@ -467,6 +471,8 @@ export class Simulation {
       if (this.pendingServe) {
         this.runUp(this.pendingServe);
         if (this.time >= this.pendingServe.at) this.serve();
+      } else if (this.arriving) {
+        // Se espera a que los que entraron en un cambio lleguen a su lugar.
       } else {
         this.phaseTimer -= dt;
         if (this.phaseTimer <= 0) {

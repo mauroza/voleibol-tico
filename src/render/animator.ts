@@ -131,7 +131,9 @@ export class Animator {
     const inPlay = sim.phase === 'inPlay' || sim.phase === 'warmup';
 
     // ---- Locomoción ----
-    let pose: Pose = onCourt ? POSES.ready : POSES.idle;
+    // En la banca, sentados (salvo en el calentamiento, que hacen fila); en cancha, listos.
+    const benched = !onCourt && sim.phase !== 'warmup' && this.speed < 0.3;
+    let pose: Pose = onCourt ? POSES.ready : benched ? POSES.sit : POSES.idle;
     if (this.speed > 0.3) {
       const fwd = this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw);
       const side = this.vx * Math.cos(this.yaw) - this.vz * Math.sin(this.yaw);
@@ -236,10 +238,15 @@ export class Animator {
 
     // ---- Celebración o lamento entre rallies ----
     if (this.mood) {
-      if (now < this.mood.until && !inPlay && onCourt) pose = blendPose(pose, this.mood.pose, 0.85);
+      // También la banca festeja de pie (o se lamenta) cada punto.
+      if (now < this.mood.until && !inPlay) pose = blendPose(pose, this.mood.pose, onCourt ? 0.85 : 0.7);
       else if (now >= this.mood.until) this.mood = null;
     }
 
+    // Respiración y peso que se mueve: nadie queda quieto como un robot.
+    const breathe = Math.sin(performance.now() / 1000 * 1.6 + this.key.length * 1.7);
+    const sp = pose.spine ?? [0, 0, 0];
+    pose = { ...pose, spine: [sp[0] + breathe * 0.025, sp[1] + Math.sin(performance.now() / 2300 + this.key.charCodeAt(2)) * 0.06, sp[2] + breathe * 0.02] };
     this.applyPose(pose);
 
     // ---- Salto ----

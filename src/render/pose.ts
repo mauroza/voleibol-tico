@@ -162,7 +162,7 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'planc
     {
       t: -0.2,
       pose: {
-        spine: [-0.35, 0.4, 0], neck: [-0.35, 0, 0],
+        spine: [-0.35, 0.22, 0], neck: [-0.35, 0, 0],
         shoulderL: [-2.75, 0, 0.15], elbowL: [-0.2, 0, 0],
         shoulderR: [-2.95, 0, -0.6], elbowR: [-2.1, 0, 0],
         hipL: [-0.75, 0, 0.1], kneeL: [1.25, 0, 0], hipR: [-0.3, 0, -0.1], kneeR: [1.5, 0, 0],
@@ -171,7 +171,7 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'planc
     {
       t: 0,
       pose: {
-        spine: [0.12, -0.3, 0], neck: [-0.3, 0, 0],
+        spine: [0.12, -0.08, 0], neck: [-0.3, 0, 0],
         shoulderL: [-0.9, 0, 0.3], elbowL: [-1.0, 0, 0],
         shoulderR: [-2.95, 0, -0.12], elbowR: [-0.03, 0, 0],
         ...legs(-0.45, 0.9),
@@ -180,7 +180,7 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'planc
     {
       t: 0.15,
       pose: {
-        spine: [0.5, -0.45, 0], neck: [-0.25, 0, 0],
+        spine: [0.5, -0.18, 0], neck: [-0.25, 0, 0],
         shoulderL: [-0.3, 0, 0.2], elbowL: [-0.8, 0, 0],
         shoulderR: [-0.6, 0, 0.45], elbowR: [-0.6, 0, 0],
         ...legs(-0.4, 0.7),

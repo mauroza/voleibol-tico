@@ -89,6 +89,9 @@ export const TUNING = {
     tallGravity: 6,
     /** Remate fuerte a la zona de adelante (entre la línea de 3 m y la red): baja en picada. */
     frontGravity: 9,
+    /** Remate en rojo: el primer pique rebota muchísimo (bombazo), con tope de velocidad hacia arriba (m/s). */
+    bombRestitution: 0.82,
+    bombMaxUp: 12,
     noise: 2.0,
     targetSamples: 8,
     shots: { cross: { risk: 0.1 }, line: { risk: 0.14 }, tip: { risk: 0.04 }, tool: { risk: 0.16 } },

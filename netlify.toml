@@ -1,0 +1,7 @@
+# Sitio del juego (con modo online): build de Vite, carpeta dist.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"

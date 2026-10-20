@@ -122,7 +122,8 @@ export class Animator {
         // Salto justo para que la mano llegue a la pelota en el punto más alto.
         if (!this.jump) {
           // Zaguero (pipe): despega detrás de la línea de 3 m y cae adelante.
-          this.startJump(up.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.6), Math.abs(up.point.x) > 3);
+          const broad = Math.abs(up.point.x) > 2.9;
+          this.startJump(up.time + 0.01, broad ? SPIKE_AIR * 1.3 : SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.9), broad);
         }
         aim = { target, arms: 'right', weight: ease(1 - lead / 0.14) * 0.9 };
       } else if (up.kind === 'set') {
@@ -181,8 +182,11 @@ export class Animator {
     let drift = 0;
     if (this.jump) {
       lift = jumpOffset(now, this.jump.apex, this.jump.air, this.jump.peak);
-      // Salto largo: atrás al despegar, en su punto al golpear, adelante al caer.
-      if (this.jump.broad) drift = Math.max(-0.5, Math.min(0.5, (now - this.jump.apex) / this.jump.air)) * 0.9;
+      // Salto largo tipo Nishida: despega muy atrás de la línea, golpea en su punto y cae adelante.
+      if (this.jump.broad) {
+        const u = Math.max(-0.5, Math.min(0.5, (now - this.jump.apex) / this.jump.air));
+        drift = u < 0 ? u * 2.4 : u * 1.2;
+      }
       if (now > this.jump.apex + this.jump.air / 2) this.jump = null;
     }
     this.rig.body.position.y = lift;

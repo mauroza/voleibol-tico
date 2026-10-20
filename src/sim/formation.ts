@@ -49,10 +49,10 @@ export function receiveFormation(roles: readonly Role[]): Spot[] {
 }
 export const SERVE_SPOT: Spot = [9.6, 2.5];
 export const APPROACH_SPOTS: Record<SetOption, Spot> = {
-  zone4: [3.2, -3.6], zone4fast: [2.6, -3.9], quick: [2.0, 0.5], semi: [2.4, -0.8], zone2: [3.2, 3.6], pipe: [5.5, 0], back1: [5.5, 3.2],
+  zone4: [3.2, -3.6], zone4fast: [2.6, -3.9], quick: [2.0, 0.5], semi: [2.4, -0.8], zone2: [3.2, 3.6], pipe: [6.6, 0], back1: [6.6, 3.2],
 };
 export const ATTACK_POINTS: Record<SetOption, Spot> = {
-  zone4: [1.0, -3.6], zone4fast: [0.8, -3.8], quick: [0.7, 0.4], semi: [0.9, -0.8], zone2: [1.0, 3.6], pipe: [3.6, 0], back1: [3.6, 3.2],
+  zone4: [1.0, -3.6], zone4fast: [0.8, -3.8], quick: [0.7, 0.4], semi: [0.9, -0.8], zone2: [1.0, 3.6], pipe: [3.3, 0], back1: [3.3, 3.2],
 };
 export const ZONE_SPOTS: Record<Zone, Spot> = { 1: [7, 3], 2: [1.8, 3], 3: [1.8, 0], 4: [1.8, -3], 5: [7, -3], 6: [7, 0] };
 

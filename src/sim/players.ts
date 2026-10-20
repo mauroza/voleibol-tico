@@ -28,6 +28,10 @@ export interface PlayerDef {
   /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (índice de color; el último, rapado). */
   skin: number;
   hair: number;
+  /** Mangas de compresión: 0 ninguna, 1 izquierda, 2 derecha, 3 ambas (brazos y piernas); color 0 negro, 1 blanco. */
+  armSleeve: number;
+  legSleeve: number;
+  sleeveColor: number;
 }
 
 /** Apellido para la espalda de la camisa. */

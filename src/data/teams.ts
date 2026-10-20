@@ -78,7 +78,7 @@ export function makeTeam(spec: TeamSpec): TeamDef {
       const value = attrs[key] + (bonus[key] ?? 0) + rng.range(-variance, variance);
       attrs[key] = Math.round(Math.min(99, Math.max(1, value)));
     }
-    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, skin: 0, hair: 0 };
+    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, skin: 0, hair: 0, armSleeve: 0, legSleeve: 0, sleeveColor: 0 };
   });
   // Físico con su propio generador: no altera los atributos ya sorteados.
   const body = createRng(seed * 7919 + 13);
@@ -97,6 +97,10 @@ export function makeTeam(spec: TeamSpec): TeamDef {
     p.skin = weighted(looks.next(), skinWeights);
     // Pelo: la mayoría natural, uno de cada tres llamativo; algunos rapados.
     p.hair = weighted(looks.next(), [0.24, 0.16, 0.1, 0.05, 0.05, 0.05, 0.06, 0.05, 0.04, 0.04, 0.04, 0.12]);
+    // Mangas de compresión como los profesionales: a veces una sola manga negra en una pierna.
+    p.armSleeve = weighted(looks.next(), [0.55, 0.1, 0.15, 0.2]);
+    p.legSleeve = weighted(looks.next(), [0.62, 0.14, 0.14, 0.1]);
+    p.sleeveColor = looks.chance(0.75) ? 0 : 1;
   }
   const ids = roster.map((p) => p.id);
   return { ...info, roster, lineup: ids.slice(0, 6), libero: ids[6], liberoReplaces: [ids[2], ids[5]] };

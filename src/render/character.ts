@@ -21,6 +21,10 @@ export interface Look {
   hair: string | null;
   number: number;
   name: string;
+  /** Mangas de compresión por lado (L, R) y su color. */
+  armSleeve: { L: boolean; R: boolean };
+  legSleeve: { L: boolean; R: boolean };
+  sleeve: string;
 }
 
 /** Tonos de piel, de claro a muy oscuro. */
@@ -39,8 +43,18 @@ export interface Rig {
 }
 
 /** Camisa del color del equipo (el líbero, del secundario) y pantaloneta que contraste. */
-export function lookFor(p: { number: number; skin: number; hair: number }, name: string, primary: string, secondary: string, libero: boolean): Look {
+export function lookFor(
+  p: { number: number; skin: number; hair: number; armSleeve: number; legSleeve: number; sleeveColor: number },
+  name: string,
+  primary: string,
+  secondary: string,
+  libero: boolean,
+): Look {
+  const sides = (n: number) => ({ L: n === 1 || n === 3, R: n === 2 || n === 3 });
   return {
+    armSleeve: sides(p.armSleeve),
+    legSleeve: sides(p.legSleeve),
+    sleeve: p.sleeveColor === 1 ? '#f2f2f2' : '#15161a',
     shirt: libero ? secondary : primary,
     shorts: shortsFor(primary, secondary),
     skin: SKIN_TONES[Math.min(SKIN_TONES.length - 1, Math.max(0, p.skin))],
@@ -132,7 +146,13 @@ const shared = {
   /** Hombro de la camisa: cubre la unión del brazo con el tronco en cualquier ángulo. */
   shoulderCap: new THREE.SphereGeometry(0.085, 12, 10),
   shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 12),
-  kneePad: new THREE.SphereGeometry(0.072, 10, 8),
+  /** Rodillera: una banda acolchada que envuelve la rodilla. */
+  kneePad: new THREE.CylinderGeometry(0.094, 0.088, 0.14, 14),
+  /** Mangas de compresión (un poco más gruesas que la piel que cubren). */
+  armSleeveUpper: limb(0.064, DIMS.upperArm - 0.12),
+  armSleeveLower: limb(0.061, DIMS.forearm - 0.12),
+  legSleeveUpper: limb(0.085, DIMS.thigh - 0.3),
+  legSleeveLower: limb(0.077, DIMS.shin - 0.16),
   /** Pelo: casquete sobre la cabeza. */
   hair: new THREE.SphereGeometry(0.153, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45),
   eye: new THREE.SphereGeometry(0.021, 8, 6),
@@ -199,29 +219,41 @@ export function buildCharacter(look: Look): Rig {
   attach(neck, head);
 
   const arm = (side: 1 | -1) => {
+    const sleeve = side === 1 ? look.armSleeve.L : look.armSleeve.R;
     const shoulder = joint(spine, side * 0.2, 0.46, 0);
-    attach(shoulder, [
+    const upper: Part[] = [
       { geometry: shared.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
       { geometry: shared.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
       { geometry: shared.shoulderCap, color: shirt, matrix: placed(0, 0, 0) },
-    ]);
+    ];
+    if (sleeve) upper.push({ geometry: shared.armSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.upperArm / 2 - 0.03, 0) });
+    attach(shoulder, upper);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
-    attach(elbow, [{ geometry: shared.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }]);
+    const lower: Part[] = [{ geometry: shared.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
+    // La manga llega a la muñeca: la mano queda descubierta.
+    if (sleeve) lower.push({ geometry: shared.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
+    attach(elbow, lower);
     return { shoulder, elbow };
   };
   const L = arm(1);
   const R = arm(-1);
 
   const leg = (side: 1 | -1) => {
+    const sleeve = side === 1 ? look.legSleeve.L : look.legSleeve.R;
     const hip = joint(hips, side * 0.1, -0.02, 0);
-    attach(hip, [
+    const upper: Part[] = [
       { geometry: shared.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
       { geometry: shared.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
-    ]);
+    ];
+    if (sleeve) upper.push({ geometry: shared.legSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.thigh + 0.13, 0) });
+    attach(hip, upper);
     const knee = joint(hip, 0, -DIMS.thigh, 0);
+    const lower: Part[] = [{ geometry: shared.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
+    if (sleeve) lower.push({ geometry: shared.legSleeveLower, color: look.sleeve, matrix: placed(0, -DIMS.shin / 2 + 0.02, 0) });
     attach(knee, [
-      { geometry: shared.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) },
-      { geometry: shared.kneePad, color: PAD, matrix: placed(0, -0.02, 0.025, [0, 0, 0], [1, 1.15, 0.9]) },
+      ...lower,
+      // La rodillera envuelve la rodilla (centrada un poco debajo de la articulación).
+      { geometry: shared.kneePad, color: PAD, matrix: placed(0, -0.03, 0.006) },
       { geometry: shared.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03, 0.06, [Math.PI / 2, 0, 0]) },
     ]);
     return { hip, knee };

@@ -71,5 +71,8 @@ button { font: inherit; cursor: pointer; }
 .feedback[data-timing="power-medium"] { color: #ffd23f; }
 .feedback[data-timing="power-strong"] { color: #ff3b3b; font-size: 56px; text-shadow: 0 0 18px #ff3b3b, 0 3px 12px #000; }
 .speedlines { position: fixed; inset: 0; pointer-events: none; }
+.impact-flash { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle, #ffffffcc 0, #ffffff55 40%, transparent 75%); opacity: 0; }
+.impact-flash.on { animation: impact-flash 0.32s ease-out; }
+@keyframes impact-flash { from { opacity: 1; } to { opacity: 0; } }
 .replay-badge { position: fixed; top: calc(96px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); padding: 6px 12px; border-radius: 6px; background: #ce1126; color: #fff;
                 font-weight: 900; letter-spacing: 2px; font-size: 14px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }

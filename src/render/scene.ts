@@ -60,6 +60,7 @@ export class MatchView {
   private readonly fx: Effects;
   private readonly director: CameraDirector;
   private readonly speedLines: SpeedLines;
+  private readonly flashEl = document.createElement('div');
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
@@ -113,6 +114,8 @@ export class MatchView {
     this.scene.add(this.fx.group);
 
     this.speedLines = new SpeedLines(uiRoot);
+    this.flashEl.className = 'impact-flash';
+    uiRoot.append(this.flashEl);
     this.badge.className = 'replay-badge';
     this.badge.textContent = 'REPETICIÓN';
     uiRoot.append(this.badge);
@@ -215,8 +218,14 @@ export class MatchView {
           }
         }
         if (e.kind === 'block') {
-          this.director.punch(0.035);
-          this.speedLines.flash(0.6);
+          // Choque contra el bloqueo: chispas, onda, sacudida fuerte y destello blanco.
+          const strength = e.quality >= 0.85 ? 1 : 0.6;
+          this.fx.crash(at, strength, now);
+          this.director.punch(0.05 + 0.04 * strength, 0.35);
+          this.speedLines.flash(0.9);
+          this.flashEl.classList.remove('on');
+          void this.flashEl.offsetWidth;
+          this.flashEl.classList.add('on');
         }
       } else if (e.type === 'decisionResolved') {
         this.lastPower = e.power ?? null;

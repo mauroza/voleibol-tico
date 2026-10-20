@@ -25,6 +25,10 @@ export const SET_LABELS: Record<SetOption, string> = {
   back1: 'Zaguero zona 1',
 };
 
+/** Tempo de cada colocación: 0 alta, 1 media (semi, pipe, zaguero), 2 rápida o tensa. */
+export const SET_TEMPO: Record<SetOption, number> = { zone4: 0, zone2: 0, back1: 1, pipe: 1, semi: 1, zone4fast: 2, quick: 2 };
+export const TEMPO_LABELS = ['Alta', 'Media', 'Rápida'] as const;
+
 export interface SetChoice {
   option: SetOption;
   attackerKey: string;

@@ -40,6 +40,8 @@ export interface Decision {
   aimSide: TeamId | null;
   /** 'timing': acertar el verde; 'power': la posición de la barra al presionar es la fuerza (verde, amarillo, rojo). */
   meter: 'timing' | 'power';
+  /** Colocación: el usuario fijó la opción con una tecla (si no, sale de la mira y del tempo de la barra). */
+  locked?: boolean;
 }
 
 /** El usuario presiona antes del contacto; después del contacto ya es tarde. */
@@ -79,3 +81,6 @@ export function contactMeter(pressedAt: number, contactTime: number): number {
 
 /** El rojo es lo más difícil de acertar (cuenta como timing perfecto); amarillo y verde, como bueno. */
 export const powerTiming = (p: Power): Timing => (p === 'strong' ? 'perfect' : 'good');
+
+/** Tempo de la colocación según la barra: verde alta (0), amarillo media (1), rojo rápida (2). */
+export const tempoOf = (p: Power): number => (p === 'soft' ? 0 : p === 'medium' ? 1 : 2);

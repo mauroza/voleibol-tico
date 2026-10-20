@@ -883,8 +883,8 @@ export class Simulation {
   /** Posiciones del bloqueo cerrado: los bloqueadores, juntos frente al atacante, en el orden de sus zonas. */
   private blockSpots(block: BlockSetup): Map<string, Vec3> {
     const team = block.team;
-    const zoneZ = (k: string) => spot(team, zoneSpotFor(this.player(k).def.role, true)).z;
-    const ordered = [...block.keys].sort((a, b) => zoneZ(a) - zoneZ(b));
+    // En el orden en que están parados (de un costado al otro): nadie se cruza con un compañero para llegar.
+    const ordered = [...block.keys].sort((a, b) => this.player(a).pos.z - this.player(b).pos.z);
     const out = new Map<string, Vec3>();
     ordered.forEach((k, i) => {
       const offset = (i - (ordered.length - 1) / 2) * TUNING.block.spacing;

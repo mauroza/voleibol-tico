@@ -92,3 +92,35 @@ describe('finta del central', () => {
     expect(atNet / decoys).toBeGreaterThan(0.8);
   }, 60_000);
 });
+
+describe('bloqueo ordenado', () => {
+  it('los bloqueadores llegan al bloqueo sin cruzarse entre ellos', () => {
+    let blocks = 0;
+    let crossed = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => {
+        let current: unknown = null;
+        let order = '';
+        const rank = (keys: readonly string[]) => [...keys].sort((a, b) => sim.player(a).pos.z - sim.player(b).pos.z).join();
+        sim.bus.on((e) => {
+          if (e.type !== 'contact' || e.kind !== 'attack' || !current) return;
+          const b = current as { keys: string[] };
+          if (b.keys.length < 2) return;
+          blocks += 1;
+          if (rank(b.keys) !== order) crossed += 1;
+        });
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          const b = sim.blockers;
+          if (b && b !== current) {
+            current = b;
+            order = rank(b.keys);
+          } else if (b && b.keys.join() !== (current as { keys: string[] }).keys.join()) order = rank(b.keys);
+        };
+      });
+    }
+    expect(blocks).toBeGreaterThan(50);
+    expect(crossed / blocks).toBeLessThan(0.05);
+  }, 120_000);
+});

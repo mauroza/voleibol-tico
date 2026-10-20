@@ -39,7 +39,8 @@ function play(seed: number, bot: Bot, onCreate?: (sim: Simulation) => void, team
 describe('control del equipo completo', () => {
   it('inactivo: el partido termina y toda decisión se resuelve como mala', () => {
     const timings: Timing[] = [];
-    play(1, 'idle', (sim) => sim.bus.on((e) => { if (e.type === 'decisionResolved') timings.push(e.timing); }));
+    // El bloqueo sugerido sin saltar con ESPACIO sale normal ('good'); todo lo demás sin tocar es malo.
+    play(1, 'idle', (sim) => sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind !== 'block') timings.push(e.timing); }));
     expect(timings.length).toBeGreaterThan(20);
     expect(new Set(timings)).toEqual(new Set(['bad']));
   });
@@ -66,9 +67,11 @@ describe('control del equipo completo', () => {
   it('elegir bloqueo triple pone a tres delanteros a bloquear', () => {
     let checked = 0;
     const sim = new Simulation({ seed: 4, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    let seen: unknown = null;
     while (sim.phase !== 'matchOver' && checked < 5) {
       const d = sim.decision;
-      if (d?.kind === 'block' && d.chosen === null) {
+      if (d?.kind === 'block' && d !== seen) {
+        seen = d;
         const triple = d.options.findIndex((o) => o.label === 'Bloqueo triple');
         if (triple >= 0) {
           sim.choose(triple);
@@ -103,8 +106,8 @@ describe('control del equipo completo', () => {
       }
       sim.step(TUNING.dt);
     }
-    expect(seen.has(cfg.thinkScale)).toBe(true);
-    expect(seen.size).toBeGreaterThanOrEqual(3);
+    // Todas las decisiones ya vienen con algo elegido (mira o bloqueo sugerido): no hay tiempo detenido.
+    expect(seen.size).toBeGreaterThanOrEqual(2);
   });
 
   it('press(at) juzga el timing con el instante exacto de la tecla, no con el del último cuadro', () => {

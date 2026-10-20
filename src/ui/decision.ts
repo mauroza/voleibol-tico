@@ -29,9 +29,7 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
     ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
   attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red = finta`,
-  block: (d) => (d.chosen === null
-    ? `Elige bloqueo con 1–${d.options.length} · mueve la marca de defensa (azul) a donde esperas el remate`
-    : 'Mueve la marca de defensa · ESPACIO al saltar (zona verde)'),
+  block: (d) => `Bloqueo sugerido ya elegido · 1–${d.options.length} para cambiarlo · mouse: marca de defensa (azul) · ESPACIO al saltar = bloqueo reforzado (opcional)`,
 };
 
 const POWER_FEEDBACK: Record<Power, string> = { soft: 'Suave', medium: 'Fuerte', strong: '¡POTENTE!' };

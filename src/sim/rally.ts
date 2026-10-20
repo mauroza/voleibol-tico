@@ -598,8 +598,12 @@ export class Simulation {
       // Marca de defensa: dónde espera el remate; un defensor la cubre (se mueve con la mira).
       const d = this.decision as Decision | null;
       if (d) {
-        const f = spot(this.control, [6.5, 0]);
-        d.aim = { x: f.x, z: f.z };
+        // Bloqueo sugerido ya elegido (el tiempo no se detiene); se cambia con 1–4 en cualquier momento.
+        const suggested = options.findIndex((o) => o.option.id === 'block' && o.option.n === this.blockSetup!.scheme);
+        d.chosen = suggested >= 0 ? suggested : 0;
+        // La marca arranca en la diagonal profunda, donde suele ir el remate.
+        const z = Math.abs(plan.point.z) < 1 ? 0 : -Math.sign(plan.point.z) * 2.6;
+        d.aim = { x: sideSign(this.control) * 6.3, z };
         d.aimSide = this.control;
         this.blockSetup.focus = { ...d.aim };
         this.setFormations();
@@ -1001,7 +1005,10 @@ export class Simulation {
       this.netFaultTime = net.time;
     } else if (net.kind === 'clear') {
       if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
-        if (blockDecision && blockDecision.chosen !== null) blockTiming = judgeTiming(blockDecision.pressedAt, blockDecision.contactTime!);
+        // El salto con ESPACIO es opcional: sin tocarlo el bloqueo sale normal; bien medido, reforzado.
+        if (blockDecision && blockDecision.chosen !== null) {
+          blockTiming = blockDecision.pressedAt === null ? 'good' : judgeTiming(blockDecision.pressedAt, blockDecision.contactTime!);
+        }
         this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
       } else if (last.kind === 'attack' && block && block.scheme > 0) {
         // La finta también salta el bloqueo: pasa por encima o al costado de las manos; si no puede, la tocan.

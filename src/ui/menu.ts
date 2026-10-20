@@ -118,10 +118,10 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       <ul>
         <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
         <li><b>Colocación en abanico:</b> apunta la mira al aro del atacante y presiona cuando la barra marque el tempo: <span style="color:#5dff8f">verde alta</span>, <span style="color:#ffd23f">amarillo media</span>, <span style="color:#ff3b3b">rojo rápida</span>. Mira más allá de la red = segunda. Las teclas 1–N eligen directo.</li>
-        <li>Bloqueo: elige con <b>1–4</b> (o clic) y presiona <b>ESPACIO</b> justo cuando la pelota llegue: zona verde = <b>¡Perfecto!</b></li>
+        <li><b>Bloqueo:</b> viene sugerido y ya elegido (cámbialo con <b>1–4</b>). Mueve la <b style="color:#4dc3ff">marca de defensa</b> con el mouse. <b>ESPACIO</b> al saltar es opcional: bien medido, bloqueo reforzado.</li>
         <li><b>Saque, recepción y remate se apuntan:</b> la cámara se pone detrás del jugador; mueve la mira con el mouse o flechas/WASD y golpea con clic o <b>ESPACIO</b>.</li>
         <li>En el remate la barra es la <b>fuerza</b>: <span style="color:#5dff8f">verde suave</span>, <span style="color:#ffd23f">amarillo fuerte</span>, <span style="color:#ff3b3b">rojo potente</span> (más riesgo). Remate cerca de la red = finta.</li>
-        <li>En el saque la barra elige el saque: <span style="color:#5dff8f">verde seguro</span>, <span style="color:#ffd23f">amarillo flotado en salto</span> (la pelota baila), <span style="color:#ff3b3b">rojo en suspensión</span> (lanzamiento alto y golpe de remate).</li>
+        <li><b>Saque:</b> cada jugador tiene su estilo (en suspensión o flotado, se ve en el panel). La barra es la fuerza: <span style="color:#5dff8f">verde suave y seguro</span>, <span style="color:#ff3b3b">rojo potente y arriesgado</span>.</li>
         <li>Cada jugador tiene su <b>fuerte</b>, una <b>barra de estamina</b> (saltar cansa) y, si anota seguido, se <b style="color:#ff3b3b">enciende</b> con un aura roja. Ritmo: <b>Fluido</b> por defecto; <b>Rápido (online)</b> casi sin cámara lenta.</li>
         <li>Cuando te rematan: elige el bloqueo y pon la <b style="color:#4dc3ff">marca de defensa</b> donde esperas el remate; un compañero la cubre y llega mejor.</li>
         <li><b>Esc</b> pausa · <b>M</b> silencio · <b>F</b> acelera x4 · Gamepad: cruceta elige, <b>A</b> timing, <b>Start</b> pausa.</li>

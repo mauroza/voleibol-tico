@@ -5,7 +5,7 @@ import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type
 import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
 import { contactMeter, judgeTiming, powerTiming, powerZone, serveMeter, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
-import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, RECEIVE_SPOTS, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, spot, zoneSpotFor } from './formation';
+import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
 import { attackContactHeight, blockReach, moveSpeed, type PlayerState } from './players';
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
@@ -281,6 +281,7 @@ export class Simulation {
     for (const team of TEAM_IDS) {
       const court = this.court(team);
       const receiving = team !== this.match.serving;
+      const reception = receiveFormation(court.map((k) => this.player(k).def.role));
       let bench = 0;
       for (const p of this.players.values()) {
         if (p.team !== team) continue;
@@ -289,7 +290,7 @@ export class Simulation {
         // Ambas bancas del lado lejano de la cámara de transmisión (z negativo).
         if (idx < 0) target = v3(sideSign(team) * (2.5 + 0.7 * bench++), 0, -6.5);
         else if (!receiving && idx === 0) target = spot(team, SERVE_SPOT);
-        else target = spot(team, (receiving ? RECEIVE_SPOTS : DEFENSE_SPOTS)[idx]);
+        else target = spot(team, receiving ? reception[idx] : DEFENSE_SPOTS[idx]);
         p.pos = clone(target);
         p.target = clone(target);
       }
@@ -437,8 +438,8 @@ export class Simulation {
         const t = this.pickAttackTarget(otherTeam(plan.team), plan.point, 'cross');
         this.aimDecision(opened, { x: t.x, z: t.z }, otherTeam(plan.team), 'power');
       } else if (opened && (plan.kind === 'reception' || plan.kind === 'dig')) {
-        // Pase dirigido: la mira empieza donde está el colocador; la barra es el timing.
-        const s = spot(plan.team, SETTER_SPOT);
+        // Pase dirigido: la mira empieza donde está el colocador (si recibe el colocador, donde coloca el líbero).
+        const s = spot(plan.team, this.player(plan.key).def.role === 'S' ? LIBERO_SET_SPOT : SETTER_SPOT);
         this.aimDecision(opened, { x: s.x, z: s.z }, plan.team, 'timing');
       }
     } else if (plan.kind === 'attack' && plan.team !== this.control && this.blockSetup?.team === this.control) {
@@ -612,7 +613,7 @@ export class Simulation {
     } else {
       const noise = cfg.noise * (1 - q) * (high ? hp.noiseFactor : 1);
       const aim = ctl?.aim;
-      const goal = aim ? v3(aim.x, TUNING.setHeight, aim.z) : spot(p.team, SETTER_SPOT, TUNING.setHeight);
+      const goal = aim ? v3(aim.x, TUNING.setHeight, aim.z) : spot(p.team, p.def.role === 'S' ? LIBERO_SET_SPOT : SETTER_SPOT, TUNING.setHeight);
       const target = this.keepOnSide(p.team, this.noisy(goal, noise));
       // Pase dirigido: más tiempo de vuelo cuanto más lejos se manda.
       const flight = aim ? clamp(0.9 + distXZ(at, target) * 0.09, 1.0, 1.9) : high ? hp.flightTime : cfg.flightTime;
@@ -833,6 +834,12 @@ export class Simulation {
         const r = this.reach(setter, [TUNING.setHeight]);
         if (r) return { key: setter, team, time: r.time, point: r.point, kind: 'set', low: false };
       }
+      // Sin colocador (tomó la primera), coloca el líbero desde atrás.
+      const libero = court.find((k) => this.player(k).def.role === 'L');
+      if (libero) {
+        const r = this.reach(libero, [TUNING.setHeight]);
+        if (r) return { key: libero, team, time: r.time, point: r.point, kind: 'set', low: false };
+      }
       return this.bestContact(team, court.filter((k) => k !== setter), [TUNING.setHeight], 'set')
         ?? this.bestContact(team, court, low, 'set', true);
     }
@@ -971,6 +978,7 @@ export class Simulation {
         const p = this.player(key);
         // El bloqueador principal no corre al punto de cruce: sigue en su lugar del bloqueo cerrado.
         if (plan && plan.key === key) p.target = plan.kind === 'block' && blockSpots?.has(key) ? blockSpots.get(key)! : this.standPoint(plan);
+        else if (building && p.def.role === 'L' && this.last?.team === team && this.player(this.last.key).def.role === 'S') p.target = spot(team, LIBERO_SET_SPOT);
         else if (building) p.target = this.attackSpot(team, p, idx);
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);

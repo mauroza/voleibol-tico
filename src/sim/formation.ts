@@ -23,6 +23,30 @@ export function zoneSpotFor(role: Role, front: boolean): Spot {
 }
 
 export const SETTER_SPOT: Spot = [0.8, 1.0];
+/** Si el colocador toma la primera pelota, coloca el líbero desde atrás de la línea de 3 m. */
+export const LIBERO_SET_SPOT: Spot = [3.8, 0.5];
+
+/**
+ * Recepción del 5-1: reciben el líbero y los puntas (tres en línea, en el orden izquierda-derecha de la rotación);
+ * el colocador zaguero se esconde cerca de la red para penetrar, los delanteros que no reciben esperan en la red
+ * y el opuesto zaguero se esconde al fondo. Devuelve un lugar por posición (índice = posición − 1).
+ */
+export function receiveFormation(roles: readonly Role[]): Spot[] {
+  const out: Spot[] = RECEIVE_SPOTS.map((s) => s);
+  const isFront = (i: number) => i >= 1 && i <= 3;
+  const receivers = roles.map((_, i) => i).filter((i) => roles[i] === 'L' || roles[i] === 'OH' || (!isFront(i) && roles[i] === 'MB'));
+  receivers.sort((a, b) => RECEIVE_SPOTS[a][1] - RECEIVE_SPOTS[b][1]);
+  const lanes = receivers.length >= 3 ? [-3, 0, 3] : receivers.length === 2 ? [-1.8, 1.8] : [0];
+  receivers.slice(0, 3).forEach((i, k) => { out[i] = [6.3, lanes[k]]; });
+  roles.forEach((role, i) => {
+    if (receivers.slice(0, 3).includes(i)) return;
+    const right = RECEIVE_SPOTS[i][1];
+    if (role === 'S') out[i] = isFront(i) ? [0.9, right] : [2.6, 2.6];
+    else if (isFront(i)) out[i] = [1.4, right];
+    else out[i] = [8.2, right >= 0 ? 3.6 : -3.6];
+  });
+  return out;
+}
 export const SERVE_SPOT: Spot = [9.6, 2.5];
 export const APPROACH_SPOTS: Record<SetOption, Spot> = {
   zone4: [3.2, -3.6], zone4fast: [2.6, -3.9], quick: [2.0, 0.5], semi: [2.4, -0.8], zone2: [3.2, 3.6], pipe: [5.5, 0], back1: [5.5, 3.2],

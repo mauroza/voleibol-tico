@@ -46,6 +46,9 @@ export class Lockstep {
   private readonly remoteHashes = new Map<number, string>();
   /** Se pone en true si las dos simulaciones dejaron de coincidir. */
   desync = false;
+  /** Ida y vuelta con el rival (ms, suavizado); null hasta la primera medición. */
+  ping: number | null = null;
+  private pingClock = 1.5;
   /** Hace cuánto (s reales) que no llega nada del rival. */
   silence = 0;
   readonly remote: TeamId;
@@ -73,6 +76,16 @@ export class Lockstep {
 
   private receive(m: NetMessage): void {
     this.silence = 0;
+    // Ping en vivo: el otro devuelve nuestra marca de tiempo y medimos la ida y vuelta.
+    if (m.t === 'p') {
+      this.net.send({ t: 'q', s: m.s });
+      return;
+    }
+    if (m.t === 'q') {
+      const rtt = performance.now() - (m.s as number);
+      this.ping = this.ping === null ? rtt : this.ping * 0.7 + rtt * 0.3;
+      return;
+    }
     if (m.t === 'in') {
       for (const input of m.inputs as Input[]) {
         if (input.seq <= this.remoteSeq) continue;
@@ -108,6 +121,11 @@ export class Lockstep {
    */
   advance(dtReal: number, pace: number): boolean {
     this.silence += dtReal;
+    this.pingClock += dtReal;
+    if (this.pingClock > 2) {
+      this.pingClock = 0;
+      this.net.send({ t: 'p', s: performance.now() });
+    }
     // Mensajes: cada cuadro mientras tenemos una decisión abierta; si no, unas 6 veces por segundo.
     this.sendClock += dtReal;
     const deciding = !!this.sim.decisions[this.local] || this.tick - this.lastOpen[this.local] <= this.delay + 1;

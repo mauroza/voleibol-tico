@@ -88,8 +88,11 @@ export const TUNING = {
   /** Estamina: costo de cada acción, recuperación y efecto del cansancio (atributos y altura del salto). */
   stamina: {
     cost: { attack: 0.055, backAttack: 0.075, block: 0.035, jumpServe: 0.05, floatServe: 0.03, safeServe: 0.01, dive: 0.07, pass: 0.012, set: 0.008, decoy: 0.025 },
-    perPoint: 0.035,
+    /** Recuperación por punto: poca, así el cansancio se acumula a lo largo del set. */
+    perPoint: 0.008,
     bench: 0.12,
+    /** Al terminar el set se recupera bastante. */
+    perSet: 0.35,
     floor: 0.25,
     /** Con estamina 0 el atributo rinde este porcentaje y el salto pierde estos metros. */
     attrAtZero: 0.7,

@@ -130,6 +130,8 @@ export class Simulation {
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
+  /** Contacto anterior al último (para saber si un toque del defensor vino de un remate o de un saque). */
+  private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
   private lastAimed = false;
   private lastShot: AttackShot = 'cross';
@@ -346,6 +348,7 @@ export class Simulation {
     this.plan = null;
     this.netFaultTime = null;
     this.last = null;
+    this.prev = null;
     this.intent = null;
     this.decoyRun = null;
     this.threat = 0;
@@ -669,6 +672,7 @@ export class Simulation {
       this.touchSide = p.team;
       this.touches = 1;
     }
+    this.prev = this.last;
     this.last = { key: p.key, team: p.team, kind, quality };
     const cost = TUNING.stamina.cost;
     if (kind === 'attack') {
@@ -1347,7 +1351,8 @@ export class Simulation {
     const reason = this.pointReason(loser);
     // Autor del punto (remate, ace, tapa o remate que sale del bloqueo) para la racha.
     const last = this.last!;
-    const scorer = reason === 'blockOut' ? this.lastAttacker : reason === 'kill' || reason === 'ace' || reason === 'blockKill' ? last.key : null;
+    const active = reason === 'kill' || reason === 'ace' || reason === 'blockKill';
+    const scorer = reason === 'blockOut' ? this.lastAttacker : active ? (last.team === winner ? last.key : this.prev?.key ?? null) : null;
     const list = this.scorers[winner];
     list.push(scorer);
     if (list.length > TUNING.fire.window) list.shift();
@@ -1357,6 +1362,7 @@ export class Simulation {
       p.stamina = Math.min(1, p.stamina + (onCourt ? TUNING.stamina.perPoint : TUNING.stamina.bench));
     }
     const out = awardPoint(this.match, winner);
+    if (out.setWinner) for (const p of this.players.values()) p.stamina = Math.min(1, p.stamina + TUNING.stamina.perSet);
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });
@@ -1374,6 +1380,12 @@ export class Simulation {
   private pointReason(loser: TeamId): PointReason {
     const { kind, team } = this.last!;
     if (team === loser && kind === 'block') return 'blockOut';
+    // El defensor la tocó pero no pudo levantarla: sigue siendo punto del remate (o ace si venía del saque).
+    const prev = this.prev;
+    if (team === loser && (kind === 'dig' || kind === 'reception') && prev && prev.team !== loser) {
+      if (prev.kind === 'attack') return 'kill';
+      if (prev.kind === 'serve') return 'ace';
+    }
     if (team === loser) return kind === 'serve' ? 'serviceError' : kind === 'attack' ? 'attackError' : 'error';
     return kind === 'serve' ? 'ace' : kind === 'attack' ? 'kill' : kind === 'block' ? 'blockKill' : 'landed';
   }

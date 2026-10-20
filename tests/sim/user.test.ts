@@ -145,7 +145,8 @@ describe('control del equipo completo', () => {
 
 describe('remate apuntado', () => {
   /** Avanza hasta el próximo remate propio; `aim` decide a dónde apuntar. Devuelve dónde cae la pelota tras el golpe. */
-  function aimedAttack(seed: number, aim: (d: NonNullable<Simulation['decision']>) => { x: number; z: number }) {
+  /** `lead`: cuánto antes del contacto se presiona en el remate (tarde = rojo, temprano = verde). */
+  function aimedAttack(seed: number, aim: (d: NonNullable<Simulation['decision']>) => { x: number; z: number }, lead = 0.03) {
     const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
     let target: { x: number; z: number } | null = null;
     let justHit = false;
@@ -158,7 +159,7 @@ describe('remate apuntado', () => {
         target = aim(d);
         sim.setAim(target.x, target.z);
       } else if (d && d.kind !== 'attack' && d.chosen === null) sim.choose(0);
-      if (d && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
+      if (d && d.contactTime !== null && d.contactTime - sim.time <= (d.kind === 'attack' ? lead : 0.03)) sim.press();
       if (d?.kind === 'serve' && serveMeter(sim.time - d.startTime) >= 0.97) sim.press();
       sim.step(TUNING.dt);
       if (justHit) {
@@ -179,9 +180,11 @@ describe('remate apuntado', () => {
     expect(near).toBeGreaterThanOrEqual(4);
   });
 
-  it('apuntar cerca de la red es una finta (pelota lenta)', () => {
-    const { flight } = aimedAttack(2, () => ({ x: 1.8, z: 1 }));
-    expect(flight).toBeGreaterThan(0.6);
+  it('cerca de la red: en verde es finta (pelota lenta); en rojo, remate en picada (rápido)', () => {
+    const soft = aimedAttack(2, () => ({ x: 1.8, z: 1 }), 0.35);
+    expect(soft.flight).toBeGreaterThan(0.6);
+    const hard = aimedAttack(2, () => ({ x: 1.8, z: 1 }), 0.02);
+    expect(hard.flight).toBeLessThan(0.45);
   });
 });
 

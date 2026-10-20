@@ -4,6 +4,7 @@ import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
 import { ROLE_LABELS } from './menu';
+import { IS_TOUCH } from './touch';
 
 const TITLES: Record<DecisionKind, string> = {
   serve: 'Saque',
@@ -30,6 +31,16 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
   attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red: verde = finta, amarillo/rojo = remate en picada`,
   block: (d) => `${d.options[0].label} (según la colocación) · ESPACIO para saltar: atina el momento, un poco antes del golpe del rematador · mouse: marca de defensa (azul)`,
+};
+
+/** En teléfono: sin teclas ni mouse, todo con el dedo y el botón de acción. */
+const DRAG = 'Arrastra el dedo en la cancha para apuntar';
+const TOUCH_HINTS: Record<DecisionKind, (d: Decision) => string> = {
+  serve: () => `${DRAG} · SACAR: la barra es la fuerza (verde seguro · rojo potente)`,
+  pass: () => `${DRAG} · RECIBIR justo cuando llegue (verde)`,
+  set: (d) => (d.aim ? 'Apunta al aro del atacante · COLOCAR: verde alta · amarillo media · rojo rápida' : 'Toca una opción'),
+  attack: (d) => d.options[0].option.id === 'free' ? `${DRAG} · REMATAR cuando llegue (verde)` : `${DRAG} · REMATAR: más tarde, más fuerte · cerca de la red verde = finta`,
+  block: (d) => `${d.options[0].label} · SALTAR un poco antes del golpe · dedo: marca de defensa (azul)`,
 };
 
 const POWER_FEEDBACK: Record<Power, string> = { soft: 'Suave', medium: 'Fuerte', strong: '¡POTENTE!' };
@@ -130,7 +141,7 @@ export class DecisionPanel {
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
-        b.textContent = `${i + 1}  ${o.label}`;
+        b.textContent = IS_TOUCH ? o.label : `${i + 1}  ${o.label}`;
         b.classList.toggle('chosen', (d.kind === 'set' && d.aim ? this.sim.setPreview : d.chosen) === i);
         // Sin foco: ESPACIO nunca "hace clic" en un botón, siempre es el golpe.
         b.tabIndex = -1;
@@ -154,7 +165,7 @@ export class DecisionPanel {
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
     this.buttons.style.display = (d.aim && d.kind !== 'set') || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
-    this.hint.textContent = HINTS[d.kind](d);
+    this.hint.textContent = (IS_TOUCH ? TOUCH_HINTS : HINTS)[d.kind](d);
   }
 
   /** 0..1: posición del marcador. Llega a 1 en el instante ideal. */

@@ -1,3 +1,4 @@
+import { enterMobileMode } from './touch';
 import type { TempoProfile } from '../sim/rally';
 import { TEAMS } from '../data/teams';
 import type { Role } from '../sim/players';
@@ -120,7 +121,9 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       <ul>
         <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
         <li><b>Colocación en abanico:</b> apunta la mira al aro del atacante y presiona cuando la barra marque el tempo: <span style="color:#5dff8f">verde alta</span>, <span style="color:#ffd23f">amarillo media</span>, <span style="color:#ff3b3b">rojo rápida</span>. Mira más allá de la red = segunda. Las teclas 1–N eligen directo.</li>
-        <li><b>Bloqueo:</b> viene sugerido y ya elegido (cámbialo con <b>1–4</b>). Mueve la <b style="color:#4dc3ff">marca de defensa</b> con el mouse. <b>ESPACIO</b> al saltar es opcional: bien medido, bloqueo reforzado.</li>
+        <li><b>Bloqueo:</b> los bloqueadores van solos según la colocación (rápida: 1, media: 2, alta: 3). Salta con <b>ESPACIO</b> (o el botón <b>SALTAR</b> en el teléfono) justo antes del golpe del rematador. Mueve la <b style="color:#4dc3ff">marca de defensa</b> con el mouse o el dedo.</li>
+        <li><b>En teléfono o tablet:</b> arrastra el dedo por la cancha para apuntar y toca el botón grande de la derecha para golpear (sacar, recibir, colocar, rematar, saltar). Mejor en horizontal.</li>
+        <li><b>Challenge:</b> si en una jugada cerrada te cantan en contra, toca <b>Challenge</b> (o <b>C</b>) para revisar si picó dentro o si hubo roce del bloqueo (2 por set).</li>
         <li><b>Saque, recepción y remate se apuntan:</b> la cámara se pone detrás del jugador; mueve la mira con el mouse o flechas/WASD y golpea con clic o <b>ESPACIO</b>.</li>
         <li>En el remate la barra es la <b>fuerza</b>: <span style="color:#5dff8f">verde suave</span>, <span style="color:#ffd23f">amarillo fuerte</span>, <span style="color:#ff3b3b">rojo potente</span> (más riesgo). Remate cerca de la red = finta.</li>
         <li><b>Saque:</b> cada jugador tiene su estilo (en suspensión o flotado, se ve en el panel). La barra es la fuerza: <span style="color:#5dff8f">verde suave y seguro</span>, <span style="color:#ff3b3b">rojo potente y arriesgado</span>.</li>
@@ -135,6 +138,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     play.className = 'menu-play';
     play.textContent = 'Jugar contra la IA';
     play.addEventListener('click', () => {
+      enterMobileMode();
       el.remove();
       resolveFn({ ...setup, online: undefined });
     });
@@ -150,6 +154,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     host.textContent = 'Crear sala';
     host.title = 'Juegas con tu equipo; tu rival con el equipo rival elegido';
     host.addEventListener('click', () => {
+      enterMobileMode();
       el.remove();
       resolveFn({ ...setup, online: { mode: 'host' } });
     });
@@ -166,6 +171,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
         code.focus();
         return;
       }
+      enterMobileMode();
       el.remove();
       resolveFn({ ...setup, online: { mode: 'join', code: value } });
     };

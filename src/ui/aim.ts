@@ -9,10 +9,13 @@ const KEYS: Record<string, [number, number]> = {
 };
 /** Velocidad de la mira con teclado o palanca (m por segundo real). */
 const AIM_SPEED = 6;
+/** Con el dedo, la mira queda un poco arriba del dedo para que no la tape (px de pantalla). */
+const FINGER_OFFSET = 56;
 
 /**
  * Mira del remate apuntado: el mouse sobre la cancha la mueve, el clic remata ahí (cuenta como el timing);
  * flechas o WASD la mueven desde la vista del rematador (arriba = hacia el fondo rival).
+ * Táctil: arrastrar el dedo por la cancha mueve la mira (sin golpear); el golpe es el botón de acción.
  */
 export class AimInput {
   private readonly held = new Set<string>();
@@ -25,16 +28,20 @@ export class AimInput {
     private readonly clock: (stamp: number) => number,
     private readonly paused: () => boolean,
   ) {
-    canvas.addEventListener('pointermove', (e) => {
-      if (!this.aiming()) return;
-      const p = this.view.pickGround(e.clientX, e.clientY);
+    const finger = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
+    const aimAt = (e: PointerEvent) => {
+      const p = this.view.pickGround(e.clientX, e.clientY - (finger(e) ? FINGER_OFFSET : 0));
       if (p) this.sim.setAim(p.x, p.z);
+    };
+    canvas.addEventListener('pointermove', (e) => {
+      // Con el dedo solo cuenta mientras está apoyado (no hay "hover").
+      if (!this.aiming() || (finger(e) && !e.buttons && e.pressure === 0)) return;
+      aimAt(e);
     });
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.aiming()) return;
-      const p = this.view.pickGround(e.clientX, e.clientY);
-      if (p) this.sim.setAim(p.x, p.z);
-      this.sim.press(this.clock(e.timeStamp));
+      aimAt(e);
+      if (!finger(e)) this.sim.press(this.clock(e.timeStamp));
     });
     window.addEventListener('keydown', (e) => {
       if (KEYS[e.code] && this.aiming()) {

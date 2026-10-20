@@ -130,3 +130,78 @@ button { font: inherit; cursor: pointer; }
                      opacity: 0; transition: opacity 0.25s; pointer-events: none; max-width: calc(100vw - 32px); }
 .challenge-verdict strong { color: #ffe14d; font-size: 20px; letter-spacing: 0.5px; }
 .challenge-verdict span { font-size: 14px; }
+
+/* ---------- Teléfono y tablet ---------- */
+canvas { touch-action: none; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+input { -webkit-user-select: text; user-select: text; }
+button { touch-action: manipulation; }
+body.touch #help { display: none; }
+
+.touch-action { position: fixed; right: max(18px, calc(env(safe-area-inset-right, 0px) + 10px)); bottom: max(18px, calc(env(safe-area-inset-bottom, 0px) + 10px));
+                width: 96px; height: 96px; border-radius: 50%; border: 3px solid #ffe14d; background: radial-gradient(circle at 35% 30%, #ffe96e, #e0b712 70%);
+                color: #111; font-weight: 900; font-size: 15px; letter-spacing: 0.5px; display: grid; place-items: center; touch-action: none;
+                box-shadow: 0 6px 0 #9a7f12, 0 10px 24px #000a; z-index: 5; -webkit-user-select: none; user-select: none; }
+.touch-action:active { transform: translateY(4px); box-shadow: 0 2px 0 #9a7f12, 0 6px 16px #000a; }
+.touch-action.idle { opacity: 0.35; background: #1c2436; color: #ffe14d; box-shadow: none; }
+.touch-action span { pointer-events: none; }
+.touch-ring { position: absolute; inset: -8px; border-radius: 50%; border: 3px solid #ffe14d; opacity: 0; }
+.touch-action.ready .touch-ring { animation: touch-ring 0.9s ease-out infinite; }
+@keyframes touch-ring { from { opacity: 0.9; transform: scale(0.9); } to { opacity: 0; transform: scale(1.25); } }
+.touch-bar { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); display: flex; gap: 8px; z-index: 5; }
+.touch-small { width: 42px; height: 42px; border-radius: 50%; border: 1px solid #ffffff44; background: rgba(10, 14, 24, 0.75); color: #fff; font-size: 18px; padding: 0; }
+.rotate-hint { display: none; }
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch .rotate-hint { position: fixed; inset: 0; z-index: 20; display: grid; place-content: center; justify-items: center; gap: 14px; text-align: center;
+                            padding-inline: max(24px, env(safe-area-inset-left, 0px)); background: #0b0f1aee; color: #fff; }
+  .rotate-hint p { max-width: 280px; margin: 0; font-size: 17px; line-height: 1.4; }
+  .rotate-hint button { padding: 10px 18px; border-radius: 10px; border: 1px solid #ffffff44; background: #1b2440; color: #fff; font-weight: 700; }
+  .rotate-icon { font-size: 54px; animation: rotate-phone 1.8s ease-in-out infinite; }
+}
+@keyframes rotate-phone { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+
+/* Táctil: el panel de decisión deja libre el botón de acción y todo es más grande para el dedo. */
+body.touch .decision { left: max(12px, env(safe-area-inset-left, 0px)); transform: none; bottom: max(12px, env(safe-area-inset-bottom, 0px));
+                       width: min(520px, calc(100% - 150px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))); padding: 8px 10px; }
+body.touch .decision button { padding: 11px 10px; text-align: center; }
+body.touch .meter { height: 22px; }
+body.touch .meter.power { height: 24px; }
+body.touch .challenge-button { bottom: auto; top: 46%; padding: 14px 18px 16px; font-size: 16px; }
+body.touch .timeout-button { padding: 9px 12px; font-size: 13px; }
+body.touch .hud { left: auto; right: max(10px, env(safe-area-inset-right, 0px)); transform: none; max-width: calc(100% - 130px); white-space: pre-line; }
+body.touch .net-ping { left: auto; top: auto; bottom: calc(126px + env(safe-area-inset-bottom, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); }
+
+/* Pantallas bajas (teléfono en horizontal): todo más compacto para ver la cancha. */
+@media (max-height: 520px) {
+  .hud { font-size: 12px; padding: 5px 10px; top: calc(6px + env(safe-area-inset-top, 0px)); }
+  .decision-title { font-size: 11px; margin-bottom: 4px; }
+  .decision-hint { font-size: 11px; margin-top: 4px; }
+  .decision-buttons { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 4px; }
+  body.touch .decision button { padding: 8px 6px; font-size: 13px; }
+  .feedback { font-size: 32px; }
+  .feedback[data-timing="power-strong"] { font-size: 40px; }
+  .timeout-button { top: calc(62px + env(safe-area-inset-top, 0px)); }
+  .timeout-toast { top: calc(100px + env(safe-area-inset-top, 0px)); }
+  .replay-badge { top: calc(60px + env(safe-area-inset-top, 0px)); }
+  .warmup-banner { top: calc(58px + env(safe-area-inset-top, 0px)); font-size: 12px; padding: 6px 10px; }
+  .challenge-verdict { top: calc(60px + env(safe-area-inset-top, 0px)); padding: 8px 14px; }
+  .challenge-verdict strong { font-size: 16px; }
+  .touch-action { width: 84px; height: 84px; font-size: 13px; }
+  .overlay-box { padding: 14px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box; }
+  .overlay-box h2 { font-size: 20px; margin-bottom: 8px; }
+  .timeout-box { max-height: calc(100vh - 24px); }
+  .menu h1 { font-size: 30px; }
+}
+@media (max-width: 520px) {
+  .hud { font-size: 12px; }
+  .decision-title { font-size: 11px; }
+}
+body.touch .timeout-button { top: calc(10px + env(safe-area-inset-top, 0px)); right: auto; left: calc(max(10px, env(safe-area-inset-left, 0px)) + 100px); }
+body.touch .timeout-toast { right: auto; left: max(10px, env(safe-area-inset-left, 0px)); top: calc(96px + env(safe-area-inset-top, 0px)); }
+@media (max-height: 520px) { body.touch .timeout-button { top: calc(10px + env(safe-area-inset-top, 0px)); } }
+@media (max-height: 520px) { .decision-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
+@media (orientation: portrait) and (max-width: 820px) {
+  body.touch .hud { top: calc(60px + env(safe-area-inset-top, 0px)); max-width: calc(100% - 20px); font-size: 12px; }
+  body.touch .decision { width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); bottom: calc(126px + env(safe-area-inset-bottom, 0px)); }
+  body.touch .replay-badge, body.touch .warmup-banner, body.touch .challenge-verdict { top: calc(130px + env(safe-area-inset-top, 0px)); }
+}

@@ -13,6 +13,7 @@ import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, type MatchSetup } from './
 import { PauseMenu, showResult } from './ui/overlays';
 import { TimeoutPanel } from './ui/timeout';
 import { ChallengePanel } from './ui/challenge';
+import { IS_TOUCH, TouchControls } from './ui/touch';
 import { Lockstep, leadForDelay } from './net/lockstep';
 import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
@@ -94,6 +95,13 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   const challenges = new ChallengePanel(ui, sim, sim.control ?? 'A');
   const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
   const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open || timeouts.open);
+  const touch = IS_TOUCH
+    ? new TouchControls(ui, sim, clock, () => pause.open || timeouts.open, {
+      pause: online ? null : () => setPaused(!pause.open),
+      mute: () => sound?.toggleMute() ?? false,
+      skipReplay: () => view.skipReplay(),
+    })
+    : null;
 
   sim.bus.on((e) => {
     if (e.type !== 'matchEnd') return;
@@ -161,12 +169,13 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     view.render(stopped ? 0 : dtReal);
     timeouts.update();
     challenges.update();
+    touch?.update();
     const left = sim.warmupLeft;
     warmBanner.style.display = left === null ? 'none' : 'block';
     if (left !== null) {
       const t = Math.ceil(left);
       const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-      warmBanner.textContent = `Calentamiento · ${clock} · cuando le toque a tu rematador, apunta y remata${online ? '' : ' · Enter o clic aquí para saltar'}`;
+      warmBanner.textContent = `Calentamiento · ${clock} · cuando le toque a tu rematador, apunta y remata${online ? '' : IS_TOUCH ? ' · toca aquí para saltar' : ' · Enter o clic aquí para saltar'}`;
     }
     hud.update();
     panel.update();

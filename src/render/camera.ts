@@ -62,7 +62,11 @@ export class CameraDirector {
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
       const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
-      if (d.kind === 'serve') {
+      if (d.kind === 'set') {
+        // Colocación: desde atrás y arriba del propio campo, con todos los atacantes a la vista.
+        targetPos.set(u.x - toward * 8.5, 7, u.z * 0.3);
+        targetLook.set(-toward * 1.2, 0.6, u.z * 0.2);
+      } else if (d.kind === 'serve') {
         // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
         targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + d.aim.z * 0.2);
         targetLook.set(u.x + (d.aim.x - u.x) * 0.78, 0, u.z + (d.aim.z - u.z) * 0.78);

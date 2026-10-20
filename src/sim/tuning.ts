@@ -53,6 +53,10 @@ export const TUNING = {
     tipFlightTime: 0.9,
     /** La figura del equipo remata más rápido y la pelota pica más alto. */
     starSpeed: 1.1,
+    /** Cada metro de estatura sobre el promedio: remate más rápido. */
+    heightSpeed: 0.9,
+    /** Ataque de zaguero tipo Nishida: salto largo desde lejos de la línea y mucho más alto. */
+    backRowLift: 0.22,
     starRestitution: 0.68,
     /** Apuntar a menos de esta distancia de la red (m) es una finta. */
     tipDepth: 3.0,
@@ -112,5 +116,7 @@ export const TUNING = {
     spacing: 0.75,
     /** Medio ancho del bloqueador (manos y cuerpo) más el radio de la pelota: el remate sin toque pasa fuera de esto. */
     bodyHalfWidth: 0.48,
+    /** Cada metro de estatura promedio del bloqueo sobre el promedio: más tapas. */
+    heightStuff: 2.5,
   },
 } as const;

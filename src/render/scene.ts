@@ -11,8 +11,18 @@ import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
+import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
 import { contactMeter, powerZone, serveMeter, type Power } from '../sim/decision';
 import { toon } from './toon';
+
+interface SetMarker {
+  group: THREE.Group;
+  ring: THREE.Mesh;
+  label: THREE.Sprite;
+  canvas: HTMLCanvasElement;
+  texture: THREE.CanvasTexture;
+  text: string;
+}
 
 const POWER_COLORS: Record<Power, string> = { soft: '#5dff8f', medium: '#ffd23f', strong: '#ff3b3b' };
 
@@ -44,6 +54,7 @@ export class MatchView {
     new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
   );
   private readonly aimCross = new THREE.Group();
+  private readonly setMarkers: SetMarker[] = [];
   /** Sin prueba de profundidad: la mira se ve aunque quede detrás de un jugador o de la red. */
   private readonly aimMat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false, depthTest: false });
   private readonly aimPath = new THREE.Line(
@@ -60,6 +71,7 @@ export class MatchView {
   private readonly fx: Effects;
   private readonly director: CameraDirector;
   private readonly speedLines: SpeedLines;
+  private readonly flashEl = document.createElement('div');
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
@@ -113,6 +125,8 @@ export class MatchView {
     this.scene.add(this.fx.group);
 
     this.speedLines = new SpeedLines(uiRoot);
+    this.flashEl.className = 'impact-flash';
+    uiRoot.append(this.flashEl);
     this.badge.className = 'replay-badge';
     this.badge.textContent = 'REPETICIÓN';
     uiRoot.append(this.badge);
@@ -174,6 +188,7 @@ export class MatchView {
     }
     this.ball.position.copy(ballPos);
     this.updateAim();
+    this.updateSetMarkers();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
 
     const scale = this.replay ? REPLAY_SPEED : this.sim.timeScale;
@@ -215,8 +230,14 @@ export class MatchView {
           }
         }
         if (e.kind === 'block') {
-          this.director.punch(0.035);
-          this.speedLines.flash(0.6);
+          // Choque contra el bloqueo: chispas, onda, sacudida fuerte y destello blanco.
+          const strength = e.quality >= 0.85 ? 1 : 0.6;
+          this.fx.crash(at, strength, now);
+          this.director.punch(0.05 + 0.04 * strength, 0.35);
+          this.speedLines.flash(0.9);
+          this.flashEl.classList.remove('on');
+          void this.flashEl.offsetWidth;
+          this.flashEl.classList.add('on');
         }
       } else if (e.type === 'decisionResolved') {
         this.lastPower = e.power ?? null;
@@ -280,6 +301,88 @@ export class MatchView {
    * Mira del usuario: cruz, círculo de dispersión y trayectoria punteada desde el punto de golpe.
    * Saque y remate: la cruz toma el color de la fuerza actual de la barra. Pase: amarillo. Defensa: solo la marca, azul.
    */
+  /**
+   * Abanico de colocación: un aro con el número sobre el punto de golpe de cada atacante disponible (y la segunda
+   * sobre la red rival). El que saldría ahora se ilumina con el color del tempo de la barra.
+   */
+  private updateSetMarkers(): void {
+    const d = this.replay ? null : this.sim.decision;
+    const preview = this.sim.setPreview;
+    const show = !!d && d.kind === 'set' && !!d.aim && preview !== null;
+    let used = 0;
+    if (show) {
+      const seen = new Set<string>();
+      const selected = d.options[preview].option;
+      const selKey = selected.id === 'set' ? selected.choice.attackerKey : 'dump';
+      const m = contactMeter(this.sim.time, d.contactTime!);
+      const tempoColor = d.locked ? '#ffe14d' : POWER_COLORS[powerZone(m)];
+      d.options.forEach((o, i) => {
+        const key = o.option.id === 'set' ? o.option.choice.attackerKey : 'dump';
+        if (seen.has(key)) return;
+        seen.add(key);
+        const at = this.sim.setOptionPoint(d, i);
+        const marker = this.setMarker(used++);
+        const on = key === selKey;
+        const text = key === 'dump' ? 'SEGUNDA' : `#${this.sim.player(key).def.number}`;
+        marker.group.position.set(at.x, 0, at.z);
+        marker.ring.scale.setScalar(on ? 1.25 : 1);
+        (marker.ring.material as THREE.MeshBasicMaterial).color.set(on ? tempoColor : '#ffffff');
+        (marker.ring.material as THREE.MeshBasicMaterial).opacity = on ? 0.95 : 0.5;
+        marker.label.position.y = 0.7;
+        // El elegido muestra además el tempo con que saldría (alta, media, rápida).
+        const tempo = on && selected.id === 'set' ? ` · ${TEMPO_LABELS[SET_TEMPO[selected.choice.option]]}` : '';
+        this.setMarkerText(marker, text + tempo, on ? tempoColor : '#ffffff');
+        marker.group.visible = true;
+      });
+    }
+    for (let i = used; i < this.setMarkers.length; i++) this.setMarkers[i].group.visible = false;
+  }
+
+  private setMarker(i: number): SetMarker {
+    while (this.setMarkers.length <= i) {
+      const group = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.42, 0.55, 32),
+        new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.04;
+      ring.renderOrder = 9;
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      // Tamaño fijo en pantalla: legible de lejos y sin tapar la jugada de cerca.
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true, sizeAttenuation: false }));
+      label.scale.set(0.16, 0.04, 1);
+      label.renderOrder = 11;
+      group.add(ring, label);
+      group.visible = false;
+      this.scene.add(group);
+      this.setMarkers.push({ group, ring, label, canvas, texture, text: '' });
+    }
+    return this.setMarkers[i];
+  }
+
+  private setMarkerText(m: SetMarker, text: string, color: string): void {
+    const key = `${text}|${color}`;
+    if (m.text === key) return;
+    m.text = key;
+    const g = m.canvas.getContext('2d')!;
+    g.clearRect(0, 0, 256, 64);
+    g.fillStyle = 'rgba(10, 14, 24, 0.8)';
+    g.beginPath();
+    g.roundRect(4, 6, 248, 52, 14);
+    g.fill();
+    g.fillStyle = color;
+    g.font = 'bold 30px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 128, 33);
+    m.texture.needsUpdate = true;
+  }
+
   private updateAim(): void {
     const d = this.replay ? null : this.sim.decision;
     const up = this.sim.upcoming;
@@ -312,6 +415,8 @@ export class MatchView {
     pathMat.color.set(color);
     // Origen, gravedad, duración y altura final de la trayectoria según la acción.
     const from = new THREE.Vector3();
+    let tx = x;
+    let tz = z;
     let T: number;
     let g = 9.81;
     let endY: number = COURT.ballRadius;
@@ -321,6 +426,17 @@ export class MatchView {
       from.set(p.x, TUNING.serve.float.contactHeight, p.z);
       T = Math.max(0.6, Math.hypot(x - from.x, z - from.z) / TUNING.serve.float.speed);
       spread = TUNING.serve.float.noise * 0.35;
+    } else if (d.kind === 'set') {
+      // Colocación: la trayectoria va al atacante elegido (no a la mira), con el tiempo de vuelo de ese tempo.
+      const i = this.sim.setPreview ?? 0;
+      const opt = d.options[i].option;
+      const at = this.sim.setOptionPoint(d, i);
+      from.set(up!.point.x, up!.point.y, up!.point.z);
+      tx = at.x;
+      tz = at.z;
+      T = opt.id === 'set' ? TUNING.set.flightTime[opt.choice.option] : TUNING.attack.tipFlightTime;
+      endY = opt.id === 'set' ? 3.1 : COURT.ballRadius;
+      spread = 0.3;
     } else if (d.kind === 'pass') {
       from.set(up!.point.x, up!.point.y, up!.point.z);
       T = Math.min(1.9, Math.max(1.0, 0.9 + Math.hypot(x - from.x, z - from.z) * 0.09));
@@ -339,7 +455,7 @@ export class MatchView {
     const pos = this.aimPath.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
       const t = (i / (pos.count - 1)) * T;
-      pos.setXYZ(i, from.x + ((x - from.x) * t) / T, from.y + vy * t - 0.5 * g * t * t, from.z + ((z - from.z) * t) / T);
+      pos.setXYZ(i, from.x + ((tx - from.x) * t) / T, from.y + vy * t - 0.5 * g * t * t, from.z + ((tz - from.z) * t) / T);
     }
     pos.needsUpdate = true;
     this.aimPath.computeLineDistances();

@@ -62,7 +62,14 @@ export interface PlayerState {
 /** m/s */
 export const moveSpeed = (p: PlayerDef): number => 3.5 + 2.5 * (p.attrs.speed / 100);
 /** Altura de la mano al rematar. */
-export const attackContactHeight = (p: PlayerDef): number => 2.9 + 0.5 * (p.attrs.jump / 100) + REACH_PER_M * (p.height - AVG_HEIGHT);
+export const attackContactHeight = (p: PlayerDef): number =>
+  2.9 + 0.5 * (p.attrs.jump / 100) + REACH_PER_M * (p.height - AVG_HEIGHT) + eliteJump(p);
+
+/**
+ * Grandes saltadores (salto de 80 para arriba, la figura sobre todo): vuelan mucho más, con el pecho por encima de la
+ * red. Solo ellos le pegan de arriba hacia abajo cerca de la red; un salto normal no alcanza y la pelota cae más al fondo.
+ */
+export const eliteJump = (p: PlayerDef): number => Math.max(0, (p.attrs.jump - 80) / 20) * 0.35 + (p.star ? 0.1 : 0);
 /** Altura máxima de las manos al bloquear. */
 export const blockReach = (p: PlayerDef): number => 2.75 + 0.45 * (p.attrs.jump / 100) + REACH_PER_M * (p.height - AVG_HEIGHT);
 /** Los de 2 m o más rematan en picada. */

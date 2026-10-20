@@ -249,7 +249,9 @@ export class Animator {
     // ---- Orientación ----
     let targetYaw: number;
     const b = sim.ballPos;
-    if (!onCourt) targetYaw = 0;
+    // Fuera de la cancha miran al partido; en el calentamiento, la fila (también suplentes) mira a la red.
+    if (!onCourt && sim.phase !== 'warmup') targetYaw = 0;
+    else if (sim.phase === 'warmup' && !(up && up.key === this.key) && this.speed < 2.6) targetYaw = this.netYaw();
     else if (sim.phase === 'preServe') {
       // Antes del saque: el equipo que saca mira a la red; el que recibe mira al sacador.
       targetYaw = sim.match.serving === p.team ? this.netYaw() : Math.atan2(b.x - p.pos.x, b.z - p.pos.z);

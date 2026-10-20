@@ -110,6 +110,7 @@ interface WarmLane {
   ball: Trajectory;
   plan: Plan | null;
   bounces: number;
+  bomb?: boolean;
 }
 
 export class Simulation {
@@ -181,6 +182,8 @@ export class Simulation {
   private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
   private lastAimed = false;
+  /** Fuerza del último remate (el rojo pica como un bombazo). */
+  private lastPower: Power = 'medium';
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
@@ -663,8 +666,9 @@ export class Simulation {
       if (front && power === 'soft') lane.ball = this.launchClearing(at, target, cfg.tipFlightTime, GRAVITY, this.time, true);
       else {
         const steep = (isTall(p.def) ? cfg.tallGravity : 0) + (front ? cfg.frontGravity : 0);
-        lane.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + steep, this.time, true);
+        lane.ball = this.fastSpike(at, target, speed, GRAVITY + cfg.gravityBonus + steep, this.time, true);
       }
+      lane.bomb = power === 'strong';
       this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team, kind: 'attack', quality: power === 'strong' ? 0.95 : 0.75, warmup: true, at });
       this.tire(p.key, TUNING.stamina.cost.attack * 0.3);
       // Pasa al final de la fila.
@@ -678,7 +682,8 @@ export class Simulation {
     }
     if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
       // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
-      const next = lane.bounces < TUNING.bounce.max ? this.nextBounce(lane.ball) : null;
+      const bomb = lane.bomb && lane.bounces === 0;
+      const next = lane.bounces < TUNING.bounce.max ? this.nextBounce(lane.ball, bomb ? TUNING.attack.bombRestitution : undefined, bomb ? TUNING.attack.bombMaxUp : Infinity) : null;
       if (next) {
         lane.ball = next;
         lane.bounces += 1;
@@ -802,10 +807,13 @@ export class Simulation {
     // El remate de la figura pica y rebota mucho más (solo el primer pique).
     const last = this.last;
     const star = this.bounces === 0 && last?.kind === 'attack' && this.lastShot !== 'tip' && !!this.player(last.key).def.star;
-    const restitution = star ? TUNING.attack.starRestitution : TUNING.bounce.restitution;
+    // Remate en rojo: el primer pique es un bombazo (sube muchísimo), con un tope para que no se vaya al techo.
+    const bomb = this.bounces === 0 && last?.kind === 'attack' && this.lastShot !== 'tip' && this.lastPower === 'strong';
+    const restitution = bomb ? TUNING.attack.bombRestitution : star ? TUNING.attack.starRestitution : TUNING.bounce.restitution;
+    const up = Math.min(-vy * restitution, bomb ? TUNING.attack.bombMaxUp : Infinity);
     this.ball = {
       p0: v3(p.x, COURT.ballRadius, p.z),
-      v0: v3(this.ball.v0.x * TUNING.bounce.friction, -vy * restitution, this.ball.v0.z * TUNING.bounce.friction),
+      v0: v3(this.ball.v0.x * TUNING.bounce.friction, up, this.ball.v0.z * TUNING.bounce.friction),
       t0: land,
       g: GRAVITY,
     };
@@ -813,12 +821,13 @@ export class Simulation {
   }
 
   /** Pique de un balón que llegó al piso: sigue con menos energía, o null si ya casi no sube. */
-  private nextBounce(tr: Trajectory, restitution = TUNING.bounce.restitution): Trajectory | null {
+  private nextBounce(tr: Trajectory, restitution: number = TUNING.bounce.restitution, maxUp = Infinity): Trajectory | null {
     const land = landingTime(tr);
     const vy = tr.v0.y - tr.g * (land - tr.t0);
     if (-vy * restitution < TUNING.bounce.minUp) return null;
     const p = positionAt(tr, land);
-    return { p0: v3(p.x, COURT.ballRadius, p.z), v0: v3(tr.v0.x * TUNING.bounce.friction, -vy * restitution, tr.v0.z * TUNING.bounce.friction), t0: land, g: GRAVITY };
+    const up = Math.min(-vy * restitution, maxUp);
+    return { p0: v3(p.x, COURT.ballRadius, p.z), v0: v3(tr.v0.x * TUNING.bounce.friction, up, tr.v0.z * TUNING.bounce.friction), t0: land, g: GRAVITY };
   }
 
   /** Nadie ocupa el lugar de un compañero: separación mínima entre los jugadores en cancha de cada equipo. */
@@ -1298,6 +1307,7 @@ export class Simulation {
     const pw = aim ? TUNING.power.spike[ctl?.power ?? 'medium'] : { speed: 1, risk: 1, noise: 1 };
     const isError = this.rng.chance(errorChance(cfg.shots[shot].risk * (aim ? TUNING.decision.aimRiskFactor * pw.risk : 1), q));
     this.lastAimed = !!aim;
+    this.lastPower = ctl?.power ?? (q > 0.8 ? 'strong' : 'medium');
     const aimed = aim ? v3(aim.x, COURT.ballRadius, aim.z) : this.pickAttackTarget(opp, at, shot);
     const target = isError ? this.errorTarget(opp, at) : this.keepOnSide(opp, this.noisy(aimed, cfg.noise * (1 - q) * pw.noise));
     if (shot === 'tip') {
@@ -1307,7 +1317,7 @@ export class Simulation {
       const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed * (p.def.star ? cfg.starSpeed : 1) * (1 + cfg.heightSpeed * (p.def.height - AVG_HEIGHT));
       // En picada: el alto le pega más de arriba hacia abajo (más gravedad efectiva = trayectoria más empinada).
       const steep = (isTall(p.def) ? cfg.tallGravity : 0) + (front ? cfg.frontGravity : 0);
-      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + steep, t, !isError);
+      this.ball = this.fastSpike(at, target, speed, GRAVITY + cfg.gravityBonus + steep, t, !isError);
       this.threat = q * clamp01(speed / 28);
     }
   }
@@ -1812,6 +1822,24 @@ export class Simulation {
   }
 
   /** Si la trayectoria pega en la red, la levanta (más tiempo de vuelo) hasta que pase. */
+  /**
+   * Remate a toda velocidad: si el punto es tan corto que para pasar la red habría que frenarlo (vuelo lento),
+   * corre el punto de caída un poco hacia el fondo hasta que pase la red sin perder potencia.
+   */
+  private fastSpike(from: Vec3, to: Vec3, speed: number, g: number, t0: number, mustClear: boolean): Trajectory {
+    const want = Math.max(0.15, distXZ(from, to) / speed);
+    let target = clone(to);
+    let tr = this.launchClearing(from, target, want, g, t0, mustClear);
+    const s = Math.sign(to.x) || 1;
+    for (let i = 0; mustClear && i < 12 && tr.t0 !== undefined; i++) {
+      const T = landingTime(tr) - tr.t0;
+      if (T <= Math.max(0.15, distXZ(from, target) / speed) * 1.25) break;
+      target = v3(target.x + s * 0.3, target.y, target.z);
+      tr = this.launchClearing(from, target, Math.max(0.15, distXZ(from, target) / speed), g, t0, mustClear);
+    }
+    return tr;
+  }
+
   private launchClearing(from: Vec3, to: Vec3, flightTime: number, g: number, t0: number, mustClear: boolean): Trajectory {
     let time = Math.max(0.15, flightTime);
     let tr = launch(from, to, time, t0, g);

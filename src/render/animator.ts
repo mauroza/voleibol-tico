@@ -255,6 +255,8 @@ export class Animator {
       targetYaw = sim.match.serving === p.team ? this.netYaw() : Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     } else if (block && block.keys.includes(this.key)) targetYaw = this.netYaw();
     else if ((up && up.key === this.key && up.kind === 'attack') || sim.decoy?.key === this.key) targetYaw = this.netYaw();
+    // Calentamiento: la fila y los que esperan miran a la red (no al balón del otro equipo).
+    else if (sim.phase === 'warmup' && this.speed < 2.6) targetYaw = this.netYaw();
     else if (this.dive) targetYaw = Math.atan2(this.dive.point.x - p.pos.x, this.dive.point.z - p.pos.z);
     else if (this.speed > 2.6 && !(up && up.key === this.key && up.kind === 'attack')) targetYaw = Math.atan2(this.vx, this.vz);
     else targetYaw = Math.atan2(b.x - p.pos.x, b.z - p.pos.z);

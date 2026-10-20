@@ -35,7 +35,7 @@ function pair(latency: number): { a: Transport; b: Transport; tick: (now: number
 }
 
 const make = (control: TeamId, delay: number) =>
-  new Simulation({ seed: 77, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[3], control, humans: ['A', 'B'], tempo: 'online', inputLead: leadForDelay(delay) });
+  new Simulation({ seed: 77, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[3], control, humans: ['A', 'B'], tempo: 'online', inputLead: leadForDelay(delay), warmup: 15 });
 
 /** Bot simple: apunta y presiona en el último tramo de cada barra; saca enseguida. */
 function bot(sim: Simulation, team: TeamId, t: number): void {

@@ -125,6 +125,8 @@ export const TUNING = {
     attrAtZero: 0.7,
     jumpLoss: 0.18,
   },
+  /** Calentamiento de remate: cada cuánto arranca una jugada (alterna equipos) y cuánto vuela cada pase. */
+  warmup: { toss: 1.1, gap: 0.5 },
   /** Tiempos y cambios por set; recuperación de estamina en un tiempo; la IA cambia a quien baje de `aiSubBelow`. */
   bench: { timeouts: 2, subs: 6, timeoutRest: 0.1, aiSubBelow: 0.45, aiTimeoutStreak: 3 },
   /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */

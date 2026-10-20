@@ -482,6 +482,15 @@ export class Simulation {
       }
     } else if (this.phase === 'inPlay') {
       this.ballPos = positionAt(this.ball, this.time);
+      // Pared, tribuna o techo en juego: es fuera (pierde el último que la tocó) y la pelota rebota.
+      const wall = this.hitWall(this.ball);
+      if (wall) {
+        this.ball = wall;
+        this.plan = null;
+        this.netFaultTime = null;
+        this.endRally(this.last!.team);
+        return;
+      }
       if (this.netFaultTime !== null) {
         if (this.time >= this.netFaultTime) {
           this.dropAtNet(this.netFaultTime);
@@ -494,6 +503,7 @@ export class Simulation {
       }
     } else {
       this.bounceBall();
+      this.ball = this.hitWall(this.ball) ?? this.ball;
       this.ballPos = positionAt(this.ball, Math.min(this.time, landingTime(this.ball)));
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
@@ -698,6 +708,7 @@ export class Simulation {
       lane.until = landingTime(lane.ball) + tune.gap;
       return;
     }
+    if (lane.stage === 'fly') lane.ball = this.hitWall(lane.ball) ?? lane.ball;
     if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
       // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
       const bomb = lane.bomb && lane.bounces === 0;
@@ -837,6 +848,37 @@ export class Simulation {
       g: GRAVITY,
     };
     this.bounces += 1;
+  }
+
+  /**
+   * ¿La pelota acaba de pasar una pared, el frente de una tribuna o el techo? Devuelve la trayectoria rebotada desde
+   * ese punto (la componente que choca se invierte y pierde energía); null si sigue en el aire libre.
+   */
+  private hitWall(tr: Trajectory): Trajectory | null {
+    const h = TUNING.hall;
+    const t = this.time;
+    if (t <= tr.t0) return null;
+    const p = positionAt(tr, t);
+    const v = v3(tr.v0.x, tr.v0.y - tr.g * (t - tr.t0), tr.v0.z);
+    const out = v3(p.x, p.y, p.z);
+    let hit = false;
+    if (Math.abs(p.x) > h.wallX && Math.sign(v.x) === Math.sign(p.x)) {
+      out.x = Math.sign(p.x) * h.wallX;
+      v.x = -v.x * h.restitution;
+      hit = true;
+    }
+    const intoStand = Math.abs(p.z) > h.standZ && p.y < h.standTop && Math.sign(v.z) === Math.sign(p.z);
+    if ((p.z < h.wallZBack && v.z < 0) || intoStand) {
+      out.z = p.z < h.wallZBack ? h.wallZBack : Math.sign(p.z) * h.standZ;
+      v.z = -v.z * h.restitution;
+      hit = true;
+    }
+    if (p.y > h.ceiling && v.y > 0) {
+      out.y = h.ceiling;
+      v.y = -v.y * h.restitution;
+      hit = true;
+    }
+    return hit ? { p0: out, v0: v, t0: t, g: tr.g } : null;
   }
 
   /** Pique de un balón que llegó al piso: sigue con menos energía, o null si ya casi no sube. */

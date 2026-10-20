@@ -14,6 +14,11 @@ export const TUNING = {
   minSeparation: 0.55,
   /** El cuerpo no se acerca a la red a menos de esto (m): nadie cruza la línea central. */
   minNetGap: 0.2,
+  /**
+   * Pabellón: paredes laterales (x), pared del fondo y frente de las tribunas (z, hasta cierta altura) y techo (y).
+   * En juego, tocarlos es fuera; después del punto la pelota rebota en ellos.
+   */
+  hall: { wallX: 17.6, wallZBack: -16.1, standZ: 9.3, standTop: 3.2, ceiling: 11.2, restitution: 0.55 },
   /** Rebotes de la pelota tras el punto: pierde energía vertical y horizontal en cada pique. */
   bounce: { max: 4, restitution: 0.55, friction: 0.78, minUp: 0.8 },
   servePause: 1.0,

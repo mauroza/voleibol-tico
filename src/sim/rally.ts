@@ -109,6 +109,8 @@ export class Simulation {
   /** Dificultad de la pelota entrante para quien la recibe (0..1). */
   private threat = 0;
   private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
+  /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
+  private decoyRun: { key: string; time: number } | null = null;
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
@@ -140,6 +142,11 @@ export class Simulation {
   }
 
   /** Próximo contacto planificado (solo lectura): el render lo usa para anticipar saltos y gestos. */
+  /** Finta de rápida en curso: quién y cuándo salta. */
+  get decoy(): Readonly<{ key: string; time: number }> | null {
+    return this.decoyRun;
+  }
+
   get upcoming(): Readonly<PlannedContact> | null {
     return this.plan;
   }
@@ -264,6 +271,7 @@ export class Simulation {
     this.netFaultTime = null;
     this.last = null;
     this.intent = null;
+    this.decoyRun = null;
     this.threat = 0;
     this.decision = null;
     this.blockSetup = null;
@@ -297,6 +305,16 @@ export class Simulation {
   private movePlayers(dt: number): void {
     // El atacante espera en su punto de partida y arranca la carrera justo a tiempo para llegar al salto.
     const plan = this.plan;
+    const decoy = this.decoyRun;
+    if (decoy && this.time > decoy.time + 0.5) this.decoyRun = null;
+    else if (decoy) {
+      // Carrera de la finta: llega a la zona de la rápida justo para saltar con la colocación.
+      const p = this.player(decoy.key);
+      const [depth, right] = ATTACK_POINTS.quick;
+      const stand = spot(p.team, [depth + TUNING.contactStance.spikeBehind, right]);
+      const runTime = distXZ(p.pos, stand) / moveSpeed(p.def) + 0.15;
+      p.target = decoy.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
+    }
     if (plan?.kind === 'attack') {
       const p = this.player(plan.key);
       const stand = this.standPoint(plan);
@@ -331,9 +349,13 @@ export class Simulation {
     const vy = this.ball.v0.y - this.ball.g * dt;
     if (-vy * TUNING.bounce.restitution < TUNING.bounce.minUp) return;
     const p = positionAt(this.ball, land);
+    // El remate de la figura pica y rebota mucho más (solo el primer pique).
+    const last = this.last;
+    const star = this.bounces === 0 && last?.kind === 'attack' && this.lastShot !== 'tip' && !!this.player(last.key).def.star;
+    const restitution = star ? TUNING.attack.starRestitution : TUNING.bounce.restitution;
     this.ball = {
       p0: v3(p.x, COURT.ballRadius, p.z),
-      v0: v3(this.ball.v0.x * TUNING.bounce.friction, -vy * TUNING.bounce.restitution, this.ball.v0.z * TUNING.bounce.friction),
+      v0: v3(this.ball.v0.x * TUNING.bounce.friction, -vy * restitution, this.ball.v0.z * TUNING.bounce.friction),
       t0: land,
       g: GRAVITY,
     };
@@ -624,6 +646,10 @@ export class Simulation {
     this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
     this.intent = { key: attacker.key, option: choice.option, outOfSystem };
     this.threat = 0;
+    // El central delantero siempre amaga la rápida si la pelota va a otro lado (con juego en sistema).
+    const court = this.court(p.team);
+    const mb = court.find((k, i) => isFrontIndex(i) && k !== p.key && k !== attacker.key && this.player(k).def.role === 'MB');
+    this.decoyRun = mb && !outOfSystem ? { key: mb, time: t + cfg.flightTime.quick } : null;
   }
 
   private doAttack(p: PlayerState, at: Vec3, t: number, ctl?: Control): void {
@@ -656,7 +682,7 @@ export class Simulation {
       this.ball = this.launchClearing(at, target, cfg.tipFlightTime, GRAVITY, t, !isError);
       this.threat = 0.3 * q;
     } else {
-      const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed;
+      const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed * (p.def.star ? cfg.starSpeed : 1);
       this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus, t, !isError);
       this.threat = q * clamp01(speed / 28);
     }
@@ -737,6 +763,9 @@ export class Simulation {
       if (last.kind === 'attack' && this.lastShot !== 'tip' && block && block.scheme > 0) {
         if (blockDecision && blockDecision.chosen !== null) blockTiming = judgeTiming(blockDecision.pressedAt, blockDecision.contactTime!);
         this.plan = this.planBlock(block, net.time, blockDecision ? blockTiming : null);
+      } else if (last.kind === 'attack' && block && block.scheme > 0) {
+        // La finta también salta el bloqueo: pasa por encima o al costado de las manos; si no puede, la tocan.
+        if (!this.clearBlockPath(block)) this.plan = this.grazeBlock(block, net.time);
       }
       this.plan ??= this.planTouch(otherTeam(sideOfX(this.ball.p0.x)));
     }
@@ -748,7 +777,9 @@ export class Simulation {
 
   /** Prepara el bloqueo del equipo que defiende contra el remate ya planificado (esquema de la IA por defecto). */
   private setupBlock(team: TeamId, attack: Plan): void {
-    const scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
+    let scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
+    // La finta del central saca un bloqueador del remate de vez en cuando.
+    if (this.decoyRun && scheme > 1 && this.rng.chance(TUNING.set.decoyPull)) scheme -= 1;
     const n = Math.min(scheme, this.frontPlayers(team).length);
     this.blockSetup = { team, scheme: n, keys: this.pickBlockers(team, n, attack.point.z), attackTime: attack.time, z: attack.point.z };
   }
@@ -854,7 +885,8 @@ export class Simulation {
       .filter((p) => Math.max(0, Math.abs(p.pos.z - at.z) - cfg.handWidth) <= cfg.lateralSpeed * available)
       .sort((a, b) => Math.abs(a.pos.z - at.z) - Math.abs(b.pos.z - at.z));
     const n = blockers.length;
-    if (n === 0) return null;
+    // Nadie llega a tapar, pero los que saltan siguen siendo una pared: o la pelota pasa por fuera, o los roza.
+    if (n === 0) return this.clearBlockPath(block) ? null : this.grazeBlock(block, crossTime);
     const plan = (outcome: BlockOutcome): Plan => ({ key: blockers[0].key, team: block.team, time: crossTime, point: at, kind: 'block', low: false, block: outcome });
     if (this.lastShot === 'tool' && this.rng.chance(TUNING.decision.toolBase + TUNING.decision.toolScale * this.last!.quality)) return plan('tool');
     const blockAttr = blockers.reduce((s, p) => s + p.def.attrs.block, 0) / n / 100;
@@ -863,7 +895,63 @@ export class Simulation {
     const r = this.rng.next();
     if (r < stuff) return plan('stuff');
     if (r < stuff + cfg.touchByN[n]) return plan('soft');
-    return null;
+    // Sin toque: el remate tiene que pasar de verdad por fuera de manos y cuerpos; si no hay hueco, roza el bloqueo.
+    return this.clearBlockPath(block) ? null : plan('soft');
+  }
+
+  /** La pelota roza las manos del bloqueador más cercano a su paso. */
+  private grazeBlock(block: BlockSetup, crossTime: number): Plan {
+    const at = positionAt(this.ball, crossTime);
+    const key = [...block.keys].sort((a, c) => Math.abs(this.player(a).pos.z - at.z) - Math.abs(this.player(c).pos.z - at.z))[0];
+    return { key, team: block.team, time: crossTime, point: at, kind: 'block', low: false, block: 'soft' };
+  }
+
+  /** ¿El recorrido toca a algún bloqueador en salto? Revisa planos entre la red y el cuerpo del bloqueador. */
+  private crossesBlock(tr: Trajectory, walls: { z: number; top: number }[], side: number): boolean {
+    if (Math.abs(tr.v0.x) < 1e-6) return false;
+    for (const d of [0.02, 0.15, 0.3, 0.45, 0.6]) {
+      const t = (side * d - tr.p0.x) / tr.v0.x;
+      if (t <= 0) continue;
+      const p = positionAt(tr, tr.t0 + t);
+      if (walls.some((w) => p.y < w.top && Math.abs(p.z - w.z) < TUNING.block.bodyHalfWidth)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Un remate que pasa el bloqueo sin tocarlo no puede atravesarlo: si el recorrido choca, se abre en ángulo
+   * (mismo tiempo de vuelo, otro punto de caída) por el costado más cercano. Devuelve false si no hay por dónde.
+   */
+  private clearBlockPath(block: BlockSetup): boolean {
+    // Dónde estará cada bloqueador al cruzar la red: va hacia su lugar del bloqueo a su velocidad.
+    const spots = this.blockSpots(block);
+    const net = checkNet(this.ball);
+    const left = net.kind === 'none' ? 0 : Math.max(0, net.time - this.time);
+    const walls = block.keys.map((k) => {
+      const p = this.player(k);
+      const step = clamp(spots.get(k)!.z - p.pos.z, -moveSpeed(p.def) * left, moveSpeed(p.def) * left);
+      return { z: p.pos.z + step, top: blockReach(p.def) + 0.05 };
+    });
+    const side = sideSign(block.team);
+    const tr = this.ball;
+    if (!this.crossesBlock(tr, walls, side)) return true;
+    const T = landingTime(tr) - tr.t0;
+    const land = positionAt(tr, tr.t0 + T);
+    const inside = Math.abs(land.z) <= COURT.halfWidth;
+    // Primero abrir el ángulo; si no alcanza, por encima de las manos (más arco, más lento).
+    for (const stretch of [1, 1.12, 1.25, 1.4]) {
+      for (let k = stretch === 1 ? 1 : 0; k <= 20; k++) {
+        for (const dir of [1, -1]) {
+          const z = land.z + dir * k * 0.2;
+          if (inside && Math.abs(z) > COURT.halfWidth - 0.15) continue;
+          const next = launch(tr.p0, v3(land.x, COURT.ballRadius, z), T * stretch, tr.t0, tr.g);
+          if (checkNet(next).kind !== 'clear' || this.crossesBlock(next, walls, side)) continue;
+          this.ball = next;
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private setFormations(): void {
@@ -947,6 +1035,9 @@ export class Simulation {
     const s = sideSign(opp);
     const lane = at.z === 0 ? (this.rng.chance(0.5) ? 1 : -1) : Math.sign(at.z);
     const defenders = this.court(opp).map((k) => this.player(k).pos);
+    // Huecos del bloqueo: el atacante busca abrir el ángulo o la línea por fuera de las manos.
+    const block = shot !== 'tip' && this.blockSetup?.team === opp ? this.blockSetup : null;
+    const walls = block ? [...this.blockSpots(block).values()].map((p) => p.z) : [];
     let best = v3();
     let bestScore = -Infinity;
     for (let i = 0; i < TUNING.attack.targetSamples; i++) {
@@ -963,7 +1054,11 @@ export class Simulation {
         z = this.rng.range(-4, 4);
       }
       const candidate = v3(s * depth, COURT.ballRadius, z);
-      const score = Math.min(...defenders.map((d) => distXZ(d, candidate)));
+      let score = Math.min(...defenders.map((d) => distXZ(d, candidate)));
+      if (walls.length && Math.abs(candidate.x - at.x) > 1e-6) {
+        const zNet = at.z + ((candidate.z - at.z) * (s * 0.3 - at.x)) / (candidate.x - at.x);
+        if (walls.some((w) => Math.abs(zNet - w) < TUNING.block.bodyHalfWidth + 0.1)) score -= 3;
+      }
       if (score > bestScore) {
         bestScore = score;
         best = candidate;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ContactKind } from '../sim/events';
+import { attackContactHeight, blockReach } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { DIMS, type Rig } from './character';
 import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, type Key, type Pose } from './pose';
@@ -43,7 +44,8 @@ export class Animator {
   /** Pelota en el instante del contacto: los brazos la siguen unos cuadros después del golpe. */
   private contactAim: { target: THREE.Vector3; arms: 'both' | 'right'; at: number } | null = null;
   private mood: { pose: Pose; until: number } | null = null;
-  private jump: { apex: number; air: number; peak: number } | null = null;
+  /** `broad`: salto largo hacia la red (ataque de zaguero tipo pipe). */
+  private jump: { apex: number; air: number; peak: number; broad?: boolean } | null = null;
 
   constructor(
     readonly key: string,
@@ -110,7 +112,10 @@ export class Animator {
       const lead = up.time - now;
       if (up.kind === 'attack') {
         // Salto justo para que la mano llegue a la pelota en el punto más alto.
-        if (!this.jump) this.startJump(up.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.3));
+        if (!this.jump) {
+          // Zaguero (pipe): despega detrás de la línea de 3 m y cae adelante.
+          this.startJump(up.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.6), Math.abs(up.point.x) > 3);
+        }
         aim = { target, arms: 'right', weight: ease(1 - lead / 0.14) * 0.9 };
       } else if (up.kind === 'set') {
         // Colocación en salto corto si la pelota viene más alta de lo que alcanzan las manos.
@@ -127,8 +132,14 @@ export class Animator {
       // Se guarda como gesto propio: la simulación libera el bloqueo al rematar, pero el salto debe terminar.
       if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - apex) > 0.05) this.action = { track: TRACKS.block, at: apex };
       active = this.action;
-      // Manos a la altura por donde cruzará el remate (un poco por debajo del punto de golpe).
-      if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', Math.max(up.point.y - 0.3, 2.65), 0.25, 1.0));
+      // Manos hasta el alcance real del bloqueador (estatura y salto): el mismo que usa la simulación.
+      if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', blockReach(p.def), 0.2, 1.1));
+    } else if (inPlay && sim.decoy?.key === this.key) {
+      // Finta del central: carrera y salto de rápida completos, sin pelota.
+      const decoy = sim.decoy;
+      if (this.action?.track !== TRACKS.spike || Math.abs(this.action.at - decoy.time) > 0.05) this.action = { track: TRACKS.spike, at: decoy.time };
+      active = this.action;
+      if (!this.jump) this.startJump(decoy.time + 0.01, SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', attackContactHeight(p.def) - 0.1, 0.3, 1.6));
     } else if (sim.phase === 'preServe' && court[0] === this.key && sim.match.serving === p.team) {
       // Sacador: lanzamiento sincronizado con el saque de la IA; con el usuario, pelota en la mano hasta que decida.
       const countdown = sim.serveCountdown;
@@ -159,11 +170,15 @@ export class Animator {
 
     // ---- Salto ----
     let lift = 0;
+    let drift = 0;
     if (this.jump) {
       lift = jumpOffset(now, this.jump.apex, this.jump.air, this.jump.peak);
+      // Salto largo: atrás al despegar, en su punto al golpear, adelante al caer.
+      if (this.jump.broad) drift = Math.max(-0.5, Math.min(0.5, (now - this.jump.apex) / this.jump.air)) * 0.9;
       if (now > this.jump.apex + this.jump.air / 2) this.jump = null;
     }
     this.rig.body.position.y = lift;
+    this.rig.body.position.z = drift;
 
     // ---- Orientación ----
     let targetYaw: number;
@@ -173,7 +188,7 @@ export class Animator {
       // Antes del saque: el equipo que saca mira a la red; el que recibe mira al sacador.
       targetYaw = sim.match.serving === p.team ? this.netYaw() : Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     } else if (block && block.keys.includes(this.key)) targetYaw = this.netYaw();
-    else if (up && up.key === this.key && up.kind === 'attack') targetYaw = this.netYaw();
+    else if ((up && up.key === this.key && up.kind === 'attack') || sim.decoy?.key === this.key) targetYaw = this.netYaw();
     else if (this.speed > 2.6 && !(up && up.key === this.key && up.kind === 'attack')) targetYaw = Math.atan2(this.vx, this.vz);
     else targetYaw = Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     let diff = targetYaw - this.yaw;
@@ -203,7 +218,8 @@ export class Animator {
     this.rig.body.position.y = 0;
     this.rig.root.updateMatrixWorld(true);
     const hand = this.rig.joints[`elbow${side}`].localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.05, 0));
-    return Math.min(max, Math.max(min, height - hand.y));
+    // El salto se aplica dentro de la raíz, que está escalada según la estatura.
+    return Math.min(max, Math.max(min, height - hand.y)) / this.rig.root.scale.y;
   }
 
   /** Mirando a la red: el equipo A hacia +x, el B hacia −x. */
@@ -211,12 +227,12 @@ export class Animator {
     return this.sim.player(this.key).team === 'A' ? Math.PI / 2 : -Math.PI / 2;
   }
 
-  private startJump(apex: number, air: number, peak: number): void {
+  private startJump(apex: number, air: number, peak: number, broad = false): void {
     const j = this.jump;
     if (j && Math.abs(j.apex - apex) < 0.05) return;
     // No reiniciar un salto que ya está en el aire.
     if (j && this.sim.time > j.apex - j.air / 2 && this.sim.time < j.apex + j.air / 2) return;
-    this.jump = { apex, air, peak };
+    this.jump = { apex, air, peak, broad };
   }
 
   private applyPose(pose: Pose): void {

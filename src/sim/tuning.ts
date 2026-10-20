@@ -76,6 +76,8 @@ export const TUNING = {
     },
     serveType: { soft: 'safe', medium: 'float', strong: 'jump' },
   },
+  /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */
+  dive: { extra: 1.5, minDefense: 55, quality: 0.85 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */
   defense: { focusRadius: 1.8, reachBonus: 0.7, reactionBonus: 0.1 },
   decision: {
@@ -90,7 +92,7 @@ export const TUNING = {
     /** La barra de tempo de la colocación corre más tiempo: da para elegir alta, media o rápida con calma. */
     setWindow: 0.75,
     /** Bono de calidad del usuario con timing perfecto: el "momento anime". */
-    perfectBonus: 0.15,
+    perfectBonus: 0.2,
     perfectWindow: 0.08,
     goodWindow: 0.2,
     servePeriod: 1.6,

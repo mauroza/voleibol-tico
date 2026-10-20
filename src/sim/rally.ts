@@ -60,6 +60,8 @@ interface Plan {
   kind: ContactKind;
   /** Contacto bajo o de emergencia: penaliza la calidad. */
   low: boolean;
+  /** Plancha: se lanza al piso para salvarla. */
+  dive?: boolean;
   block?: BlockOutcome;
 }
 
@@ -83,6 +85,7 @@ interface Reach {
   point: Vec3;
   slack: number;
   low: boolean;
+  dive?: boolean;
 }
 
 const TEAM_IDS: readonly TeamId[] = ['A', 'B'];
@@ -116,6 +119,8 @@ export class Simulation {
   private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
   /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
   private decoyRun: { key: string; time: number } | null = null;
+  /** El contacto en curso es una plancha. */
+  private diving = false;
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
@@ -653,6 +658,7 @@ export class Simulation {
     const t = plan.time;
     const at = positionAt(this.ball, t);
     this.plan = null;
+    this.diving = !!plan.dive;
     const ctl = this.resolveDecision(plan);
     switch (plan.kind) {
       case 'reception':
@@ -686,6 +692,8 @@ export class Simulation {
       { base: low ? cfg.lowContactBase : cfg.base, prevQuality: 1, timing: ctl?.timing ?? this.aiTiming(p.team), attribute, pressure: this.threat },
       this.rng,
     );
+    // Salvada en plancha: la pelota sigue viva, pero el pase sale peor.
+    if (this.diving) q *= TUNING.dive.quality;
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, kind, q);
     this.intent = null;
@@ -937,7 +945,7 @@ export class Simulation {
       const r = this.reach(key, heights);
       if (r && r.slack > bestSlack) {
         bestSlack = r.slack;
-        best = { key, team, time: r.time, point: r.point, kind, low: r.low || forceLow };
+        best = { key, team, time: r.time, point: r.point, kind, low: r.low || forceLow, dive: r.dive };
       }
     }
     return best;
@@ -959,6 +967,23 @@ export class Simulation {
       const distance = Math.max(0, distXZ(p.pos, point) - TUNING.reachRadius - (reads ? TUNING.defense.reachBonus : 0));
       const slack = available - distance / moveSpeed(p.def);
       if (slack >= 0) return { time, point, slack, low: i > 0 };
+    }
+    // Último recurso: plancha a la pelota baja (solo quien defiende bien, y no en la colocación ni en el remate).
+    const dive = TUNING.dive;
+    const low = heights[heights.length - 1];
+    if (heights.length > 1 && p.def.attrs.defense >= dive.minDefense) {
+      const time = timeAtHeightDescending(this.ball, low);
+      if (time !== null && time >= this.time + TUNING.minPlanLead) {
+        const point = positionAt(this.ball, time);
+        if (sideOfX(point.x) === p.team && Math.abs(point.x) <= COURT.halfLength + 3 && Math.abs(point.z) <= COURT.halfWidth + 3) {
+          const extra = dive.extra * (p.def.attrs.defense / 100);
+          const available = time - this.time - TUNING.reactionTime;
+          const distance = Math.max(0, distXZ(p.pos, point) - TUNING.reachRadius - extra);
+          const slack = available - distance / moveSpeed(p.def);
+          // Holgura negativa a propósito: la plancha pierde contra cualquiera que llegue de pie.
+          if (slack >= 0) return { time, point, slack: slack - 10, low: true, dive: true };
+        }
+      }
     }
     return null;
   }

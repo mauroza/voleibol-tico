@@ -1,3 +1,4 @@
+import { SPECIALTY_LABELS } from '../sim/players';
 import { meterOf, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
@@ -121,7 +122,7 @@ export class DecisionPanel {
     // Confirmación inmediata: la barra se congela y el título muestra lo elegido.
     this.el.classList.toggle('pressed', d.pressedAt !== null);
     const p = this.sim.player(d.playerKey);
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''}`;
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
     this.buttons.replaceChildren(

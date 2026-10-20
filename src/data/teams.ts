@@ -1,4 +1,4 @@
-import type { Attributes, PlayerDef, Role } from '../sim/players';
+import type { Attributes, PlayerDef, Role, Specialty } from '../sim/players';
 import { createRng } from '../sim/rng';
 
 export type TeamStyle = 'balanced' | 'power' | 'block' | 'defense' | 'serve' | 'fast' | 'athletic';
@@ -51,6 +51,16 @@ const ROLES: Role[] = ['S', 'OH', 'MB', 'OP', 'OH', 'MB', 'L', 'S', 'OH', 'MB', 
 
 /** Estatura típica por puesto (m). */
 const ROLE_HEIGHT: Record<Role, number> = { S: 1.88, OH: 1.94, MB: 2.01, OP: 1.97, L: 1.78 };
+/** Fuertes posibles por puesto: cada jugador se destaca en uno (+14). */
+const ROLE_SPECIALTIES: Record<Role, Specialty[]> = {
+  S: ['setting', 'serve', 'defense'],
+  OH: ['attackPower', 'reception', 'serve'],
+  MB: ['block', 'attackPower', 'serve'],
+  OP: ['attackPower', 'serve', 'block'],
+  L: ['reception', 'defense'],
+};
+const SPECIALTY_BONUS = 14;
+
 /** La figura del equipo: salta y remata fuera de serie. */
 const STAR_BONUS: Partial<Attributes> = { jump: 24, attackPower: 15, attackAccuracy: 5 };
 
@@ -78,7 +88,7 @@ export function makeTeam(spec: TeamSpec): TeamDef {
       const value = attrs[key] + (bonus[key] ?? 0) + rng.range(-variance, variance);
       attrs[key] = Math.round(Math.min(99, Math.max(1, value)));
     }
-    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, skin: 0, hair: 0, armSleeve: 0, legSleeve: 0, sleeveColor: 0 };
+    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0, specialty: 'serve', skin: 0, hair: 0, armSleeve: 0, legSleeve: 0, sleeveColor: 0 };
   });
   // Físico con su propio generador: no altera los atributos ya sorteados.
   const body = createRng(seed * 7919 + 13);
@@ -94,6 +104,8 @@ export function makeTeam(spec: TeamSpec): TeamDef {
   const looks = createRng(seed * 104729 + 7);
   const skinWeights = spec.id === 'LI' ? [0.05, 0.1, 0.15, 0.2, 0.25, 0.25] : [0.16, 0.26, 0.26, 0.14, 0.1, 0.08];
   for (const p of roster) {
+    p.specialty = looks.pick(ROLE_SPECIALTIES[p.role]);
+    p.attrs[p.specialty] = Math.min(99, p.attrs[p.specialty] + SPECIALTY_BONUS);
     p.skin = weighted(looks.next(), skinWeights);
     // Pelo: la mayoría natural, uno de cada tres llamativo; algunos rapados.
     p.hair = weighted(looks.next(), [0.24, 0.16, 0.1, 0.05, 0.05, 0.05, 0.06, 0.05, 0.04, 0.04, 0.04, 0.12]);

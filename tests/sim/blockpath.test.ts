@@ -124,3 +124,20 @@ describe('bloqueo ordenado', () => {
     expect(crossed / blocks).toBeLessThan(0.05);
   }, 120_000);
 });
+
+describe('fortalezas', () => {
+  it('cada jugador tiene un fuerte y el líbero recibe mejor que los centrales', () => {
+    for (const t of TEAMS) for (const p of t.roster) expect(p.specialty).toBeTruthy();
+    const q: Record<string, number[]> = { L: [], MB: [] };
+    for (let seed = 1; seed <= 12; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => sim.bus.on((e) => {
+        if (e.type !== 'contact' || (e.kind !== 'reception' && e.kind !== 'dig')) return;
+        const role = sim.player(e.playerKey).def.role;
+        if (role in q) q[role].push(e.quality);
+      }));
+    }
+    const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+    expect(q.MB.length).toBeGreaterThan(20);
+    expect(mean(q.L)).toBeGreaterThan(mean(q.MB) + 0.05);
+  }, 120_000);
+});

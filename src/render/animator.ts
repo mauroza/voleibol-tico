@@ -32,6 +32,9 @@ const trackFor = (kind: ContactKind, low: boolean): readonly Key[] => {
  * ralentiza la animación). Prioridad: el gesto del próximo contacto propio, luego el bloqueo preparado, luego el
  * gesto que sigue al último contacto, y por debajo la locomoción.
  */
+/** Distancia horizontal del cuerpo a las manos en la plancha (brazos estirados al frente). */
+const DIVE_HANDS = 1.05;
+
 /** Talón, planta y punta del zapato, en el espacio de la rodilla (ver `buildCharacter`). */
 const SOLE_POINTS = [
   new THREE.Vector3(0, -DIMS.shin - DIMS.foot, -0.04),
@@ -41,6 +44,7 @@ const SOLE_POINTS = [
 
 export class Animator {
   private readonly tmp = new THREE.Vector3();
+  private dive: { at: number; point: { x: number; z: number }; reach: number; dir: { x: number; z: number } } | null = null;
   private lastTime: number | null = null;
   private readonly prev = new THREE.Vector3();
   private yaw: number;
@@ -67,8 +71,33 @@ export class Animator {
 
   onContact(kind: ContactKind, time: number): void {
     const b = this.sim.ballPos;
+    const plancha = !!this.dive && Math.abs(this.dive.at - time) < 0.1;
     if (kind !== 'serve') this.contactAim = { target: new THREE.Vector3(b.x, b.y, b.z), arms: kind === 'attack' ? 'right' : 'both', at: time };
-    this.action = { track: trackFor(kind, this.sim.ballPos.y < 0.6), at: time };
+    this.action = { track: plancha ? TRACKS.plancha : trackFor(kind, this.sim.ballPos.y < 0.6), at: time };
+  }
+
+  /**
+   * Plancha: el cuerpo se lanza desde la posición del jugador hacia la pelota hasta que las manos llegan,
+   * se queda estirado en el piso un momento y vuelve al levantarse.
+   */
+  private diveOffset(now: number, px: number, pz: number): { x: number; z: number } {
+    const d = this.dive;
+    if (!d) return { x: 0, z: 0 };
+    const rel = now - d.at;
+    if (rel > 1.35) {
+      this.dive = null;
+      return { x: 0, z: 0 };
+    }
+    if (rel <= 0) {
+      // Hasta el contacto: lo que falta para que las manos (a ~1.1 m del cuerpo estirado) lleguen a la pelota.
+      const dx = d.point.x - px;
+      const dz = d.point.z - pz;
+      const dist = Math.hypot(dx, dz) || 1;
+      d.reach = Math.max(-0.4, dist - DIVE_HANDS);
+      d.dir = { x: dx / dist, z: dz / dist };
+    }
+    const w = rel <= 0 ? ease(1 - Math.min(1, -rel / 0.3)) : rel < 0.6 ? 1 : 1 - ease((rel - 0.6) / 0.75);
+    return { x: d.dir.x * d.reach * w, z: d.dir.z * d.reach * w };
   }
 
   onPoint(won: boolean, time: number): void {
@@ -115,7 +144,10 @@ export class Animator {
     let active: Action | null = null;
     let aim: { target: THREE.Vector3; arms: 'both' | 'right'; weight: number } | null = null;
     if (up && inPlay && up.key === this.key && up.kind !== 'block') {
-      active = { track: trackFor(up.kind, up.point.y < 0.6), at: up.time };
+      if (up.dive && (!this.dive || Math.abs(this.dive.at - up.time) > 0.05)) {
+        this.dive = { at: up.time, point: { x: up.point.x, z: up.point.z }, reach: 0, dir: { x: 0, z: 0 } };
+      }
+      active = { track: up.dive ? TRACKS.plancha : trackFor(up.kind, up.point.y < 0.6), at: up.time };
       const target = new THREE.Vector3(up.point.x, up.point.y, up.point.z);
       const lead = up.time - now;
       if (up.kind === 'attack') {
@@ -202,12 +234,14 @@ export class Animator {
       targetYaw = sim.match.serving === p.team ? this.netYaw() : Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     } else if (block && block.keys.includes(this.key)) targetYaw = this.netYaw();
     else if ((up && up.key === this.key && up.kind === 'attack') || sim.decoy?.key === this.key) targetYaw = this.netYaw();
+    else if (this.dive) targetYaw = Math.atan2(this.dive.point.x - p.pos.x, this.dive.point.z - p.pos.z);
     else if (this.speed > 2.6 && !(up && up.key === this.key && up.kind === 'attack')) targetYaw = Math.atan2(this.vx, this.vz);
     else targetYaw = Math.atan2(b.x - p.pos.x, b.z - p.pos.z);
     let diff = targetYaw - this.yaw;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.yaw += diff * Math.min(1, dt * 8 || 1);
-    this.rig.root.position.set(p.pos.x, 0, p.pos.z);
+    const lunge = this.diveOffset(now, p.pos.x, p.pos.z);
+    this.rig.root.position.set(p.pos.x + lunge.x, 0, p.pos.z + lunge.z);
     this.rig.root.rotation.y = this.yaw;
 
     // El bloqueador principal lleva las manos a la pelota justo al cruzar la red.

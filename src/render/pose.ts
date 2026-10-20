@@ -153,7 +153,7 @@ const legs = (hip: number, knee: number, spread = 0.1): Pose => ({
  * Pistas de gestos técnicos. Tiempos relativos al momento clave:
  * remate, colocación y recepción → contacto; bloqueo → ápice del salto; saque → golpe.
  */
-export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'serve', readonly Key[]> = {
+export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'plancha' | 'serve', readonly Key[]> = {
   // Carrera, penúltimo paso con brazos atrás, impulso con braceo, "arco y flecha", golpe, seguimiento y caída.
   spike: [
     { t: -0.62, pose: { spine: [0.35, 0, 0], neck: [-0.35, 0, 0], ...both(0.3, 0.1, -0.3), ...legs(-0.5, 0.7) } },
@@ -219,6 +219,15 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'serve
     { t: 0, pose: { spine: [0.9, 0, 0], neck: [-0.7, 0, 0], ...both(0.4, -0.3, 0), hipL: [-1.4, 0, 0.25], kneeL: [2.1, 0, 0], hipR: [-1.0, 0, -0.2], kneeR: [1.9, 0, 0] } },
     { t: 0.4, pose: { spine: [0.5, 0, 0], neck: [-0.4, 0, 0], ...both(-0.9, 0.1, -0.3), ...legs(-0.9, 1.4, 0.18) } },
     { t: 0.8, pose: POSES.ready },
+  ],
+  // Plancha: carrera agachada, lanzamiento, cuerpo estirado y horizontal con los brazos al frente, y a levantarse.
+  plancha: [
+    { t: -0.42, pose: { spine: [0.6, 0, 0], neck: [-0.5, 0, 0], ...both(-0.4, -0.3, 0), ...legs(-0.9, 1.3, 0.15) } },
+    { t: -0.14, pose: { spine: [1.1, 0, 0], neck: [-0.9, 0, 0], ...both(-2.4, -0.15, 0), hipL: [0.2, 0, 0.12], kneeL: [0.4, 0, 0], hipR: [-0.5, 0, -0.12], kneeR: [0.9, 0, 0] } },
+    { t: 0, pose: { spine: [1.45, 0, 0], neck: [-1.15, 0, 0], ...both(-2.95, -0.1, 0), hipL: [1.25, 0, 0.12], kneeL: [0.2, 0, 0], hipR: [1.15, 0, -0.12], kneeR: [0.35, 0, 0] } },
+    { t: 0.45, pose: { spine: [1.5, 0, 0], neck: [-1.1, 0, 0], ...both(-2.7, -0.2, 0), hipL: [1.3, 0, 0.12], kneeL: [0.3, 0, 0], hipR: [1.25, 0, -0.12], kneeR: [0.5, 0, 0] } },
+    { t: 0.9, pose: { spine: [0.9, 0, 0], neck: [-0.6, 0, 0], ...both(-0.6, -0.3, 0), ...legs(-1.2, 2.0, 0.2) } },
+    { t: 1.35, pose: POSES.ready },
   ],
   // Saque: pelota en la mano izquierda, lanzamiento, brazo armado, golpe y seguimiento.
   serve: [

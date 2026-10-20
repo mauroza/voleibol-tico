@@ -59,6 +59,7 @@ export class CameraDirector {
       rate = 6;
     } else if (d?.aim && d.kind !== 'block') {
       // Saque, pase o remate apuntado: tercera persona, detrás y arriba del jugador, mirando hacia la mira.
+      const aim = this.sim.localAim ?? d.aim;
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
       const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
@@ -68,11 +69,11 @@ export class CameraDirector {
         targetLook.set(-toward * 1.2, 0.6, u.z * 0.2);
       } else if (d.kind === 'serve') {
         // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
-        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + d.aim.z * 0.2);
-        targetLook.set(u.x + (d.aim.x - u.x) * 0.78, 0, u.z + (d.aim.z - u.z) * 0.78);
+        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + aim.z * 0.2);
+        targetLook.set(u.x + (aim.x - u.x) * 0.78, 0, u.z + (aim.z - u.z) * 0.78);
       } else {
-        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + d.aim.z * 0.15);
-        targetLook.set(u.x + (d.aim.x - u.x) * 0.6, 0.2, u.z + (d.aim.z - u.z) * 0.6);
+        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + aim.z * 0.15);
+        targetLook.set(u.x + (aim.x - u.x) * 0.6, 0.2, u.z + (aim.z - u.z) * 0.6);
       }
       rate = 5;
     } else if (d?.kind === 'block' && d.aim) {

@@ -23,7 +23,7 @@ showMenu(ui).then(async (setup) => {
   const lobby = showLobby(ui);
   try {
     const match = setup.online.mode === 'host'
-      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin }, (text, code) => lobby.show(text, code))
+      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin, tempo: PACE_TEMPO[setup.pace] ?? 'fluido' }, (text, code) => lobby.show(text, code))
       : await joinRoom(setup.online.code, (text) => lobby.show(text, setup.online?.mode === 'join' ? setup.online.code : ''));
     lobby.close();
     start(setup, match);
@@ -42,7 +42,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     control: online ? online.local : 'A',
     difficulty: setup.difficulty,
     // Online: los dos juegan con el mismo reloj, casi sin cámara lenta, y las barras se adelantan lo que tarda la red.
-    tempo: online ? 'online' : PACE_TEMPO[setup.pace] ?? 'fluido',
+    tempo: online ? online.deal.tempo ?? 'fluido' : PACE_TEMPO[setup.pace] ?? 'fluido',
     ...(online ? { humans: ['A', 'B'] as const, inputLead: leadForDelay(online.deal.delay) } : {}),
   });
   const lockstep = online ? new Lockstep(sim, online.net, online.local, online.deal.delay) : null;
@@ -123,13 +123,18 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
       const waiting = !view.replaying && lockstep.advance(dtReal, pace);
       waitingFor = waiting ? waitingFor + dtReal : 0;
       frameRate = pace * sim.timeScale;
-      netStatus.textContent = lockstep.desync ? '⚠ Las dos partidas se desincronizaron: reinicien la sala'
-        : lockstep.silence > 6 ? 'El rival no responde… esperando'
-        : waitingFor > 0.4 ? 'Esperando al rival…' : '';
+      // Avisos que dicen de quién es el problema.
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      netStatus.textContent = lockstep.desync ? '⚠ Las dos partidas se desincronizaron: creen una sala nueva'
+        : offline ? 'Tu computadora se quedó sin internet'
+        : lockstep.remoteAway ? 'Tu rival salió de la ventana del juego: tiene que volver para seguir'
+        : lockstep.silence > 4 ? `No llegan datos de tu rival hace ${Math.round(lockstep.silence)} s: puede ser su internet`
+        : waitingFor > 0.4 ? 'Esperando la jugada de tu rival…' : '';
       netStatus.style.opacity = netStatus.textContent ? '1' : '0';
-      const ping = lockstep.ping;
-      pingEl.textContent = ping === null ? 'Ping …' : `Ping ${Math.round(ping)} ms`;
-      pingEl.dataset.level = ping === null ? '' : ping < 120 ? 'good' : ping < 220 ? 'ok' : 'bad';
+      // Ping de cada uno al servidor: así se ve de quién es la conexión lenta.
+      const level = (ms: number | null) => (ms === null ? '' : ms < 120 ? 'good' : ms < 220 ? 'ok' : 'bad');
+      const fmt = (ms: number | null) => (ms === null ? '…' : `${Math.round(ms)} ms`);
+      pingEl.innerHTML = `<span data-level="${level(lockstep.myNet)}">Tú ${fmt(lockstep.myNet)}</span> · <span data-level="${level(lockstep.remoteNet)}">Rival ${fmt(lockstep.remoteNet)}</span>`;
     } else if (!view.replaying && !stopped) {
       frameRate = pace * (sim.timeScale < 1 ? sim.timeScale : speed);
       let remaining = dtReal * frameRate;

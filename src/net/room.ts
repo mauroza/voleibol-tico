@@ -1,4 +1,5 @@
 import type { TeamId } from '../sim/court';
+import type { TempoProfile } from '../sim/rally';
 import { delayForPing } from './lockstep';
 import { openTransport, roomCode, type NetMessage, type Transport } from './transport';
 
@@ -9,6 +10,8 @@ export interface MatchDeal {
   teamB: number;
   setsToWin: 1 | 2;
   delay: number;
+  /** Ritmo que eligió el anfitrión (cámara lenta para pensar y golpear, igual para los dos). */
+  tempo?: TempoProfile;
 }
 
 export interface OnlineMatch {
@@ -25,7 +28,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * El anfitrión juega con el equipo A (su equipo) y el invitado con el B (el rival elegido).
  */
 export async function hostRoom(
-  choice: { team: number; rival: number; setsToWin: 1 | 2 },
+  choice: { team: number; rival: number; setsToWin: 1 | 2; tempo: TempoProfile },
   onStatus: (text: string, code: string) => void,
 ): Promise<OnlineMatch> {
   const code = roomCode();
@@ -60,6 +63,7 @@ export async function hostRoom(
     teamB: choice.rival,
     setsToWin: choice.setsToWin,
     delay: delayForPing(rtt),
+    tempo: choice.tempo,
   };
   // Reenvía el acuerdo hasta que el invitado confirma.
   for (let tries = 0; tries < 50; tries++) {

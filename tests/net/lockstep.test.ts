@@ -16,6 +16,7 @@ function pair(latency: number): { a: Transport; b: Transport; tick: (now: number
     // Copia profunda: como en la red de verdad, el que recibe no comparte objetos con el que manda.
     send: (msg) => inbox.push({ at: now + latency, to: other, msg: JSON.parse(JSON.stringify({ ...msg, from: me })) }),
     onMessage: (cb) => handlers[me].push(cb),
+    onSelf: () => {},
     close: () => {},
   });
   return {

@@ -19,7 +19,7 @@ interface Input {
  * Ticks de simulación (1/120 s) entre que se toca una tecla y que se aplica: lo que tarda en cruzar la red.
  * Se mide con el ping al entrar a la sala (ida = la mitad), con margen; entre 10 y 40 ticks.
  */
-export const delayForPing = (rttSeconds: number): number => Math.min(40, Math.max(10, Math.ceil((rttSeconds / 2) * 120 * 1.25) + 4));
+export const delayForPing = (rttSeconds: number): number => Math.min(40, Math.max(10, Math.ceil((rttSeconds / 2) * 120 * 1.25) + 8));
 /** Adelanto de las barras de timing (s de simulación): un poco más que el retraso de las teclas. */
 export const leadForDelay = (delay: number): number => (delay + 2) * TUNING.dt;
 
@@ -49,8 +49,17 @@ export class Lockstep {
   /** Ida y vuelta con el rival (ms, suavizado); null hasta la primera medición. */
   ping: number | null = null;
   private pingClock = 1.5;
+  /** Ping de esta computadora al servidor y el que informa el rival (ms): así se ve de quién es la conexión lenta. */
+  myNet: number | null = null;
+  remoteNet: number | null = null;
+  /** El rival salió de la ventana del juego (minimizó o cambió de pestaña). */
+  remoteAway = false;
   /** Hace cuánto (s reales) que no llega nada del rival. */
   silence = 0;
+  /** Mira pendiente: se manda agrupada (no un mensaje por cada movimiento del mouse). */
+  private pendingAim: { x: number; z: number } | null = null;
+  private aimClock = 0;
+  private shownDecision: unknown = null;
   readonly remote: TeamId;
   private readonly apply: { choose: Simulation['choose']; setAim: Simulation['setAim']; press: Simulation['press'] };
 
@@ -59,19 +68,41 @@ export class Lockstep {
     this.apply = { choose: sim.choose.bind(sim), setAim: sim.setAim.bind(sim), press: sim.press.bind(sim) };
     // Las acciones del jugador local no tocan la simulación directo: se programan para el tick de llegada.
     sim.choose = (i: number) => this.push({ k: 'choose', i });
-    sim.setAim = (x: number, z: number) => this.push({ k: 'aim', x, z });
-    sim.press = (at: number = sim.time) => this.push({ k: 'press', at });
+    sim.setAim = (x: number, z: number) => {
+      if (!sim.decisions[local]) return;
+      this.pendingAim = { x, z };
+      sim.localAim = { x, z };
+    };
+    sim.press = (at: number = sim.time) => {
+      // La última mira viaja antes del golpe.
+      this.sendPendingAim();
+      this.push({ k: 'press', at });
+    };
     net.onMessage((m) => this.receive(m));
+    net.onSelf((m) => {
+      const rtt = performance.now() - (m.s as number);
+      this.myNet = this.myNet === null ? rtt : this.myNet * 0.7 + rtt * 0.3;
+    });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => net.send({ t: 'away', v: document.hidden }));
+    }
   }
 
-  private push(input: Omit<Input, 'tick' | 'seq' | 'team'>): void {
+  private sendPendingAim(): void {
+    if (!this.pendingAim) return;
+    const { x, z } = this.pendingAim;
+    this.pendingAim = null;
+    this.push({ k: 'aim', x, z }, false);
+  }
+
+  private push(input: Omit<Input, 'tick' | 'seq' | 'team'>, send = true): void {
     if (!this.sim.decisions[this.local]) return;
     // Nunca antes de lo ya prometido: el rival puede haber simulado hasta ahí.
     const tick = Math.max(this.tick + this.delay, this.promised + 1);
     const full: Input = { ...input, tick, seq: this.seq++, team: this.local };
     this.queue.push(full);
     this.unacked.push(full);
-    this.flush();
+    if (send) this.flush();
   }
 
   private receive(m: NetMessage): void {
@@ -84,6 +115,14 @@ export class Lockstep {
     if (m.t === 'q') {
       const rtt = performance.now() - (m.s as number);
       this.ping = this.ping === null ? rtt : this.ping * 0.7 + rtt * 0.3;
+      return;
+    }
+    if (m.t === 'np') {
+      this.remoteNet = m.v as number;
+      return;
+    }
+    if (m.t === 'away') {
+      this.remoteAway = !!m.v;
       return;
     }
     if (m.t === 'in') {
@@ -124,12 +163,27 @@ export class Lockstep {
     this.pingClock += dtReal;
     if (this.pingClock > 2) {
       this.pingClock = 0;
-      this.net.send({ t: 'p', s: performance.now() });
+      const now = performance.now();
+      this.net.send({ t: 'p', s: now });
+      this.net.send({ t: 'sp', s: now });
+      if (this.myNet !== null) this.net.send({ t: 'np', v: Math.round(this.myNet) });
     }
-    // Mensajes: cada cuadro mientras tenemos una decisión abierta; si no, unas 6 veces por segundo.
+    // La mira de esta pantalla: se dibuja al instante y viaja agrupada (unas 12 veces por segundo).
+    const mine = this.sim.decisions[this.local];
+    if (mine !== this.shownDecision) {
+      this.shownDecision = mine;
+      this.sim.localAim = null;
+      this.pendingAim = null;
+    }
+    this.aimClock += dtReal;
+    if (this.pendingAim && this.aimClock > 0.08) {
+      this.aimClock = 0;
+      this.sendPendingAim();
+    }
+    // Mensajes: ~25 por segundo mientras tenemos una decisión abierta; si no, ~5. El plan gratuito limita el total.
     this.sendClock += dtReal;
-    const deciding = !!this.sim.decisions[this.local] || this.tick - this.lastOpen[this.local] <= this.delay + 1;
-    if (deciding || this.sendClock > 0.16 || this.unacked.length) {
+    const deciding = !!mine || this.tick - this.lastOpen[this.local] <= this.delay + 1;
+    if (this.sendClock > (deciding ? 0.04 : 0.2)) {
       this.sendClock = 0;
       this.flush();
     }

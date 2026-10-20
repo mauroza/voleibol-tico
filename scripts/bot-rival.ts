@@ -44,7 +44,7 @@ const sim = new Simulation({
   teamB: TEAMS[d0.teamB],
   control: 'B',
   humans: ['A', 'B'],
-  tempo: 'online',
+  tempo: d0.tempo ?? 'fluido',
   inputLead: leadForDelay(d0.delay),
 });
 const ls = new Lockstep(sim, net, 'B', d0.delay);

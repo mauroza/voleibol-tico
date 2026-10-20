@@ -18,8 +18,8 @@ describe('attachStats', () => {
     bus.emit({ type: 'point', winner: 'A', reason: 'blockKill', points: { A: 2, B: 0 }, sets });
     contact('A:x', 'A', 'serve'); contact('B:y', 'B', 'reception'); contact('B:z', 'B', 'attack');
     bus.emit({ type: 'point', winner: 'B', reason: 'kill', points: { A: 2, B: 1 }, sets });
-    bus.emit({ type: 'decisionResolved', kind: 'serve', timing: 'perfect' });
-    bus.emit({ type: 'decisionResolved', kind: 'pass', timing: 'bad' });
+    bus.emit({ type: 'decisionResolved', team: 'A', kind: 'serve', timing: 'perfect' });
+    bus.emit({ type: 'decisionResolved', team: 'A', kind: 'pass', timing: 'bad' });
 
     expect(s.teams.A).toMatchObject({ points: 2, aces: 1, blocks: 1 });
     expect(s.teams.B).toMatchObject({ points: 1, kills: 1 });

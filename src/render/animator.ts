@@ -32,7 +32,15 @@ const trackFor = (kind: ContactKind, low: boolean): readonly Key[] => {
  * ralentiza la animación). Prioridad: el gesto del próximo contacto propio, luego el bloqueo preparado, luego el
  * gesto que sigue al último contacto, y por debajo la locomoción.
  */
+/** Talón, planta y punta del zapato, en el espacio de la rodilla (ver `buildCharacter`). */
+const SOLE_POINTS = [
+  new THREE.Vector3(0, -DIMS.shin - DIMS.foot, -0.04),
+  new THREE.Vector3(0, -DIMS.shin - DIMS.foot, 0.08),
+  new THREE.Vector3(0, -DIMS.shin - DIMS.foot + 0.02, 0.17),
+];
+
 export class Animator {
+  private readonly tmp = new THREE.Vector3();
   private lastTime: number | null = null;
   private readonly prev = new THREE.Vector3();
   private yaw: number;
@@ -179,6 +187,7 @@ export class Animator {
     }
     this.rig.body.position.y = lift;
     this.rig.body.position.z = drift;
+    this.keepFeetAboveFloor();
 
     // ---- Orientación ----
     let targetYaw: number;
@@ -220,6 +229,23 @@ export class Animator {
     const hand = this.rig.joints[`elbow${side}`].localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.05, 0));
     // El salto se aplica dentro de la raíz, que está escalada según la estatura.
     return Math.min(max, Math.max(min, height - hand.y)) / this.rig.root.scale.y;
+  }
+
+  /**
+   * Los pies no atraviesan el piso: con la rodilla doblada o el pie inclinado, la punta o el talón bajarían de 0.
+   * Mide talón, planta y punta de cada zapato (en el espacio de la raíz) y sube el cuerpo lo que falte.
+   */
+  private keepFeetAboveFloor(): void {
+    const { body, root, joints } = this.rig;
+    body.updateMatrixWorld(true);
+    let min = Infinity;
+    for (const knee of [joints.kneeL, joints.kneeR]) {
+      for (const sole of SOLE_POINTS) {
+        const p = root.worldToLocal(knee.localToWorld(this.tmp.copy(sole)));
+        min = Math.min(min, p.y);
+      }
+    }
+    if (min < 0) body.position.y -= min;
   }
 
   /** Mirando a la red: el equipo A hacia +x, el B hacia −x. */

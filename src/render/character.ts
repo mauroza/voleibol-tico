@@ -25,7 +25,10 @@ export interface Look {
 
 /** Tonos de piel, de claro a muy oscuro. */
 export const SKIN_TONES = ['#f3d2b3', '#e2b48c', '#c98e62', '#a06a42', '#6e4428', '#43281a'] as const;
-const HAIR_COLORS = ['#1b1512', '#3a2618', '#5e3b22'] as const;
+/** Pelo: naturales primero, después los llamativos estilo anime (rubio platino, blanco, rosado, azul, rojo, verde, morado). */
+export const HAIR_COLORS = ['#1b1512', '#3a2618', '#5e3b22', '#f2e6b8', '#f4f4f6', '#ff7ab8', '#3d8bff', '#e8322e', '#33d17a', '#9b5cff', '#ff9a1f'] as const;
+/** Índice de pelo para "rapado". */
+export const SHAVED = HAIR_COLORS.length;
 
 export interface Rig {
   root: THREE.Group;
@@ -41,7 +44,7 @@ export function lookFor(p: { number: number; skin: number; hair: number }, name:
     shirt: libero ? secondary : primary,
     shorts: shortsFor(primary, secondary),
     skin: SKIN_TONES[Math.min(SKIN_TONES.length - 1, Math.max(0, p.skin))],
-    hair: p.hair >= HAIR_COLORS.length ? null : HAIR_COLORS[p.hair],
+    hair: p.hair >= SHAVED ? null : HAIR_COLORS[p.hair],
     number: p.number,
     name,
   };
@@ -125,7 +128,9 @@ const shared = {
   foot: limb(0.06, 0.12),
   neck: new THREE.CylinderGeometry(0.048, 0.055, 0.12, 10),
   /** Manga corta de la camisa y pierna de la pantaloneta. */
-  sleeve: new THREE.CylinderGeometry(0.074, 0.068, 0.15, 12),
+  sleeve: limb(0.075, 0.13),
+  /** Hombro de la camisa: cubre la unión del brazo con el tronco en cualquier ángulo. */
+  shoulderCap: new THREE.SphereGeometry(0.085, 12, 10),
   shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 12),
   kneePad: new THREE.SphereGeometry(0.072, 10, 8),
   /** Pelo: casquete sobre la cabeza. */
@@ -197,7 +202,8 @@ export function buildCharacter(look: Look): Rig {
     const shoulder = joint(spine, side * 0.2, 0.46, 0);
     attach(shoulder, [
       { geometry: shared.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
-      { geometry: shared.sleeve, color: shirt, matrix: placed(0, -0.075, 0) },
+      { geometry: shared.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
+      { geometry: shared.shoulderCap, color: shirt, matrix: placed(0, 0, 0) },
     ]);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
     attach(elbow, [{ geometry: shared.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }]);
@@ -216,7 +222,7 @@ export function buildCharacter(look: Look): Rig {
     attach(knee, [
       { geometry: shared.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) },
       { geometry: shared.kneePad, color: PAD, matrix: placed(0, -0.02, 0.025, [0, 0, 0], [1, 1.15, 0.9]) },
-      { geometry: shared.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.02, 0.06, [Math.PI / 2, 0, 0]) },
+      { geometry: shared.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03, 0.06, [Math.PI / 2, 0, 0]) },
     ]);
     return { hip, knee };
   };

@@ -25,7 +25,7 @@ export interface PlayerDef {
   height: number;
   /** Figura del equipo: salto y remate fuera de serie. */
   star?: boolean;
-  /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (0 negro, 1 castaño oscuro, 2 castaño, 3 rapado). */
+  /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (índice de color; el último, rapado). */
   skin: number;
   hair: number;
 }

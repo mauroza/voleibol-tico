@@ -41,7 +41,9 @@ export const TUNING = {
     minPassForSemi: 0.4,
     outOfSystemPass: 0.3,
     rescueFlightTime: 1.5,
-    flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.95, back1: 1.0 },
+    flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.85, back1: 0.9 },
+    /** El central que hace la finta de rápida arrastra al bloqueo: a veces le resta un bloqueador. */
+    decoyPull: 0.3,
   },
   attack: {
     base: 1.08,
@@ -49,6 +51,9 @@ export const TUNING = {
     speedRange: 13,
     gravityBonus: 6,
     tipFlightTime: 0.9,
+    /** La figura del equipo remata más rápido y la pelota pica más alto. */
+    starSpeed: 1.1,
+    starRestitution: 0.68,
     /** Apuntar a menos de esta distancia de la red (m) es una finta. */
     tipDepth: 3.0,
     noise: 2.0,
@@ -102,8 +107,10 @@ export const TUNING = {
     stuffScale: 0.3,
     /** Multiplicador de tapa y probabilidad de toque según cuántos bloquean. */
     nFactor: [0, 0.75, 1.1, 1.35],
-    touchByN: [0, 0.2, 0.28, 0.33],
+    touchByN: [0, 0.06, 0.09, 0.11],
     /** Separación lateral entre bloqueadores que cierran el bloqueo (m). */
     spacing: 0.75,
+    /** Medio ancho del bloqueador (manos y cuerpo) más el radio de la pelota: el remate sin toque pasa fuera de esto. */
+    bodyHalfWidth: 0.48,
   },
 } as const;

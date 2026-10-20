@@ -9,7 +9,7 @@ const started = Date.now();
 
 for (let i = 0; i < n; i++) {
   runMatch(
-    { seed: 1000 + i, setsToWin: 1, teamA: equal, teamB: equal, firstServer: i % 2 === 0 ? 'A' : 'B' },
+    { seed: Number(process.env.SEED0 ?? 1000) + i, setsToWin: 1, teamA: equal, teamB: equal, firstServer: i % 2 === 0 ? 'A' : 'B' },
     (sim) => attachMetrics(sim.bus, metrics),
   );
 }

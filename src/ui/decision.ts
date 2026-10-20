@@ -105,7 +105,7 @@ export class DecisionPanel {
     this.shown = d;
     this.shownChosen = d.chosen;
     const p = this.sim.player(d.playerKey);
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}`;
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${AIM_TITLES[d.kind]} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''}`;
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');

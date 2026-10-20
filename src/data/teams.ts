@@ -49,6 +49,11 @@ const STYLE_BONUS: Record<TeamStyle, Partial<Attributes>> = {
 /** Índices 0-5 titulares (5-1), 6 líbero, 7-11 banca. */
 const ROLES: Role[] = ['S', 'OH', 'MB', 'OP', 'OH', 'MB', 'L', 'S', 'OH', 'MB', 'OH', 'OP'];
 
+/** Estatura típica por puesto (m). */
+const ROLE_HEIGHT: Record<Role, number> = { S: 1.88, OH: 1.94, MB: 2.01, OP: 1.97, L: 1.78 };
+/** La figura del equipo: salta y remata fuera de serie. */
+const STAR_BONUS: Partial<Attributes> = { jump: 24, attackPower: 15, attackAccuracy: 5 };
+
 const FIRST = ['Andrés', 'José', 'Luis', 'Carlos', 'Daniel', 'Esteban', 'Kevin', 'Josué', 'Fabián', 'Diego',
   'Pablo', 'Mauricio', 'Randall', 'Bryan', 'Allan', 'Jason', 'Steven', 'Adrián', 'Gabriel', 'Sebastián'];
 const LAST = ['Mora', 'Rodríguez', 'Jiménez', 'Vargas', 'Rojas', 'Solís', 'Quesada', 'Araya', 'Chaves', 'Calderón',
@@ -64,8 +69,18 @@ export function makeTeam(spec: TeamSpec): TeamDef {
       const value = attrs[key] + (bonus[key] ?? 0) + rng.range(-variance, variance);
       attrs[key] = Math.round(Math.min(99, Math.max(1, value)));
     }
-    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs };
+    return { id: `${spec.id}-${i + 1}`, name: `${rng.pick(FIRST)} ${rng.pick(LAST)}`, number: i + 1, role, attrs, height: 0 };
   });
+  // Físico con su propio generador: no altera los atributos ya sorteados.
+  const body = createRng(seed * 7919 + 13);
+  const star = body.chance(0.5) ? 1 : 3;
+  for (const [i, p] of roster.entries()) {
+    p.height = Math.round((ROLE_HEIGHT[p.role] + body.range(-0.07, 0.07)) * 100) / 100;
+    if (i !== star) continue;
+    p.star = true;
+    p.height = Math.round((p.height + 0.04) * 100) / 100;
+    for (const key of Object.keys(STAR_BONUS) as (keyof Attributes)[]) p.attrs[key] = Math.min(99, p.attrs[key] + STAR_BONUS[key]!);
+  }
   const ids = roster.map((p) => p.id);
   return { ...info, roster, lineup: ids.slice(0, 6), libero: ids[6], liberoReplaces: [ids[2], ids[5]] };
 }

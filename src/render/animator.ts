@@ -176,6 +176,12 @@ export class Animator {
       active = this.action;
       // Manos hasta el alcance real del bloqueador (estatura y salto): el mismo que usa la simulación.
       if (!this.jump && up?.kind === 'attack') this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', blockReach(p.def), 0.2, 1.1));
+    } else if (inPlay && sim.decoyBite?.key === this.key) {
+      // Se comió la finta: salta a bloquear la rápida que nunca llega.
+      const bite = sim.decoyBite;
+      if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - bite.time) > 0.05) this.action = { track: TRACKS.block, at: bite.time };
+      active = this.action;
+      if (!this.jump) this.startJump(bite.time + 0.05, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', blockReach(p.def), 0.2, 1.1));
     } else if (inPlay && sim.decoy?.key === this.key) {
       // Finta del central: carrera y salto de rápida completos, sin pelota.
       const decoy = sim.decoy;

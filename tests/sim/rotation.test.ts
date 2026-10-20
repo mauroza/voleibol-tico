@@ -25,6 +25,8 @@ describe('5-1 y rotaciones', () => {
       let before: Record<string, string[]> = { A: [...sim.match.lineups.A], B: [...sim.match.lineups.B] };
       let serving = sim.match.serving;
       sim.bus.on((e) => {
+        // Un cambio reemplaza al jugador en su misma posición.
+        if (e.type === 'substitution') before[e.team] = before[e.team].map((k) => (k === e.outKey ? e.inKey : k));
         if (e.type !== 'point' || e.sets.A + e.sets.B > 0) return;
         const w = e.winner;
         if (w !== serving) {
@@ -117,5 +119,66 @@ describe('colocación en abanico', () => {
   it('la mira elige al atacante y la barra el tempo: tarde (rojo) rápida, temprano (verde) semi', () => {
     expect(setToMiddle(0.03)).toBe('Rápida al central');
     expect(setToMiddle(0.38)).toBe('Semi-rápida al centro');
+  }, 60_000);
+});
+
+describe('cada colocación termina en remate', () => {
+  it('pipe, zaguero, tensa y rápida llegan al remate (no se vuelven balón libre)', () => {
+    const res: Record<string, { sets: number; attacks: number }> = {};
+    for (let seed = 1; seed <= 20; seed++) {
+      runMatch(opts(seed), (sim) => {
+        const s = sim as unknown as { doSet: (...a: unknown[]) => void; intent: { option: string } | null };
+        let opt: string | null = null;
+        const orig = s.doSet.bind(sim);
+        s.doSet = (...a: unknown[]) => {
+          orig(...a);
+          opt = s.intent?.option ?? null;
+          if (opt) (res[opt] ??= { sets: 0, attacks: 0 }).sets += 1;
+        };
+        sim.bus.on((e) => {
+          if (e.type !== 'contact' || e.kind === 'set' || !opt) return;
+          if (e.kind === 'attack') res[opt].attacks += 1;
+          opt = null;
+        });
+      });
+    }
+    for (const [option, r] of Object.entries(res)) {
+      if (r.sets < 5) continue;
+      expect(r.attacks / r.sets, option).toBeGreaterThan(0.95);
+    }
+    expect(res.pipe?.sets ?? 0).toBeGreaterThan(5);
+  }, 120_000);
+});
+
+describe('tiempos y cambios', () => {
+  it('cambia un titular por un suplente en su posición, con límite por set y solo entre puntos', () => {
+    const sim = new Simulation({ seed: 3, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+    const out = sim.match.lineups.A[1];
+    const bench = sim.bench('A');
+    expect(bench.length).toBeGreaterThan(3);
+    expect(bench).not.toContain(sim.match.libero.A);
+    expect(sim.callTimeout('A')).toBe(true);
+    expect(sim.timeouts.A).toBe(1);
+    expect(sim.substitute('A', out, bench[0])).toBe(true);
+    expect(sim.match.lineups.A[1]).toBe(bench[0]);
+    expect(sim.subsLeft.A).toBe(5);
+    // No se puede con la pelota en juego.
+    while (sim.phase !== 'inPlay') {
+      const d = sim.decision;
+      if (d?.kind === 'serve') sim.press();
+      sim.step(TUNING.dt);
+    }
+    expect(sim.substitute('A', sim.match.lineups.A[2], sim.bench('A')[0])).toBe(false);
+    expect(sim.callTimeout('A')).toBe(false);
+  });
+
+  it('la IA cambia a los cansados por suplentes del mismo puesto', () => {
+    let subs = 0;
+    runMatch(opts(5), (sim) => sim.bus.on((e) => {
+      if (e.type !== 'substitution') return;
+      subs += 1;
+      expect(sim.player(e.inKey).def.role).toBe(sim.player(e.outKey).def.role);
+    }));
+    expect(subs).toBeGreaterThan(0);
   }, 60_000);
 });

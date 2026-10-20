@@ -7,7 +7,7 @@ import { contactMeter, judgeTiming, meterOf, powerTiming, powerZone, serveMeter,
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
-import { AVG_HEIGHT, attackContactHeight, blockReach, moveSpeed, type PlayerState } from './players';
+import { AVG_HEIGHT, attackContactHeight, blockReach, isTall, moveSpeed, type PlayerState } from './players';
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
 import { createRng, type Rng } from './rng';
 import { TUNING } from './tuning';
@@ -129,11 +129,18 @@ export class Simulation {
   servedType: ServeType | null = null;
   /** El contacto en curso es una plancha. */
   private diving = false;
+  /** Central rival que se comió la finta: salta con el que amaga. */
+  private bite: { key: string; time: number } | null = null;
   /** El contacto en curso es un pelotazo en el cuerpo. */
   private bodyHit = false;
   /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
   private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
   private lastAttacker: string | null = null;
+  /** Tiempos y cambios que le quedan a cada equipo en el set. */
+  readonly timeouts: Record<TeamId, number> = { A: TUNING.bench.timeouts, B: TUNING.bench.timeouts };
+  readonly subsLeft: Record<TeamId, number> = { A: TUNING.bench.subs, B: TUNING.bench.subs };
+  /** Puntos seguidos de cada equipo (la IA pide tiempo ante una racha rival). */
+  private run: { team: TeamId | null; count: number } = { team: null, count: 0 };
   /** Contacto anterior al último (para saber si un toque del defensor vino de un remate o de un saque). */
   private prev: { key: string; team: TeamId; kind: ContactKind; quality: number } | null = null;
   /** El último remate fue apuntado por el usuario. */
@@ -170,9 +177,78 @@ export class Simulation {
   }
 
   /** Próximo contacto planificado (solo lectura): el render lo usa para anticipar saltos y gestos. */
+  /** Bloqueador que se comió la finta (salta con el central que amaga). */
+  get decoyBite(): Readonly<{ key: string; time: number }> | null {
+    return this.bite && this.time < this.bite.time + 0.6 ? this.bite : null;
+  }
+
   /** Finta de rápida en curso: quién y cuándo salta. */
   get decoy(): Readonly<{ key: string; time: number }> | null {
     return this.decoyRun;
+  }
+
+  /** Se puede pedir tiempo o hacer cambios solo con la pelota muerta (entre puntos). */
+  get deadBall(): boolean {
+    return this.phase === 'preServe' || this.phase === 'pointOver';
+  }
+
+  /** Suplentes disponibles (sin el líbero). */
+  bench(team: TeamId): string[] {
+    const lineup = this.match.lineups[team];
+    return [...this.players.values()]
+      .filter((p) => p.team === team && !lineup.includes(p.key) && p.key !== this.match.libero[team])
+      .map((p) => p.key);
+  }
+
+  /** Tiempo: los de la cancha recuperan un poco de estamina. */
+  callTimeout(team: TeamId): boolean {
+    if (!this.deadBall || this.timeouts[team] <= 0) return false;
+    this.timeouts[team] -= 1;
+    for (const k of this.match.lineups[team]) {
+      const p = this.player(k);
+      p.stamina = Math.min(1, p.stamina + TUNING.bench.timeoutRest);
+    }
+    this.bus.emit({ type: 'timeout', team });
+    return true;
+  }
+
+  /** Cambio: entra un suplente por un titular (en su misma posición de la rotación). */
+  substitute(team: TeamId, outKey: string, inKey: string): boolean {
+    const lineup = this.match.lineups[team];
+    const idx = lineup.indexOf(outKey);
+    if (!this.deadBall || this.subsLeft[team] <= 0 || idx < 0 || !this.bench(team).includes(inKey)) return false;
+    lineup[idx] = inKey;
+    const reps = this.match.liberoReplaces[team];
+    const r = reps.indexOf(outKey);
+    if (r >= 0) reps[r] = inKey;
+    this.subsLeft[team] -= 1;
+    const pin = this.player(inKey);
+    const pout = this.player(outKey);
+    pin.pos = clone(pout.pos);
+    pin.target = clone(pout.target);
+    pout.pos = v3(sideSign(team) * 5.5, 0, -6.5);
+    pout.target = clone(pout.pos);
+    this.bus.emit({ type: 'substitution', team, outKey, inKey });
+    return true;
+  }
+
+  /** La IA: tiempo ante una racha rival y cambio del cansado por un suplente fresco del mismo puesto. */
+  private aiBench(team: TeamId): void {
+    const cfg = TUNING.bench;
+    if (this.run.team && this.run.team !== team && this.run.count >= cfg.aiTimeoutStreak && this.timeouts[team] > 0) {
+      this.callTimeout(team);
+      this.run.count = 0;
+    }
+    if (this.subsLeft[team] <= 0) return;
+    for (const k of [...this.match.lineups[team]]) {
+      const tired = this.player(k);
+      if (tired.stamina >= cfg.aiSubBelow) continue;
+      const fresh = this.bench(team)
+        .map((b) => this.player(b))
+        .filter((b) => b.def.role === tired.def.role && b.stamina > tired.stamina + 0.25)
+        .sort((a, b) => b.stamina - a.stamina)[0];
+      if (fresh && this.substitute(team, k, fresh.key)) return;
+    }
   }
 
   /** En racha: anotó muchos de los últimos puntos de su equipo (aura roja). */
@@ -346,6 +422,7 @@ export class Simulation {
 
   private resetForServe(): void {
     this.phase = 'preServe';
+    for (const t of TEAM_IDS) if (t !== this.control) this.aiBench(t);
     this.phaseTimer = TUNING.servePause;
     this.pendingServe = null;
     this.aiServe = this.match.serving !== this.control ? this.chooseAiServe(courtPlayers(this.match, this.match.serving)[0]) : null;
@@ -372,7 +449,7 @@ export class Simulation {
         let target: Vec3;
         // Ambas bancas del lado lejano de la cámara de transmisión (z negativo).
         if (idx < 0) target = v3(sideSign(team) * (2.5 + 0.7 * bench++), 0, -6.5);
-        else if (!receiving && idx === 0) target = spot(team, SERVE_SPOT);
+        else if (!receiving && idx === 0) target = spot(team, p.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
         else target = spot(team, receiving ? reception[idx] : DEFENSE_SPOTS[idx]);
         p.pos = clone(target);
         p.target = clone(target);
@@ -884,10 +961,10 @@ export class Simulation {
     this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
     this.intent = { key: attacker.key, option: choice.option, outOfSystem };
     this.threat = 0;
-    // El central delantero siempre amaga la rápida si la pelota va a otro lado (con juego en sistema).
+    // El central delantero siempre amaga la rápida si la pelota va a otro lado (punta, opuesto, pipe o zaguero).
     const court = this.court(p.team);
     const mb = court.find((k, i) => isFrontIndex(i) && k !== p.key && k !== attacker.key && this.player(k).def.role === 'MB');
-    this.decoyRun = mb && !outOfSystem ? { key: mb, time: t + cfg.flightTime.quick } : null;
+    this.decoyRun = mb ? { key: mb, time: t + cfg.flightTime.quick } : null;
   }
 
   private doAttack(p: PlayerState, at: Vec3, t: number, ctl?: Control): void {
@@ -896,7 +973,7 @@ export class Simulation {
     const aim = ctl?.option?.id === 'aim' && ctl.aim ? ctl.aim : null;
     // Con mira: cerca de la red es finta; si no, remate. Sin mira, la IA (o la opción elegida) decide el tiro.
     const shot: AttackShot = aim
-      ? (Math.abs(aim.x) < cfg.tipDepth ? 'tip' : 'cross')
+      ? (Math.abs(aim.x) < (isTall(p.def) ? cfg.tallTipDepth : cfg.tipDepth) ? 'tip' : 'cross')
       : ctl?.option?.id === 'shot' ? ctl.option.shot : chooseShot(this.rng);
     let q = computeQuality(
       {
@@ -922,7 +999,8 @@ export class Simulation {
       this.threat = 0.3 * q;
     } else {
       const speed = (cfg.minSpeed + cfg.speedRange * q * (p.def.attrs.attackPower / 100)) * pw.speed * (p.def.star ? cfg.starSpeed : 1) * (1 + cfg.heightSpeed * (p.def.height - AVG_HEIGHT));
-      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus, t, !isError);
+      // En picada: el alto le pega más de arriba hacia abajo (más gravedad efectiva = trayectoria más empinada).
+      this.ball = this.launchClearing(at, target, distXZ(at, target) / speed, GRAVITY + cfg.gravityBonus + (isTall(p.def) ? cfg.tallGravity : 0), t, !isError);
       this.threat = q * clamp01(speed / 28);
     }
   }
@@ -1029,11 +1107,24 @@ export class Simulation {
 
   /** Prepara el bloqueo del equipo que defiende contra el remate ya planificado (esquema de la IA por defecto). */
   private setupBlock(team: TeamId, attack: Plan): void {
-    let scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
-    // La finta del central saca un bloqueador del remate de vez en cuando.
-    if (this.decoyRun && scheme > 1 && this.rng.chance(TUNING.set.decoyPull)) scheme -= 1;
+    const scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
     const n = Math.min(scheme, this.frontPlayers(team).length);
-    this.blockSetup = { team, scheme: n, keys: this.pickBlockers(team, n, attack.point.z), attackTime: attack.time, z: attack.point.z };
+    // Lectura imperfecta: el bloqueo se arma un poco hacia adentro y con error (más con colocaciones rápidas).
+    const cfg = TUNING.block;
+    const fast = this.intent && ['zone4fast', 'quick', 'pipe', 'back1'].includes(this.intent.option) ? 1.6 : 1;
+    const side = Math.sign(attack.point.z) || 1;
+    const z = clamp(attack.point.z - side * cfg.insideShift + this.rng.range(-1, 1) * cfg.readError * fast, -COURT.halfWidth, COURT.halfWidth);
+    let keys = this.pickBlockers(team, n, z);
+    // La finta: el central del bloqueo (solo la IA) puede saltar con el central que amaga y no llegar al remate.
+    this.bite = null;
+    if (this.decoyRun && team !== this.control) {
+      const mb = keys.find((k) => this.player(k).def.role === 'MB');
+      if (mb && this.rng.chance(TUNING.set.decoyBite * (1.3 - this.player(mb).def.attrs.block / 100))) {
+        keys = keys.filter((k) => k !== mb);
+        this.bite = { key: mb, time: this.decoyRun.time };
+      }
+    }
+    this.blockSetup = { team, scheme: keys.length, keys, attackTime: attack.time, z };
   }
 
   /** Delanteros que pueden bloquear (sin líbero). */
@@ -1074,7 +1165,7 @@ export class Simulation {
     if (n === 3) {
       const attacker = this.intent?.key;
       if (attacker && court.includes(attacker)) {
-        const r = this.reach(attacker, [this.attackHeight(this.player(attacker), this.intent!.option, this.intent!.outOfSystem)]);
+        const r = this.reach(attacker, [this.attackHeight(this.player(attacker), this.intent!.option, this.intent!.outOfSystem)], TUNING.attack.approachReaction);
         if (r) return { key: attacker, team, time: r.time, point: r.point, kind: 'attack', low: false };
       }
       return this.bestContact(team, court, low, 'free');
@@ -1113,7 +1204,8 @@ export class Simulation {
   }
 
   /** Primer contacto alcanzable por el jugador entre las alturas dadas (en orden de preferencia). */
-  private reach(key: string, heights: readonly number[]): Reach | null {
+  /** `reaction`: demora antes de arrancar; el atacante que espera su colocación ya sabe a dónde va (casi nula). */
+  private reach(key: string, heights: readonly number[], reaction: number = TUNING.reactionTime): Reach | null {
     const p = this.player(key);
     for (let i = 0; i < heights.length; i++) {
       const time = timeAtHeightDescending(this.ball, heights[i]);
@@ -1124,7 +1216,7 @@ export class Simulation {
       // El defensor que cubre la marca de defensa lee el remate: llega mejor si la pelota va cerca de la marca.
       const read = [this.blockHold, this.blockSetup].find((bk) => bk?.focus && bk.focusKey === key && bk.team === p.team);
       const reads = !!read?.focus && distXZ(v3(read.focus.x, 0, read.focus.z), point) < TUNING.defense.focusRadius;
-      const available = time - this.time - TUNING.reactionTime + (reads ? TUNING.defense.reactionBonus : 0);
+      const available = time - this.time - reaction + (reads ? TUNING.defense.reactionBonus : 0);
       const distance = Math.max(0, distXZ(p.pos, point) - TUNING.reachRadius - (reads ? TUNING.defense.reachBonus : 0));
       const slack = available - distance / moveSpeed(p.def);
       if (slack >= 0) return { time, point, slack, low: i > 0 };
@@ -1286,6 +1378,8 @@ export class Simulation {
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
         } else if (blockSpots?.has(key)) p.target = blockSpots.get(key)!;
+        // El que se comió la finta se queda en la red, frente al central que amaga.
+        else if (this.decoyBite?.key === key) p.target = v3(sideSign(team) * TUNING.contactStance.blockDepth, 0, this.decoyRun ? this.player(this.decoyRun.key).target.z : 0);
         else if (block?.focus && block.focusKey === key) p.target = v3(block.focus.x, 0, block.focus.z);
         else p.target = this.zoneSpot(team, p, idx, !!block);
       });
@@ -1351,13 +1445,16 @@ export class Simulation {
     const walls = block ? [...this.blockSpots(block).values()].map((p) => p.z) : [];
     let best = v3();
     let bestScore = -Infinity;
-    for (let i = 0; i < TUNING.attack.targetSamples; i++) {
+    // Remate fuerte: el atacante mira el bloqueo y elige línea o diagonal según dónde quedó el hueco.
+    const hard = shot === 'cross' || shot === 'line';
+    for (let i = 0; i < TUNING.attack.targetSamples * (hard ? 2 : 1); i++) {
       let depth: number;
       let z: number;
-      if (shot === 'line' || shot === 'tool') {
+      const sample = hard ? (i % 2 === 0 ? shot : shot === 'cross' ? 'line' : 'cross') : shot;
+      if (sample === 'line' || sample === 'tool') {
         depth = this.rng.range(5, 8.5);
         z = lane * this.rng.range(2.5, 4.2);
-      } else if (shot === 'cross') {
+      } else if (sample === 'cross') {
         depth = this.rng.range(3.5, 8);
         z = -lane * this.rng.range(0.5, 4.2);
       } else {
@@ -1454,7 +1551,14 @@ export class Simulation {
       p.stamina = Math.min(1, p.stamina + (onCourt ? TUNING.stamina.perPoint : TUNING.stamina.bench));
     }
     const out = awardPoint(this.match, winner);
-    if (out.setWinner) for (const p of this.players.values()) p.stamina = Math.min(1, p.stamina + TUNING.stamina.perSet);
+    this.run = this.run.team === winner ? { team: winner, count: this.run.count + 1 } : { team: winner, count: 1 };
+    if (out.setWinner) {
+      for (const p of this.players.values()) p.stamina = Math.min(1, p.stamina + TUNING.stamina.perSet);
+      for (const t of TEAM_IDS) {
+        this.timeouts[t] = TUNING.bench.timeouts;
+        this.subsLeft[t] = TUNING.bench.subs;
+      }
+    }
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });

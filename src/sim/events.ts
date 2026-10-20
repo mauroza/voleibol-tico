@@ -14,7 +14,9 @@ export type SimEvent =
   | { type: 'point'; winner: TeamId; reason: PointReason; points: Score; sets: Score }
   | { type: 'rotation'; team: TeamId }
   | { type: 'setEnd'; winner: TeamId; sets: Score }
-  | { type: 'matchEnd'; winner: TeamId };
+  | { type: 'matchEnd'; winner: TeamId }
+  | { type: 'timeout'; team: TeamId }
+  | { type: 'substitution'; team: TeamId; outKey: string; inKey: string };
 
 export class EventBus {
   private handlers: Array<(e: SimEvent) => void> = [];

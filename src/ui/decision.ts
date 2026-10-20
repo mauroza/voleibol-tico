@@ -122,7 +122,7 @@ export class DecisionPanel {
     const p = this.sim.player(d.playerKey);
     const what = d.options[0].option.id === 'free' ? 'Balón libre'
       : d.kind === 'serve' ? (p.def.serveStyle === 'jump' ? 'Saque en suspensión' : 'Saque flotado') : AIM_TITLES[d.kind];
-    this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
+    this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · ${p.def.height.toFixed(2)} m${d.kind === 'attack' && p.def.height >= 2 ? ' (en picada)' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
     this.buttons.replaceChildren(

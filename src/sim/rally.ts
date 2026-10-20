@@ -275,8 +275,8 @@ export class Simulation {
     const pout = this.player(outKey);
     pin.pos = clone(pout.pos);
     pin.target = clone(pout.target);
-    pout.pos = v3(sideSign(team) * 5.5, 0, -6.5);
-    pout.target = clone(pout.pos);
+    // El que sale va a la banca y la banca se reacomoda en fila (nadie queda encima de otro).
+    this.placeBench(team);
     // Si sale el que iba a sacar, el saque pasa al que entra: a su lugar de saque y con su decisión (y su estilo).
     if (idx === 0 && this.match.serving === team && this.phase === 'preServe' && !this.pendingServe) {
       const serveSpot = spot(team, pin.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
@@ -290,6 +290,17 @@ export class Simulation {
     }
     this.bus.emit({ type: 'substitution', team, outKey, inKey });
     return true;
+  }
+
+  /** Banca del equipo en fila, del lado de su campo, frente a la cámara de transmisión. */
+  private placeBench(team: TeamId): void {
+    const court = this.court(team);
+    let i = 0;
+    for (const p of this.players.values()) {
+      if (p.team !== team || court.includes(p.key)) continue;
+      p.target = v3(sideSign(team) * (2.5 + 0.7 * i++), 0, -6.5);
+      p.pos = clone(p.target);
+    }
   }
 
   /** La IA: tiempo ante una racha rival y cambio del cansado por un suplente fresco del mismo puesto. */

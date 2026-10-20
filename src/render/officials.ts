@@ -96,8 +96,9 @@ export class Officials {
       ref(suit(color, '#22252c', team === 'A' ? 2 : 4, '#1b1512'), side * 1.75, 0, -6.4, 0, { coachOf: team, base: SIGNAL.coachArms });
     }
     sim.bus.on((e) => {
-      if (e.type !== 'point') return;
-      this.onPoint(e.winner, e.reason);
+      // En jugada cerrada señalan lo que vieron (puede estar mal); tras el challenge, lo correcto.
+      if (e.type === 'call') this.onPoint(e.calledWinner, e.calledReason, true);
+      if (e.type === 'point') this.onPoint(e.winner, e.reason);
     });
   }
 
@@ -129,10 +130,10 @@ export class Officials {
   }
 
   /** Señas del punto: el primer árbitro marca quién saca, el juez de la esquina más cercana dice dentro o fuera. */
-  private onPoint(winner: TeamId, reason: PointReason): void {
+  private onPoint(winner: TeamId, reason: PointReason, byCall = false): void {
     const now = performance.now() / 1000;
     const b = this.sim.ballPos;
-    const inCourt = Math.abs(b.x) <= COURT.halfLength + 0.05 && Math.abs(b.z) <= COURT.halfWidth + 0.05;
+    const inCourt = !byCall && Math.abs(b.x) <= COURT.halfLength + 0.05 && Math.abs(b.z) <= COURT.halfWidth + 0.05;
     const first = this.people[0];
     // Mirando la cancha desde su silla (z negativo), el equipo A (x negativo) le queda a la derecha.
     first.signal = winner === 'A' ? SIGNAL.pointRight : SIGNAL.pointLeft;
@@ -140,7 +141,7 @@ export class Officials {
     const judges = this.people.filter((o) => o.corner);
     const nearest = judges.sort((a, c) => len(a.corner!, b) - len(c.corner!, b))[0];
     if (reason === 'blockOut') nearest.signal = SIGNAL.touch;
-    else if (reason === 'kill' || reason === 'ace' || reason === 'landed' || inCourt) nearest.signal = SIGNAL.flagDown;
+    else if (reason === 'kill' || reason === 'ace' || reason === 'landed' || reason === 'blockKill' || inCourt) nearest.signal = SIGNAL.flagDown;
     else nearest.signal = SIGNAL.flagUp;
     nearest.until = now + 2.2;
     for (const o of this.people) {

@@ -511,6 +511,17 @@ export class Simulation {
       this.bounceBall();
       this.ball = this.hitWall(this.ball) ?? this.ball;
       this.ballPos = positionAt(this.ball, Math.min(this.time, landingTime(this.ball)));
+      // Jugada cerrada: se espera el challenge; si nadie lo pide, queda lo que cantaron.
+      const call = this.pendingCall;
+      if (call) {
+        const wronged = otherTeam(call.calledWinner);
+        if (call.aiAt !== null && this.time >= call.aiAt) this.challenge(wronged);
+        else if (this.time >= call.until) {
+          this.pendingCall = null;
+          this.award(call.calledWinner, call.calledReason);
+        }
+        return;
+      }
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
         if (this.match.winner) this.phase = 'matchOver';
@@ -763,6 +774,8 @@ export class Simulation {
     this.threat = 0;
     this.decisions.A = null;
     this.decisions.B = null;
+    this.pendingCall = null;
+    this.fingertip = null;
     this.jumpAt.A = this.jumpAt.B = null;
     this.blockSetup = null;
     this.blockHold = null;
@@ -1126,6 +1139,7 @@ export class Simulation {
   // ---------- contactos ----------
 
   private registerTouch(p: PlayerState, kind: ContactKind, quality: number): void {
+    this.fingertip = null;
     if (kind === 'serve' || kind === 'block') {
       this.touchSide = p.team;
       this.touches = 0;
@@ -1691,7 +1705,10 @@ export class Simulation {
     if (r < stuff) return plan('stuff');
     if (r < stuff + cfg.touchByN[n]) return plan('soft');
     // Sin toque: el remate tiene que pasar de verdad por fuera de manos y cuerpos; si no hay hueco, roza el bloqueo.
-    return this.clearBlockPath(block) ? null : plan('soft');
+    if (!this.clearBlockPath(block)) return plan('soft');
+    // Pasa, pero a veces rozando la punta de los dedos: no cambia el vuelo, pero si sale es punto del atacante.
+    if (this.rng.chance(TUNING.calls.fingertip)) this.fingertip = block.team;
+    return null;
   }
 
   /**
@@ -1998,12 +2015,99 @@ export class Simulation {
 
   private ballLanded(): void {
     const p = positionAt(this.ball, landingTime(this.ball));
-    this.endRally(isInCourt(p) ? sideOfX(p.x) : this.last!.team);
+    const tip = this.fingertip;
+    this.fingertip = null;
+    // Roce del bloqueo y la pelota afuera: la tocó el bloqueo, punto del atacante.
+    if (tip && !isInCourt(p) && this.last?.kind === 'attack') return this.endRally(tip, p, 'blockOut');
+    this.endRally(isInCourt(p) ? sideOfX(p.x) : this.last!.team, p);
   }
 
-  private endRally(loser: TeamId): void {
-    const winner = otherTeam(loser);
-    const reason = this.pointReason(loser);
+  /** Equipo cuyo bloqueo rozó el último remate (sin desviarlo), o null. */
+  private fingertip: TeamId | null = null;
+
+  /**
+   * Fin del rally. Si la jugada fue cerrada (a pocos cm de la línea o con un roce leve del bloqueo), los árbitros
+   * pueden equivocarse: se canta y se espera unos segundos por si el perjudicado pide challenge antes de dar el punto.
+   */
+  private endRally(loser: TeamId, landing?: Vec3, reason?: PointReason): void {
+    const truthWinner = otherTeam(loser);
+    const truthReason = reason ?? this.pointReason(loser);
+    const cfg = TUNING.calls;
+    let close: { kind: 'line' | 'touch'; margin: number; inside: boolean } | null = null;
+    if (landing) {
+      const dx = COURT.halfLength - Math.abs(landing.x);
+      const dz = COURT.halfWidth - Math.abs(landing.z);
+      const inside = dx >= 0 && dz >= 0;
+      const margin = inside ? Math.min(dx, dz) : Math.max(-Math.min(dx, 0), -Math.min(dz, 0));
+      if (margin < cfg.lineMargin) close = { kind: 'line', margin, inside };
+    }
+    if (truthReason === 'blockOut') close = { kind: 'touch', margin: 0, inside: false };
+    this.phase = 'pointOver';
+    this.phaseTimer = TUNING.pointPause;
+    this.bounces = 0;
+    this.plan = null;
+    this.netFaultTime = null;
+    this.blockSetup = null;
+    this.blockHold = null;
+    for (const t of TEAM_IDS) this.closeDecision(t, 'bad');
+    if (!close) return this.award(truthWinner, truthReason);
+    // Jugada cerrada: ¿se equivocan los árbitros?
+    const miss = this.rng.chance(close.kind === 'line' ? cfg.lineMiss : cfg.touchMiss);
+    const calledWinner = miss ? loser : truthWinner;
+    const calledReason: PointReason = !miss ? truthReason : close.kind === 'touch' ? 'attackError' : truthReason === 'attackError' || truthReason === 'serviceError' || truthReason === 'error' ? 'landed' : 'error';
+    this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, until: this.time + cfg.window, aiAt: null };
+    this.bus.emit({ type: 'call', kind: close.kind, calledWinner, calledReason, until: this.pendingCall.until });
+    // La IA perjudicada a veces pide challenge (casi siempre si el árbitro se equivocó).
+    const wronged = otherTeam(calledWinner);
+    if (!this.humans.has(wronged) && this.challengesLeft[wronged] > 0 && this.rng.chance(miss ? cfg.aiChallengeWrong : cfg.aiChallengeRight)) {
+      this.pendingCall.aiAt = this.time + this.rng.range(0.6, 1.6);
+    }
+  }
+
+  /** Jugada cerrada esperando un posible challenge. */
+  private pendingCall: {
+    kind: 'line' | 'touch';
+    margin: number;
+    inside: boolean;
+    truthWinner: TeamId;
+    truthReason: PointReason;
+    calledWinner: TeamId;
+    calledReason: PointReason;
+    until: number;
+    aiAt: number | null;
+  } | null = null;
+  /** Challenges que le quedan a cada equipo en el set. */
+  readonly challengesLeft: Record<TeamId, number> = { A: TUNING.calls.challenges, B: TUNING.calls.challenges };
+
+  /** ¿Se puede pedir challenge ahora? (jugada cerrada pendiente, en contra de ese equipo, con challenges). */
+  canChallenge(team: TeamId): boolean {
+    return !!this.pendingCall && this.pendingCall.calledWinner !== team && this.challengesLeft[team] > 0;
+  }
+
+  /** Identidad del challenge que puede pedir ese equipo ahora (igual en las dos computadoras), o null. */
+  challengeKey(team: TeamId): string | null {
+    return this.canChallenge(team) ? `challenge:${team}:${this.pendingCall!.until}` : null;
+  }
+
+  /** Datos de la jugada cerrada pendiente (para la interfaz). */
+  get callPending(): { kind: 'line' | 'touch'; calledWinner: TeamId; until: number } | null {
+    const c = this.pendingCall;
+    return c ? { kind: c.kind, calledWinner: c.calledWinner, until: c.until } : null;
+  }
+
+  /** Challenge: se revisa la jugada con la verdad (la simulación sabe dónde picó y si hubo toque). */
+  challenge(team: TeamId): void {
+    const c = this.pendingCall;
+    if (!c || !this.canChallenge(team)) return;
+    const overturned = c.calledWinner !== c.truthWinner;
+    if (!overturned) this.challengesLeft[team] -= 1;
+    this.bus.emit({ type: 'challenge', team, overturned, kind: c.kind, margin: c.margin, inside: c.inside, touched: c.kind === 'touch' });
+    this.pendingCall = null;
+    this.award(c.truthWinner, c.truthReason);
+  }
+
+  /** Se anota el punto (y todo lo que trae: racha, estamina, rotación, fin de set). */
+  private award(winner: TeamId, reason: PointReason): void {
     // Autor del punto (remate, ace, tapa o remate que sale del bloqueo) para la racha.
     const last = this.last!;
     const active = reason === 'kill' || reason === 'ace' || reason === 'blockKill';
@@ -2025,18 +2129,12 @@ export class Simulation {
         this.subsLeft[t] = TUNING.bench.subs;
       }
     }
+    if (out.setWinner) for (const t of TEAM_IDS) this.challengesLeft[t] = TUNING.calls.challenges;
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });
     if (out.matchWinner) this.bus.emit({ type: 'matchEnd', winner: out.matchWinner });
-    this.phase = 'pointOver';
     this.phaseTimer = TUNING.pointPause;
-    this.bounces = 0;
-    this.plan = null;
-    this.netFaultTime = null;
-    this.blockSetup = null;
-    this.blockHold = null;
-    for (const t of TEAM_IDS) this.closeDecision(t, 'bad');
   }
 
   private pointReason(loser: TeamId): PointReason {

@@ -144,6 +144,11 @@ export const TUNING = {
   warmup: { toss: 1.1, gap: 0.5 },
   /** Tiempos y cambios por set; recuperación de estamina en un tiempo; la IA cambia a quien baje de `aiSubBelow`. */
   bench: { timeouts: 2, subs: 6, timeoutRest: 0.1, aiSubBelow: 0.45, aiTimeoutStreak: 3 },
+  /**
+   * Arbitraje: en jugadas cerradas los árbitros se pueden equivocar (pelota a pocos cm de la línea, roce leve del
+   * bloqueo). `fingertip`: chance de que un remate que pasa limpio igual roce los dedos del bloqueo. El equipo perjudicado puede pedir challenge (2 por set; solo se gastan los fallidos).
+   */
+  calls: { fingertip: 0.22, lineMargin: 0.1, lineMiss: 0.3, touchMiss: 0.25, window: 2.4, challenges: 2, aiChallengeWrong: 0.75, aiChallengeRight: 0.06 },
   /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
   fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */

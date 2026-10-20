@@ -121,6 +121,9 @@ export class Simulation {
   private decoyRun: { key: string; time: number } | null = null;
   /** El contacto en curso es una plancha. */
   private diving = false;
+  /** Autor de cada uno de los últimos puntos (null si fue error rival o no hubo autor claro), por equipo. */
+  private readonly scorers: Record<TeamId, (string | null)[]> = { A: [], B: [] };
+  private lastAttacker: string | null = null;
   private lastShot: AttackShot = 'cross';
   private blockSetup: BlockSetup | null = null;
   /** Bloqueo ya consumido por el remate: los bloqueadores mantienen su lugar hasta el siguiente toque. */
@@ -135,7 +138,7 @@ export class Simulation {
     for (const team of TEAM_IDS) {
       for (const def of this.teams[team].roster) {
         const key = `${team}:${def.id}`;
-        this.players.set(key, { key, def, team, pos: v3(), target: v3() });
+        this.players.set(key, { key, def, team, pos: v3(), target: v3(), stamina: 1 });
       }
     }
     this.match = createMatch({ setsToWin: opts.setsToWin }, this.setup('A'), this.setup('B'), opts.firstServer ?? 'A');
@@ -156,6 +159,25 @@ export class Simulation {
   /** Finta de rápida en curso: quién y cuándo salta. */
   get decoy(): Readonly<{ key: string; time: number }> | null {
     return this.decoyRun;
+  }
+
+  /** En racha: anotó muchos de los últimos puntos de su equipo (aura roja). */
+  onFire(key: string): boolean {
+    const team = this.player(key).team;
+    return this.scorers[team].filter((k) => k === key).length >= TUNING.fire.points;
+  }
+
+  /** Cansa a un jugador (nunca por debajo del piso de estamina). */
+  private tire(key: string, cost: number): void {
+    const p = this.player(key);
+    p.stamina = Math.max(TUNING.stamina.floor, p.stamina - cost);
+  }
+
+  /** Atributo efectivo: el cansancio lo baja y la racha lo sube. */
+  private attr(p: PlayerState, value: number): number {
+    const s = TUNING.stamina;
+    const fire = this.onFire(p.key) ? 1 + TUNING.fire.bonus : 1;
+    return value * (s.attrAtZero + (1 - s.attrAtZero) * p.stamina) * fire;
   }
 
   get upcoming(): Readonly<PlannedContact> | null {
@@ -613,6 +635,12 @@ export class Simulation {
       this.touches = 1;
     }
     this.last = { key: p.key, team: p.team, kind, quality };
+    const cost = TUNING.stamina.cost;
+    if (kind === 'attack') {
+      this.lastAttacker = p.key;
+      this.tire(p.key, Math.abs(p.pos.x) > 3 ? cost.backAttack : cost.attack);
+    } else if (kind === 'set') this.tire(p.key, cost.set);
+    else if (kind === 'reception' || kind === 'dig' || kind === 'free') this.tire(p.key, this.diving ? cost.dive : cost.pass);
     this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team: p.team, kind, quality });
   }
 
@@ -634,9 +662,11 @@ export class Simulation {
       timing = this.aiTiming(team);
     }
     const cfg = TUNING.serve[choice.type];
+    const cost = TUNING.stamina.cost;
+    this.tire(server.key, choice.type === 'jump' ? cost.jumpServe : choice.type === 'float' ? cost.floatServe : cost.safeServe);
     const from = v3(server.pos.x, cfg.contactHeight, server.pos.z);
     let q = computeQuality(
-      { base: cfg.base, prevQuality: 1, timing, attribute: server.def.attrs.serve, pressure: 0 },
+      { base: cfg.base, prevQuality: 1, timing, attribute: this.attr(server, server.def.attrs.serve), pressure: 0 },
       this.rng,
     );
     this.phase = 'inPlay';
@@ -687,7 +717,7 @@ export class Simulation {
     const cfg = TUNING.pass;
     const high = ctl?.option?.id === 'pass' && ctl.option.high;
     const hp = TUNING.decision.highPass;
-    const attribute = kind === 'reception' ? p.def.attrs.reception : p.def.attrs.defense;
+    const attribute = this.attr(p, kind === 'reception' ? p.def.attrs.reception : p.def.attrs.defense);
     let q = computeQuality(
       { base: low ? cfg.lowContactBase : cfg.base, prevQuality: 1, timing: ctl?.timing ?? this.aiTiming(p.team), attribute, pressure: this.threat },
       this.rng,
@@ -725,7 +755,7 @@ export class Simulation {
       : chooseSet(this.rng, availableSetOptions(this.court(p.team), p.key, passQuality, specialist, this.players));
     const attacker = this.player(choice.attackerKey);
     let q = computeQuality(
-      { base: low ? TUNING.pass.lowContactBase : cfg.base, prevQuality: passQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: p.def.attrs.setting, pressure: 0 },
+      { base: low ? TUNING.pass.lowContactBase : cfg.base, prevQuality: passQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: this.attr(p, p.def.attrs.setting), pressure: 0 },
       this.rng,
     );
     q = this.boosted(q, ctl?.timing);
@@ -756,7 +786,7 @@ export class Simulation {
         base: cfg.base,
         prevQuality: this.last!.quality,
         timing: ctl?.timing ?? this.aiTiming(p.team),
-        attribute: (p.def.attrs.attackPower + p.def.attrs.attackAccuracy) / 2,
+        attribute: this.attr(p, (p.def.attrs.attackPower + p.def.attrs.attackAccuracy) / 2),
         pressure: this.blockPressure(at),
       },
       this.rng,
@@ -783,7 +813,7 @@ export class Simulation {
     const last = this.last;
     const prevQuality = last && last.team === p.team ? last.quality : 0.5;
     let q = computeQuality(
-      { base: 0.9, prevQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: p.def.attrs.reception, pressure: this.threat },
+      { base: 0.9, prevQuality, timing: ctl?.timing ?? this.aiTiming(p.team), attribute: this.attr(p, p.def.attrs.reception), pressure: this.threat },
       this.rng,
     );
     q = this.boosted(q, ctl?.timing);
@@ -840,7 +870,11 @@ export class Simulation {
     const blockDecision = last.kind === 'attack' && this.decision?.kind === 'block' ? this.decision : null;
     const block = last.kind === 'attack' ? this.blockSetup : null;
     this.blockHold = last.kind === 'attack' ? block : null;
-    if (last.kind === 'attack') this.blockSetup = null;
+    if (last.kind === 'attack') {
+      if (block && block.scheme > 0) for (const k of block.keys) this.tire(k, TUNING.stamina.cost.block);
+      if (this.decoyRun) this.tire(this.decoyRun.key, TUNING.stamina.cost.decoy);
+      this.blockSetup = null;
+    }
     const net = checkNet(this.ball);
     const crossTime = net.kind === 'none' ? Infinity : net.time;
     // Primero el lado donde está la pelota: un compañero puede jugarla antes de que llegue a la red.
@@ -1222,7 +1256,7 @@ export class Simulation {
   /** Altura del golpe: el zaguero (pipe o zona 1) en sistema vuela mucho más alto, tipo Nishida. */
   private attackHeight(p: PlayerState, option: SetOption, outOfSystem: boolean): number {
     const back = !outOfSystem && (option === 'pipe' || option === 'back1');
-    return attackContactHeight(p.def) - 0.1 + (back ? TUNING.attack.backRowLift : 0);
+    return attackContactHeight(p.def) - 0.1 + (back ? TUNING.attack.backRowLift : 0) - TUNING.stamina.jumpLoss * (1 - p.stamina);
   }
 
   /** Presión del bloqueo preparado sobre el atacante: más bloqueadores cerca, más presión. */
@@ -1247,6 +1281,17 @@ export class Simulation {
   private endRally(loser: TeamId): void {
     const winner = otherTeam(loser);
     const reason = this.pointReason(loser);
+    // Autor del punto (remate, ace, tapa o remate que sale del bloqueo) para la racha.
+    const last = this.last!;
+    const scorer = reason === 'blockOut' ? this.lastAttacker : reason === 'kill' || reason === 'ace' || reason === 'blockKill' ? last.key : null;
+    const list = this.scorers[winner];
+    list.push(scorer);
+    if (list.length > TUNING.fire.window) list.shift();
+    // Entre puntos todos recuperan algo; la banca, más.
+    for (const p of this.players.values()) {
+      const onCourt = this.court(p.team).includes(p.key);
+      p.stamina = Math.min(1, p.stamina + (onCourt ? TUNING.stamina.perPoint : TUNING.stamina.bench));
+    }
     const out = awardPoint(this.match, winner);
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });

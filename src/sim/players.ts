@@ -53,6 +53,8 @@ export interface PlayerState {
   team: TeamId;
   pos: Vec3;
   target: Vec3;
+  /** Energía 0..1: los saltos y las planchas cansan; se recupera entre puntos y en la banca. */
+  stamina: number;
 }
 
 /** m/s */

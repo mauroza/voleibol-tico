@@ -78,6 +78,18 @@ export const TUNING = {
   },
   /** Plancha: el defensor se lanza para salvar una pelota lejana (más lejos cuanto mejor defiende). */
   dive: { extra: 1.5, minDefense: 55, quality: 0.85 },
+  /** Estamina: costo de cada acción, recuperación y efecto del cansancio (atributos y altura del salto). */
+  stamina: {
+    cost: { attack: 0.055, backAttack: 0.075, block: 0.035, jumpServe: 0.05, floatServe: 0.03, safeServe: 0.01, dive: 0.07, pass: 0.012, set: 0.008, decoy: 0.025 },
+    perPoint: 0.035,
+    bench: 0.12,
+    floor: 0.25,
+    /** Con estamina 0 el atributo rinde este porcentaje y el salto pierde estos metros. */
+    attrAtZero: 0.7,
+    jumpLoss: 0.18,
+  },
+  /** Racha: quien anota muchos de los últimos puntos de su equipo se enciende (aura roja) y rinde un poco más. */
+  fire: { window: 7, points: 3, bonus: 0.06 },
   /** Marca de defensa del usuario: el defensor que la cubre llega mejor si el remate va cerca. */
   defense: { focusRadius: 1.8, reachBonus: 0.7, reactionBonus: 0.1 },
   decision: {

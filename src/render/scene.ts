@@ -6,7 +6,8 @@ import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
 import { Arena } from './arena';
 import { CameraDirector } from './camera';
-import { DIMS, buildCharacter, lookFor } from './character';
+import { DIMS, buildCharacter, lookFor, type Rig } from './character';
+import { PlayerStatus } from './status';
 import { Effects } from './fx';
 import { JOINTS } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
@@ -72,6 +73,8 @@ export class MatchView {
   private readonly director: CameraDirector;
   private readonly speedLines: SpeedLines;
   private readonly flashEl = document.createElement('div');
+  private readonly rigs = new Map<string, Rig>();
+  private status: PlayerStatus | null = null;
   private readonly badge = document.createElement('div');
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
@@ -196,6 +199,7 @@ export class MatchView {
     this.prevBall.copy(ballPos);
     this.arena.update(now, dtReal);
     this.fx.update(ballPos, ballSpeed, now);
+    this.status?.update(this.camera, now, !!this.replay);
     this.speedLines.update(dtReal, !this.replay && this.sim.timeScale <= TUNING.decision.slowScale && this.sim.decision?.chosen != null ? 0.25 : 0);
     this.director.update(dtReal, ballPos);
     this.badge.style.opacity = this.replay ? '1' : '0';
@@ -587,6 +591,9 @@ export class MatchView {
       this.animators.push(a);
       this.byKey.set(p.key, a);
       this.scene.add(rig.root);
+      this.rigs.set(p.key, rig);
     }
+    this.status = new PlayerStatus(this.sim, this.rigs);
+    this.scene.add(this.status.group);
   }
 }

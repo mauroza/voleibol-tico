@@ -173,7 +173,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     code.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryJoin(); });
     const note = document.createElement('p');
     note.className = 'menu-online-note';
-    note.textContent = 'El que crea la sala elige los equipos: juega con "Tu equipo" y el invitado con "Rival".';
+    note.textContent = 'El que crea la sala elige los equipos y el ritmo: juega con "Tu equipo" y el invitado con "Rival". Los dos con la ventana del juego a la vista.';
     const row2 = document.createElement('div');
     row2.className = 'menu-online-row';
     row2.append(host, code, join);

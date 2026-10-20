@@ -11,6 +11,8 @@ export interface Transport {
   readonly kind: 'online' | 'local';
   send(msg: NetMessage): void;
   onMessage(cb: (msg: NetMessage) => void): void;
+  /** Mensajes propios de vuelta del servidor (para medir el ping de esta computadora al servidor). */
+  onSelf(cb: (msg: NetMessage) => void): void;
   close(): void;
 }
 
@@ -21,14 +23,19 @@ export function localTransport(code: string): Promise<Transport> {
   const id = randomId();
   const channel = new BroadcastChannel(`voleibol-tico-${code}`);
   const handlers: ((msg: NetMessage) => void)[] = [];
+  const selfHandlers: ((msg: NetMessage) => void)[] = [];
   channel.onmessage = (e: MessageEvent<NetMessage>) => {
     if (e.data.from !== id) for (const h of handlers) h(e.data);
   };
   return Promise.resolve({
     id,
     kind: 'local',
-    send: (msg) => channel.postMessage({ ...msg, from: id }),
+    send: (msg) => {
+      channel.postMessage({ ...msg, from: id });
+      if (msg.t === 'sp') setTimeout(() => { for (const h of selfHandlers) h(msg); }, 0);
+    },
     onMessage: (cb) => handlers.push(cb),
+    onSelf: (cb) => selfHandlers.push(cb),
     close: () => channel.close(),
   });
 }
@@ -37,12 +44,15 @@ export function localTransport(code: string): Promise<Transport> {
 export async function supabaseTransport(code: string, url: string, key: string): Promise<Transport> {
   const { createClient } = await import('@supabase/supabase-js');
   const id = randomId();
-  const client = createClient(url, key, { realtime: { params: { eventsPerSecond: 40 } } });
-  const channel = client.channel(`voleibol-tico:${code}`, { config: { broadcast: { self: false, ack: false } } });
+  const client = createClient(url, key, { realtime: { params: { eventsPerSecond: 60 } } });
+  // `self: true`: el servidor también nos devuelve lo nuestro; solo lo usamos para medir nuestro ping al servidor.
+  const channel = client.channel(`voleibol-tico:${code}`, { config: { broadcast: { self: true, ack: false } } });
   const handlers: ((msg: NetMessage) => void)[] = [];
+  const selfHandlers: ((msg: NetMessage) => void)[] = [];
   channel.on('broadcast', { event: 'm' }, ({ payload }) => {
     const msg = payload as NetMessage;
     if (msg.from !== id) for (const h of handlers) h(msg);
+    else if (msg.t === 'sp') for (const h of selfHandlers) h(msg);
   });
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('No se pudo conectar a la sala')), 10_000);
@@ -61,6 +71,7 @@ export async function supabaseTransport(code: string, url: string, key: string):
     kind: 'online',
     send: (msg) => void channel.send({ type: 'broadcast', event: 'm', payload: { ...msg, from: id } }),
     onMessage: (cb) => handlers.push(cb),
+    onSelf: (cb) => selfHandlers.push(cb),
     close: () => void client.removeChannel(channel),
   };
 }

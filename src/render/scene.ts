@@ -501,7 +501,8 @@ export class MatchView {
       return;
     }
     this.aimGroup.visible = true;
-    const { x, z } = d.aim;
+    // Online: la mira de esta pantalla se dibuja al instante (la oficial llega unos ms después).
+    const { x, z } = this.sim.localAim ?? d.aim;
     const inCourt = Math.abs(x) <= COURT.halfLength && Math.abs(z) <= COURT.halfWidth;
     this.aimCross.position.set(x, 0.03, z);
     this.aimSpread.position.set(x, 0.025, z);

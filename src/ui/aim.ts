@@ -68,7 +68,8 @@ export class AimInput {
     if (!fwd && !side) return;
     // Desde la vista del rematador: "adelante" es hacia el fondo rival y "derecha" su derecha.
     const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
-    this.sim.setAim(d.aim.x + toward * fwd * AIM_SPEED * dtReal, d.aim.z + toward * side * AIM_SPEED * dtReal);
+    const from = this.sim.localAim ?? d.aim;
+    this.sim.setAim(from.x + toward * fwd * AIM_SPEED * dtReal, from.z + toward * side * AIM_SPEED * dtReal);
   }
 
   private aiming(): boolean {

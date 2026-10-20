@@ -118,6 +118,12 @@ export class Simulation {
   /** Equipos que juegan personas. */
   readonly humans: ReadonlySet<TeamId>;
 
+  /**
+   * Online: hacia dónde está apuntando esta pantalla ahora mismo (la mira real llega unos ms después por la red).
+   * Solo para dibujar; la simulación nunca lo lee, así no se desincroniza.
+   */
+  localAim: { x: number; z: number } | null = null;
+
   /** Decisión de esta pantalla (el equipo `control`). */
   get decision(): Decision | null {
     return this.control ? this.decisions[this.control] : null;

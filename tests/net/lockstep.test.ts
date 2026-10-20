@@ -78,4 +78,38 @@ describe('online lockstep', () => {
     expect(stalls / (t / frame)).toBeLessThan(0.15);
     console.log(`retraso ${latency}: esperas ${(100 * stalls / (t / frame)).toFixed(1)}% de los cuadros`);
   }, 120_000);
+
+  it('una tecla que llega tarde no se pasa a la jugada siguiente (colocación y remate quedan sin tocar)', () => {
+    const net = pair(0.1);
+    const delay = delayForPing(0.2);
+    const host = make('A', delay);
+    const guest = make('B', delay);
+    const ls = { A: new Lockstep(host, net.a, 'A', delay), B: new Lockstep(guest, net.b, 'B', delay) };
+    const resolved: { kind: string; timing: string }[] = [];
+    host.bus.on((e) => { if (e.type === 'decisionResolved' && e.team === 'A') resolved.push({ kind: e.kind, timing: e.timing }); });
+    let late = 0;
+    const frame = 1 / 60;
+    let t = 0;
+    while (host.match.points.A + host.match.points.B < 12 && t < 1800) {
+      t += frame;
+      net.tick(t);
+      // Anfitrión: saca normal; en recepción presiona justo en el contacto (tarde para la red); nada más.
+      const d = host.decisions.A;
+      if (d && d.pressedAt === null) {
+        if (d.kind === 'serve' && host.time - d.startTime > 0.7) host.press(host.time);
+        if (d.kind === 'pass' && d.contactTime !== null && d.contactTime - host.time <= 0.01) {
+          host.press(host.time);
+          late += 1;
+        }
+      }
+      bot(guest, 'B', t);
+      ls.A.advance(frame, 1);
+      ls.B.advance(frame, 1);
+    }
+    expect(late).toBeGreaterThan(3);
+    const after = resolved.filter((r) => r.kind === 'set' || r.kind === 'attack');
+    expect(after.length).toBeGreaterThan(3);
+    for (const r of after) expect(r.timing).toBe('bad');
+    expect(ls.A.desync || ls.B.desync).toBe(false);
+  }, 120_000);
 });

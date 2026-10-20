@@ -23,15 +23,13 @@ const AIM_TITLES: Record<DecisionKind, string> = {
 
 const MOVE = 'Apunta con el mouse o flechas/WASD';
 const HINTS: Record<DecisionKind, (d: Decision) => string> = {
-  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde seguro · amarillo flotado · rojo en salto)`,
+  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente y arriesgado)`,
   pass: () => `${MOVE} dónde dejar la pelota · clic o ESPACIO justo cuando llegue (zona verde)`,
   set: (d) => (d.aim
     ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
   attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red = finta`,
-  block: (d) => (d.chosen === null
-    ? `Elige bloqueo con 1–${d.options.length} · mueve la marca de defensa (azul) a donde esperas el remate`
-    : 'Mueve la marca de defensa · ESPACIO al saltar (zona verde)'),
+  block: (d) => `Bloqueo sugerido ya elegido · 1–${d.options.length} para cambiarlo · mouse: marca de defensa (azul) · ESPACIO al saltar = bloqueo reforzado (opcional)`,
 };
 
 const POWER_FEEDBACK: Record<Power, string> = { soft: 'Suave', medium: 'Fuerte', strong: '¡POTENTE!' };
@@ -122,7 +120,8 @@ export class DecisionPanel {
     // Confirmación inmediata: la barra se congela y el título muestra lo elegido.
     this.el.classList.toggle('pressed', d.pressedAt !== null);
     const p = this.sim.player(d.playerKey);
-    const what = d.options[0].option.id === 'free' ? 'Balón libre' : AIM_TITLES[d.kind];
+    const what = d.options[0].option.id === 'free' ? 'Balón libre'
+      : d.kind === 'serve' ? (p.def.serveStyle === 'jump' ? 'Saque en suspensión' : 'Saque flotado') : AIM_TITLES[d.kind];
     this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;

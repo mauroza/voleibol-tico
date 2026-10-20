@@ -31,6 +31,8 @@ export interface PlayerDef {
   star?: boolean;
   /** Su fuerte: el fundamento en que se destaca. */
   specialty: Specialty;
+  /** Su saque de siempre: en suspensión (como remate) o flotado en salto. */
+  serveStyle: 'jump' | 'float';
   /** Apariencia: tono de piel (0 claro … 5 muy oscuro) y pelo (índice de color; el último, rapado). */
   skin: number;
   hair: number;

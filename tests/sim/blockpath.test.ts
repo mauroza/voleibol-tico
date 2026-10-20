@@ -141,3 +141,33 @@ describe('fortalezas', () => {
     expect(mean(q.L)).toBeGreaterThan(mean(q.MB) + 0.05);
   }, 120_000);
 });
+
+describe('defensores sólidos', () => {
+  it('una pelota del rival no atraviesa el cuerpo de un defensor: le pega y cuenta como toque', () => {
+    let samples = 0;
+    let through = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      runMatch({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1] }, (sim) => {
+        let incoming: 'A' | 'B' | null = null;
+        sim.bus.on((e) => {
+          if (e.type === 'contact') incoming = e.kind === 'attack' || e.kind === 'serve' ? (e.team === 'A' ? 'B' : 'A') : null;
+        });
+        const orig = sim.step.bind(sim);
+        sim.step = (dt: number) => {
+          orig(dt);
+          if (!incoming || sim.phase !== 'inPlay') return;
+          const b = sim.ballPos;
+          if ((incoming === 'A' ? -b.x : b.x) < 1) return;
+          samples += 1;
+          for (const k of sim.court(incoming)) {
+            const p = sim.player(k);
+            if (sim.upcoming?.key === k) continue;
+            if (b.y < p.def.height - 0.2 && Math.hypot(b.x - p.pos.x, b.z - p.pos.z) < 0.18) through += 1;
+          }
+        };
+      });
+    }
+    expect(samples).toBeGreaterThan(1000);
+    expect(through).toBeLessThan(samples * 0.002);
+  }, 120_000);
+});

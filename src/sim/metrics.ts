@@ -22,7 +22,8 @@ export interface Summary {
 }
 
 /** Rangos objetivo del spec §7. */
-export const TARGETS: Record<'touchesPerRally' | 'killRate' | 'serveErrorRate' | 'winRateA', readonly [number, number]> = {
+export const TARGETS: Record<'touchesPerRally' | 'killRate' | 'serveErrorRate' | 'aceRate' | 'winRateA', readonly [number, number]> = {
+  aceRate: [0.04, 0.1],
   touchesPerRally: [3, 8],
   killRate: [0.35, 0.55],
   serveErrorRate: [0.08, 0.15],

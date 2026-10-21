@@ -297,7 +297,64 @@ export class Simulation {
 
   /** Se puede pedir tiempo o hacer cambios solo con la pelota muerta (entre puntos). */
   get deadBall(): boolean {
-    return this.phase === 'preServe' || this.phase === 'pointOver';
+    // Con el saque ya en marcha (lanzamiento) tampoco: la pelota está por entrar en juego.
+    return (this.phase === 'preServe' && !this.pendingServe) || this.phase === 'pointOver';
+  }
+
+  /** Tiempo pedido por una persona: el saque espera hasta que se termine o hasta que esa persona vuelva al juego. */
+  private timeoutHold: { team: TeamId; until: number } | null = null;
+  /** Juego en pausa (online la pide cualquiera entre puntos y la levanta cualquiera): la simulación no avanza. */
+  pausedBy: TeamId | null = null;
+
+  get timeoutInfo(): { team: TeamId; left: number } | null {
+    const h = this.timeoutHold;
+    return h ? { team: h.team, left: Math.max(0, h.until - this.time) } : null;
+  }
+
+  /** Vuelve al juego antes de que se acabe el tiempo (solo quien lo pidió). */
+  endTimeout(team: TeamId): void {
+    this.syncSides();
+    if (this.timeoutHold?.team === team) this.timeoutHold = null;
+  }
+
+  pauseGame(team: TeamId): void {
+    this.syncSides();
+    if (this.pauseKey(team)) this.pausedBy = team;
+  }
+
+  resumeGame(team: TeamId): void {
+    this.syncSides();
+    if (this.resumeKey(team)) this.pausedBy = null;
+  }
+
+  /** ¿Se puede hacer ese cambio ahora? (pelota muerta, quedan cambios, sale un titular y entra uno de la banca). */
+  canSubstitute(team: TeamId, outKey: string, inKey: string): boolean {
+    return this.deadBall && this.subsLeft[team] > 0 && this.match.lineups[team].includes(outKey) && this.bench(team).includes(inKey);
+  }
+
+  // Identidades (iguales en las dos computadoras) de lo que cada persona puede mandar entre puntos; null si no puede.
+  private deadBallId(): string {
+    return `${this.match.setNumber}:${this.match.points.A + this.match.points.B}`;
+  }
+
+  timeoutKey(team: TeamId): string | null {
+    return this.humans.has(team) && this.deadBall && this.timeouts[team] > 0 && !this.timeoutHold && !this.pausedBy ? `to:${this.deadBallId()}` : null;
+  }
+
+  endTimeoutKey(team: TeamId): string | null {
+    return this.timeoutHold?.team === team ? `te:${this.timeoutHold.until}` : null;
+  }
+
+  subKey(team: TeamId): string | null {
+    return this.humans.has(team) && this.deadBall && this.subsLeft[team] > 0 && !this.pausedBy ? `sub:${this.deadBallId()}:${this.subsLeft[team]}` : null;
+  }
+
+  pauseKey(team: TeamId): string | null {
+    return this.humans.has(team) && this.deadBall && !this.pausedBy ? `pa:${this.deadBallId()}` : null;
+  }
+
+  resumeKey(team: TeamId): string | null {
+    return this.humans.has(team) && this.pausedBy ? `re:${this.deadBallId()}` : null;
   }
 
   /** Suplentes disponibles (sin el líbero). */
@@ -310,8 +367,14 @@ export class Simulation {
 
   /** Tiempo: los de la cancha recuperan un poco de estamina. */
   callTimeout(team: TeamId): boolean {
-    if (!this.deadBall || this.timeouts[team] <= 0) return false;
+    this.syncSides();
+    if (!this.deadBall || this.timeouts[team] <= 0 || this.timeoutHold) return false;
     this.timeouts[team] -= 1;
+    if (this.humans.has(team)) {
+      this.timeoutHold = { team, until: this.time + TUNING.bench.timeoutLength };
+      // El saque que estaba por decidirse se vuelve a abrir después del tiempo.
+      for (const t of TEAM_IDS) if (this.decisions[t]?.kind === 'serve' && this.decisions[t]!.pressedAt === null) this.decisions[t] = null;
+    }
     for (const k of this.match.lineups[team]) {
       const p = this.player(k);
       p.stamina = Math.min(1, p.stamina + TUNING.bench.timeoutRest);
@@ -322,6 +385,7 @@ export class Simulation {
 
   /** Cambio: entra un suplente por un titular (en su misma posición de la rotación). */
   substitute(team: TeamId, outKey: string, inKey: string): boolean {
+    this.syncSides();
     const lineup = this.match.lineups[team];
     const idx = lineup.indexOf(outKey);
     if (!this.deadBall || this.subsLeft[team] <= 0 || idx < 0 || !this.bench(team).includes(inKey)) return false;
@@ -523,7 +587,7 @@ export class Simulation {
 
   step(dt: number): void {
     this.syncSides();
-    if (this.phase === 'matchOver') return;
+    if (this.phase === 'matchOver' || this.pausedBy) return;
     this.time += dt;
     this.movePlayers(dt);
     if (this.phase === 'ceremony') {
@@ -537,7 +601,10 @@ export class Simulation {
         if (this.time >= this.pendingServe.at) this.serve();
       } else if (this.arriving) {
         // Se espera a que los que entraron en un cambio lleguen a su lugar.
+      } else if (this.timeoutHold && this.time < this.timeoutHold.until) {
+        // Tiempo pedido: se espera.
       } else {
+        this.timeoutHold = null;
         this.phaseTimer -= dt;
         if (this.phaseTimer <= 0) {
           if (!this.humans.has(this.match.serving)) {
@@ -1025,8 +1092,10 @@ export class Simulation {
       this.teamList(team).forEach((p, i) => {
         p.target = v3(sideSign(team) * (2.5 + 0.7 * i), 0, -6.5);
         p.pace = 0.55;
-        // Al cambiar de cancha rodean la red por los postes (cada equipo por su lado).
-        p.via = walkAround && Math.sign(p.pos.x) !== Math.sign(p.target.x) ? v3(0, 0, team === 'A' ? COURT.halfWidth + 2.2 : -COURT.halfWidth - 2.6) : null;
+        // Al cambiar de cancha rodean la red por afuera de los postes (cada equipo por su lado, A por el de la cámara y
+        // B por el de los árbitros), cada uno por su propio carril para que no se amontonen.
+        const lane = team === 'A' ? COURT.halfWidth + 1.9 + i * 0.25 : -(COURT.halfWidth + 2.5 + i * 0.25);
+        p.via = walkAround && Math.sign(p.pos.x) !== Math.sign(p.target.x) ? v3(0, 0, lane) : null;
       });
     }
   }
@@ -1288,7 +1357,7 @@ export class Simulation {
       p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
     }
     for (const p of this.players.values()) {
-      if (p.via && len2(p.via.x - p.pos.x, p.via.z - p.pos.z) < 0.3) p.via = null;
+      if (p.via && len2(p.via.x - p.pos.x, p.via.z - p.pos.z) < 0.6) p.via = null;
       const goal = p.via ?? p.target;
       const dx = goal.x - p.pos.x;
       const dz = goal.z - p.pos.z;

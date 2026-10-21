@@ -79,7 +79,8 @@ export class CameraDirector {
     let rate = 3;
     const d = this.sim.decision;
     const cer = this.sim.ceremony;
-    if (cer && (cer.step === 'greeting' || cer.step === 'toss') && this.mode !== 'replay') {
+    // Después de elegir lado vuelve el plano general: se ve a los equipos cambiar de cancha.
+    if (cer && (cer.step === 'greeting' || (cer.step === 'toss' && cer.sub === 0)) && this.mode !== 'replay') {
       // Saludo y sorteo: plano más cercano de la red.
       this.mode = 'broadcast';
       targetPos.set(0, 4.6, 11.5);
@@ -98,9 +99,10 @@ export class CameraDirector {
       const u = this.sim.player(d.playerKey).pos;
       const toward = -sideSign(this.sim.player(d.playerKey).team);
       if (d.kind === 'set') {
-        // Colocación: desde atrás y arriba del propio campo, con todos los atacantes a la vista.
-        targetPos.set(u.x - toward * 8.5, 7, u.z * 0.3);
-        targetLook.set(-toward * 1.2, 0.6, u.z * 0.2);
+        // Colocación: plano fijo desde atrás y arriba del propio campo (no sigue al colocador, que se mueve), con la red
+        // entera y todos los atacantes a la vista: punta, central, opuesto y zagueros.
+        targetPos.set(-toward * 10.5, 7.4, 0);
+        targetLook.set(-toward * 1.4, 0.4, 0);
       } else if (d.kind === 'serve') {
         // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
         targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + aim.z * 0.2);

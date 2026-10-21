@@ -80,15 +80,22 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     saveSetup({ ...setup, online: undefined }, false);
     location.reload();
   };
-  const pause = new PauseMenu(ui, { resume: () => setPaused(false), restart, menu: toMenu });
+  const pause = new PauseMenu(ui, { resume: () => setPaused(false), restart: online ? toMenu : restart, menu: toMenu });
   const setPaused = (p: boolean) => {
+    // Online la pausa es de los dos: se pide entre puntos (cualquiera) y la levanta cualquiera.
+    if (online && sim.phase !== 'matchOver') {
+      const me = sim.control ?? 'A';
+      if (p) sim.pauseGame(me);
+      else sim.resumeGame(me);
+      return;
+    }
     // Online no hay pausa: el reloj es de los dos.
     if (sim.phase === 'matchOver' || (online && p)) return;
     pause.set(p);
     panel.paused = p;
   };
   // Tiempo y cambios: pausa el juego mientras el panel está abierto.
-  const timeouts = new TimeoutPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = open || pause.open; }, !online);
+  const timeouts = new TimeoutPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = (open && !online) || pause.open; }, !!online);
   const challenges = new ChallengePanel(ui, sim, sim.control ?? 'A');
   // Previa (cartel, saltar, sorteo) y alineación de cada set.
   const pregame = new PregamePanel(ui, sim, sim.control ?? 'A', !!online);
@@ -97,7 +104,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open || timeouts.open);
   const touch = IS_TOUCH
     ? new TouchControls(ui, sim, clock, () => pause.open || timeouts.open, {
-      pause: online ? null : () => setPaused(!pause.open),
+      pause: () => setPaused(!pause.open),
       mute: () => sound?.toggleMute() ?? false,
       skipReplay: () => view.skipReplay(),
     })
@@ -142,7 +149,12 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     aim.update(dtReal);
     // Paso variable: la simulación avanza exactamente lo que duró el cuadro (fluido a 60, 144 o 165 Hz).
     // En pausa o repetición espera; la cámara lenta de decisión ignora la aceleración x4.
-    const stopped = pause.open || timeouts.open;
+    // Online la pausa la decide la simulación (pedida por cualquiera de los dos); el panel de tiempo no detiene el reloj.
+    if (online && pause.open !== !!sim.pausedBy) {
+      pause.set(!!sim.pausedBy);
+      panel.paused = pause.open;
+    }
+    const stopped = !online && (pause.open || timeouts.open);
     if (lockstep) {
       // Online: pasos fijos sincronizados; si el rival todavía no confirmó, se espera.
       const waiting = !view.replaying && lockstep.advance(dtReal, pace);

@@ -23,7 +23,7 @@ interface Input {
 
 /** Identidad de una decisión, igual en las dos computadoras (la simulación es la misma). */
 const decisionKey = (d: { kind: string; playerKey: string; startTime: number }) => `${d.kind}:${d.playerKey}:${d.startTime}`;
-type Kind = 'choose' | 'aim' | 'press' | 'challenge' | 'skip' | 'side' | 'lineup';
+type Kind = 'choose' | 'aim' | 'press' | 'challenge' | 'skip' | 'side' | 'lineup' | 'timeout' | 'endTimeout' | 'sub' | 'pause' | 'resume';
 
 /** Identidad de lo que ese equipo puede mandar ahora de ese tipo (null si no puede). */
 const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
@@ -31,11 +31,16 @@ const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
   if (k === 'skip') return sim.skipKey(team);
   if (k === 'side') return sim.sideKey(team);
   if (k === 'lineup') return sim.lineupKey(team);
+  if (k === 'timeout') return sim.timeoutKey(team);
+  if (k === 'endTimeout') return sim.endTimeoutKey(team);
+  if (k === 'sub') return sim.subKey(team);
+  if (k === 'pause') return sim.pauseKey(team);
+  if (k === 'resume') return sim.resumeKey(team);
   const d = sim.decisions[team];
   return d ? decisionKey(d) : null;
 };
 /** ¿Ese equipo puede mandar algo ahora? (entonces el otro no avanza más allá de lo que ese ya confirmó). */
-const KINDS: readonly Kind[] = ['press', 'challenge', 'skip', 'side', 'lineup'];
+const KINDS: readonly Kind[] = ['press', 'challenge', 'skip', 'side', 'lineup', 'timeout', 'endTimeout', 'sub', 'pause', 'resume'];
 const openKey = (sim: Simulation, team: TeamId): string | null => {
   for (const k of KINDS) {
     const key = keyFor(sim, team, k);
@@ -102,6 +107,11 @@ export class Lockstep {
     skip: Simulation['skip'];
     chooseSide: Simulation['chooseSide'];
     submitLineup: Simulation['submitLineup'];
+    callTimeout: Simulation['callTimeout'];
+    endTimeout: Simulation['endTimeout'];
+    substitute: Simulation['substitute'];
+    pauseGame: Simulation['pauseGame'];
+    resumeGame: Simulation['resumeGame'];
   };
 
   constructor(private readonly sim: Simulation, private readonly net: Transport, readonly local: TeamId, private readonly delay = 14) {
@@ -114,7 +124,26 @@ export class Lockstep {
       skip: sim.skip.bind(sim),
       chooseSide: sim.chooseSide.bind(sim),
       submitLineup: sim.submitLineup.bind(sim),
+      callTimeout: sim.callTimeout.bind(sim),
+      endTimeout: sim.endTimeout.bind(sim),
+      substitute: sim.substitute.bind(sim),
+      pauseGame: sim.pauseGame.bind(sim),
+      resumeGame: sim.resumeGame.bind(sim),
     };
+    // Tiempos, cambios y pausa: viajan como las jugadas y se aplican en el mismo tick en las dos computadoras.
+    sim.callTimeout = () => {
+      if (!sim.timeoutKey(local)) return false;
+      this.push({ k: 'timeout' });
+      return true;
+    };
+    sim.endTimeout = () => this.push({ k: 'endTimeout' });
+    sim.substitute = (_team: TeamId, outKey: string, inKey: string) => {
+      if (!sim.canSubstitute(local, outKey, inKey)) return false;
+      this.push({ k: 'sub', l: [outKey, inKey] });
+      return true;
+    };
+    sim.pauseGame = () => this.push({ k: 'pause' });
+    sim.resumeGame = () => this.push({ k: 'resume' });
     sim.challenge = () => this.push({ k: 'challenge' });
     sim.skip = (_team?: TeamId | null, all = false) => this.push({ k: 'skip', a: all });
     sim.chooseSide = (_team: TeamId, left: boolean) => this.push({ k: 'side', a: left });
@@ -274,6 +303,11 @@ export class Lockstep {
       else if (i.k === 'skip') this.apply.skip(i.team, !!i.a);
       else if (i.k === 'side') this.apply.chooseSide(i.team, !!i.a);
       else if (i.k === 'lineup') this.apply.submitLineup(i.team, i.l ?? []);
+      else if (i.k === 'timeout') this.apply.callTimeout(i.team);
+      else if (i.k === 'endTimeout') this.apply.endTimeout(i.team);
+      else if (i.k === 'sub') this.apply.substitute(i.team, i.l?.[0] ?? '', i.l?.[1] ?? '');
+      else if (i.k === 'pause') this.apply.pauseGame(i.team);
+      else if (i.k === 'resume') this.apply.resumeGame(i.team);
       else if (i.k === 'choose') this.apply.choose(i.i!, i.team);
       else if (i.k === 'aim') this.apply.setAim(i.x!, i.z!, i.team);
       else this.apply.press(i.at!, i.team);

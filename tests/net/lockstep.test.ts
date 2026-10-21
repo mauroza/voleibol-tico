@@ -6,15 +6,23 @@ import type { TeamId } from '../../src/sim/court';
 import { Simulation } from '../../src/sim/rally';
 
 /** Dos transportes unidos por una "red" con retraso fijo (en segundos reales simulados). */
-function pair(latency: number): { a: Transport; b: Transport; tick: (now: number) => void } {
+function pair(latency: number, jitter = 0): { a: Transport; b: Transport; tick: (now: number) => void } {
   const inbox: { at: number; to: 'a' | 'b'; msg: NetMessage }[] = [];
+  // Tirones de internet: cada mensaje tarda un poco más al azar (en orden, como un websocket).
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const last = { a: 0, b: 0 };
   const handlers: Record<'a' | 'b', ((m: NetMessage) => void)[]> = { a: [], b: [] };
   let now = 0;
   const make = (me: 'a' | 'b', other: 'a' | 'b'): Transport => ({
     id: me,
     kind: 'local',
     // Copia profunda: como en la red de verdad, el que recibe no comparte objetos con el que manda.
-    send: (msg) => inbox.push({ at: now + latency, to: other, msg: JSON.parse(JSON.stringify({ ...msg, from: me })) }),
+    send: (msg) => {
+      const at = Math.max(last[other], now + latency + rand() * jitter);
+      last[other] = at;
+      inbox.push({ at, to: other, msg: JSON.parse(JSON.stringify({ ...msg, from: me })) });
+    },
     onMessage: (cb) => handlers[me].push(cb),
     onSelf: () => {},
     close: () => {},
@@ -202,4 +210,47 @@ describe('online lockstep', () => {
     expect(guest.match.lineups.A).toEqual(host.match.lineups.A);
     expect(ls.A.desync || ls.B.desync).toBe(false);
   }, 120_000);
+
+  it('con tirones de internet, la previa y las pelotas muertas casi no esperan al rival', () => {
+    const net = pair(0.09, 0.05);
+    const delay = delayForPing(0.18);
+    const opts = (control: TeamId) => new Simulation({ seed: 12, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[3], control, humans: ['A', 'B'], tempo: 'online', inputLead: leadForDelay(delay), warmup: 20, pregame: true });
+    const host = opts('A');
+    const guest = opts('B');
+    const ls = { A: new Lockstep(host, net.a, 'A', delay), B: new Lockstep(guest, net.b, 'B', delay) };
+    const sims = { A: host, B: guest };
+    const frame = 1 / 60;
+    let t = 0;
+    let stalls = 0;
+    let pregameStalls = 0;
+    let pregameFrames = 0;
+    const run = { A: 0, B: 0 };
+    let visible = 0;
+    while ((host.phase !== 'matchOver' || guest.phase !== 'matchOver') && t < 4 * 3600) {
+      t += frame;
+      net.tick(t);
+      const pre = host.phase === 'warmup' || host.phase === 'ceremony';
+      if (pre) pregameFrames += 1;
+      for (const team of ['A', 'B'] as const) {
+        const sim = sims[team];
+        if (sim.sideKey(team)) sim.chooseSide(team, true);
+        if (sim.lineupKey(team)) sim.submitLineup(team, [...sim.match.lineups[team]]);
+        bot(sim, team, t);
+        if (ls[team].advance(frame, 1)) {
+          stalls += 1;
+          if (pre) pregameStalls += 1;
+          run[team] += frame;
+          // Lo que ve la persona: el aviso de esperar sale después de 0.4 s seguidos.
+          if (Math.abs(run[team] - 0.4) < frame / 2) visible += 1;
+        } else run[team] = 0;
+      }
+    }
+    expect(host.phase).toBe('matchOver');
+    expect(guest.match.points).toEqual(host.match.points);
+    expect(ls.A.desync || ls.B.desync).toBe(false);
+    console.log(`con tirones: esperas ${(100 * stalls / (2 * t / frame)).toFixed(1)}% · en la previa ${(100 * pregameStalls / (2 * pregameFrames)).toFixed(1)}% · avisos visibles ${visible} en ${(t / 60).toFixed(1)} min`);
+    // Esperas cortas (invisibles) sí; el aviso de "esperando al rival" no debería salir.
+    expect(pregameStalls / (2 * pregameFrames)).toBeLessThan(0.1);
+    expect(visible).toBe(0);
+  }, 180_000);
 });

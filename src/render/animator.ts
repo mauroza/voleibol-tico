@@ -69,6 +69,8 @@ export class Animator {
   private mood: { pose: Pose; until: number } | null = null;
   /** `broad`: salto largo hacia la red (ataque de zaguero tipo pipe). */
   private jump: { apex: number; air: number; peak: number; broad?: boolean } | null = null;
+  /** Salto de bloqueo de una persona ya visto: su instante y el punto más alto con que se dibuja. */
+  private seenJump: { at: number; apex: number } | null = null;
 
   constructor(
     readonly key: string,
@@ -192,11 +194,15 @@ export class Animator {
         aim = { target, arms: 'both', weight: ease(1 - lead / 0.35) * 0.95 };
       }
     } else if (block && inPlay && block.keys.includes(this.key) && sim.humans.has(p.team)) {
-      // Bloqueo de una persona: listos en la red con los brazos arriba; saltan cuando toca ESPACIO.
-      const jump = sim.blockJump(p.team);
+      // Bloqueo de una persona: listos en la red con los brazos arriba; saltan cuando toca ESPACIO. Online, en la
+      // pantalla de quien salta se dibuja al instante; en la del rival, si la tecla llega tarde, el salto arranca ahí
+      // (sin aparecer ya en el aire).
+      const local = p.team === sim.control && sim.localJumpAt !== null ? sim.localJumpAt : null;
+      const jump = sim.blockJump(p.team) ?? (local !== null ? { at: local } : null);
       if (!jump) active = { track: TRACKS.block, at: Infinity };
       else {
-        const apex = jump.at + BLOCK_RISE;
+        if (this.seenJump?.at !== jump.at) this.seenJump = { at: jump.at, apex: Math.max(jump.at + BLOCK_RISE, now + BLOCK_RISE * 0.7) };
+        const apex = this.seenJump.apex;
         if (this.action?.track !== TRACKS.block || Math.abs(this.action.at - apex) > 0.05) this.action = { track: TRACKS.block, at: apex };
         active = this.action;
         if (!this.jump) this.startJump(apex, BLOCK_AIR, this.liftToReach(TRACKS.block, 'L', blockReach(p.def), 0.2, 1.1));

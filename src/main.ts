@@ -69,6 +69,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   let frameRate = 0;
   const clock = (stamp: number) => sim.time + Math.max(0, (stamp - frameStamp) / 1000) * frameRate;
   const panel = new DecisionPanel(ui, sim, clock);
+  if (lockstep) panel.ahead = () => lockstep.pendingTime;
   const sound = createSound(sim);
 
   // Reiniciar, revancha y menú recargan la página: así no hay que desmontar la escena a mano.

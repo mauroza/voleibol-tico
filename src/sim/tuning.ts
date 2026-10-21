@@ -197,7 +197,7 @@ export const TUNING = {
     profiles: {
       clasico: { think: 0.1, approach: 0.6, slow: 0.3, aimApproach: 0.35, aimSlow: 0.22 },
       fluido: { think: 0.3, approach: 0.85, slow: 0.5, aimApproach: 0.6, aimSlow: 0.42 },
-      online: { think: 0.6, approach: 1, slow: 0.75, aimApproach: 0.85, aimSlow: 0.65 },
+      online: { think: 0.6, approach: 0.95, slow: 0.6, aimApproach: 0.8, aimSlow: 0.55 },
     },
     /** Los errores al azar pesan menos: el usuario ya puede mandarla afuera apuntando mal. */
     aimRiskFactor: 0.6,

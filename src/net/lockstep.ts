@@ -40,14 +40,18 @@ const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
   return d ? decisionKey(d) : null;
 };
 /** ¿Ese equipo puede mandar algo ahora? (entonces el otro no avanza más allá de lo que ese ya confirmó). */
-const KINDS: readonly Kind[] = ['press', 'challenge', 'skip', 'side', 'lineup', 'timeout', 'endTimeout', 'sub', 'pause', 'resume'];
-const openKey = (sim: Simulation, team: TeamId): string | null => {
-  for (const k of KINDS) {
-    const key = keyFor(sim, team, k);
-    if (key) return key;
-  }
-  return null;
-};
+/**
+ * Las jugadas (elegir, apuntar, golpear) son "rápidas": llegan con el retraso justo de la red. Lo demás (saltar etapa,
+ * lado, alineación, tiempos, cambios, pausa, challenge) es "lento": viaja con medio segundo más de margen. Así,
+ * mientras solo hay cosas lentas posibles (todo el calentamiento, cada pelota muerta), ninguna computadora tiene que
+ * esperar a la otra por un tirón de internet.
+ */
+const FAST: ReadonlySet<Kind> = new Set<Kind>(['choose', 'aim', 'press']);
+const SLOW_KINDS: readonly Kind[] = ['challenge', 'skip', 'side', 'lineup', 'timeout', 'endTimeout', 'sub', 'pause', 'resume'];
+/** Margen extra (ticks) de las acciones lentas: 0.4 s de juego. */
+const SLACK = 48;
+const fastOpen = (sim: Simulation, team: TeamId): boolean => !!keyFor(sim, team, 'press');
+const slowOpen = (sim: Simulation, team: TeamId): boolean => SLOW_KINDS.some((k) => keyFor(sim, team, k) !== null);
 
 /**
  * Ticks de simulación (1/120 s) entre que se toca una tecla y que se aplica: lo que tarda en cruzar la red.
@@ -64,17 +68,22 @@ export const leadForDelay = (delay: number): number => (delay + 2) * TUNING.dt;
  */
 export class Lockstep {
   tick = 0;
-  /** Tick hasta el que el rival confirmó que ya mandó todas sus acciones. */
+  /** Tick hasta el que el rival confirmó que ya mandó todas sus acciones rápidas (y las lentas, con margen). */
   private remoteUpTo = 0;
-  /** Tick hasta el que nosotros prometimos no mandar más acciones. */
+  private remoteUpToSlow = 0;
+  /** Tick hasta el que nosotros prometimos no mandar más acciones rápidas (y lentas). */
   private promised = 0;
+  private promisedSlow = 0;
   private seq = 0;
   private readonly queue: Input[] = [];
   /** Acciones nuestras que el rival todavía no confirmó (se reenvían). */
   private unacked: Input[] = [];
   private remoteSeq = -1;
   private readonly lastOpen: Record<TeamId, number> = { A: -1e9, B: -1e9 };
+  private readonly lastSlowOpen: Record<TeamId, number> = { A: -1e9, B: -1e9 };
   private debt = 0;
+  /** Último tick que informó el rival y cuándo llegó (para estimar dónde va ahora). */
+  private remoteTick: { tick: number; at: number; scale: number } | null = null;
   /** Tiempo de simulación pendiente (menos de un paso): para dibujar la pelota entre dos pasos. */
   get pendingTime(): number {
     return this.debt;
@@ -160,6 +169,9 @@ export class Lockstep {
       sim.localAim = { x, z };
     };
     sim.press = (at: number = sim.time) => {
+      // El salto al bloqueo se dibuja ya en esta pantalla.
+      const d = sim.decisions[local];
+      if (d?.kind === 'block' && d.pressedAt === null && sim.localJumpAt === null) sim.localJumpAt = at;
       // La última mira viaja antes del golpe.
       this.sendPendingAim();
       this.push({ k: 'press', at });
@@ -185,7 +197,9 @@ export class Lockstep {
     const dk = keyFor(this.sim, this.local, input.k);
     if (!dk) return;
     // Nunca antes de lo ya prometido: el rival puede haber simulado hasta ahí.
-    const tick = Math.max(this.tick + this.delay, this.promised + 1);
+    const tick = FAST.has(input.k)
+      ? Math.max(this.tick + this.delay, this.promised + 1)
+      : Math.max(this.tick + this.delay + SLACK, this.promisedSlow + 1);
     const full: Input = { ...input, tick, seq: this.seq++, team: this.local, dk };
     this.queue.push(full);
     this.unacked.push(full);
@@ -219,6 +233,8 @@ export class Lockstep {
         this.queue.push(input);
       }
       this.remoteUpTo = Math.max(this.remoteUpTo, m.upTo as number);
+      this.remoteUpToSlow = Math.max(this.remoteUpToSlow, (m.upToS as number | undefined) ?? (m.upTo as number));
+      if (typeof m.tk === 'number') this.remoteTick = { tick: m.tk, at: performance.now(), scale: (m.sc as number | undefined) ?? 1 };
       const ack = m.ack as number;
       this.unacked = this.unacked.filter((i) => i.seq > ack);
     } else if (m.t === 'hash') {
@@ -233,12 +249,18 @@ export class Lockstep {
   /** Manda nuestras acciones pendientes y promete el horizonte hasta el que ya no habrá más. */
   private flush(): void {
     this.promised = Math.max(this.promised, this.tick + this.delay);
-    this.net.send({ t: 'in', upTo: this.promised, inputs: this.unacked, ack: this.remoteSeq });
+    this.promisedSlow = Math.max(this.promisedSlow, this.tick + this.delay + SLACK);
+    this.net.send({ t: 'in', upTo: this.promised, upToS: this.promisedSlow, inputs: this.unacked, ack: this.remoteSeq, tk: this.tick, sc: this.sim.timeScale });
   }
 
-  /** ¿El rival puede mandar acciones para este tick? Solo si tiene (o tuvo hace poco) una decisión abierta. */
-  private needsRemote(tick: number): boolean {
-    return !!openKey(this.sim, this.remote) || tick - this.lastOpen[this.remote] <= this.delay + 1;
+  /**
+   * Hasta qué tick del rival hace falta saber para avanzar a `tick`: si tiene (o tuvo hace poco) una jugada abierta, su
+   * horizonte rápido; si solo puede mandar cosas lentas, el lento (medio segundo más adelante); si nada, no hace falta.
+   */
+  private remoteHorizon(tick: number): number {
+    if (fastOpen(this.sim, this.remote) || tick - this.lastOpen[this.remote] <= this.delay + 1) return this.remoteUpTo;
+    if (slowOpen(this.sim, this.remote) || tick - this.lastSlowOpen[this.remote] <= this.delay + SLACK + 1) return this.remoteUpToSlow;
+    return Infinity;
   }
 
   /**
@@ -260,6 +282,7 @@ export class Lockstep {
     if (mine !== this.shownDecision) {
       this.shownDecision = mine;
       this.sim.localAim = null;
+      this.sim.localJumpAt = null;
       this.pendingAim = null;
     }
     this.aimClock += dtReal;
@@ -269,16 +292,18 @@ export class Lockstep {
     }
     // Mensajes: ~25 por segundo mientras tenemos una decisión abierta; si no, ~5. El plan gratuito limita el total.
     this.sendClock += dtReal;
-    const deciding = !!openKey(this.sim, this.local) || this.tick - this.lastOpen[this.local] <= this.delay + 1;
-    if (this.sendClock > (deciding ? 0.04 : 0.2)) {
+    // Con una jugada abierta, ~25 mensajes por segundo; con solo cosas lentas posibles, ~8 (sobra margen); si no, ~5.
+    const deciding = fastOpen(this.sim, this.local) || this.tick - this.lastOpen[this.local] <= this.delay + 1;
+    const slow = slowOpen(this.sim, this.local);
+    if (this.sendClock > (deciding ? 0.04 : slow ? 0.12 : 0.2)) {
       this.sendClock = 0;
       this.flush();
     }
-    this.debt = Math.min(this.debt + dtReal * pace * this.sim.timeScale, 0.25);
+    this.debt = Math.min(this.debt + dtReal * pace * this.sim.timeScale * this.syncRate(pace), 0.25);
     let waiting = false;
     while (this.debt >= TUNING.dt) {
       const next = this.tick + 1;
-      if (this.needsRemote(next) && this.remoteUpTo < next) {
+      if (this.remoteHorizon(next) < next) {
         waiting = true;
         break;
       }
@@ -286,11 +311,27 @@ export class Lockstep {
       this.sim.step(TUNING.dt);
       this.tick = next;
       this.debt -= TUNING.dt;
-      for (const t of ['A', 'B'] as const) if (openKey(this.sim, t)) this.lastOpen[t] = this.tick;
+      for (const t of ['A', 'B'] as const) {
+        if (fastOpen(this.sim, t)) this.lastOpen[t] = this.tick;
+        if (slowOpen(this.sim, t)) this.lastSlowOpen[t] = this.tick;
+      }
       if (this.tick % 240 === 0) this.checkSync();
       // Con la escala de tiempo nueva (cámara lenta), la deuda se recalcula en el próximo cuadro.
     }
     return waiting;
+  }
+
+  /**
+   * Relojes parejos: si esta computadora va adelantada respecto del rival (estimado con su último tick y el ping), corre
+   * un poco más lenta; si va atrasada, un poco más rápida. Así ninguna queda pegada al límite esperando a la otra.
+   */
+  private syncRate(pace: number): number {
+    const r = this.remoteTick;
+    if (!r) return 1;
+    const oneWay = (this.ping ?? 0) / 2;
+    const est = r.tick + ((performance.now() - r.at + oneWay) / 1000) * 120 * r.scale * pace;
+    const ahead = this.tick - est;
+    return Math.min(1.06, Math.max(0.88, 1 - ahead * 0.01));
   }
 
   private applyInputs(tick: number): void {

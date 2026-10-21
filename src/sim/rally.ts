@@ -2,11 +2,11 @@ import type { TeamDef } from '../data/teams';
 import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type ServeType, type SetOption, type Zone } from './actions';
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
-import { COURT, GRAVITY, isInCourt, otherTeam, sideOfX, sideSign, toWorld, type TeamId } from './court';
+import { COURT, GRAVITY, isInCourt, otherTeam, setSidesFlipped, sideOfX, sideSign, toWorld, type TeamId } from './court';
 import { judgeTiming, meterOf, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
-import { awardPoint, courtPlayers, createMatch, isFrontIndex, type MatchState, type TeamSetup } from './match';
+import { awardPoint, courtPlayers, createMatch, isDecidingSet, isFrontIndex, type MatchState, type TeamSetup } from './match';
 import { AVG_HEIGHT, attackContactHeight, blockReach, isTall, moveSpeed, type PlayerState } from './players';
 import { computeQuality, errorChance, rollTiming, type Timing } from './resolver';
 import { createRng, type Rng } from './rng';
@@ -36,10 +36,20 @@ export interface SimOptions {
   control?: TeamId;
   /** Dificultad del rival (el equipo que no controla el usuario). Por defecto, normal. */
   difficulty?: Difficulty;
+  /**
+   * Previa completa: entrada de los equipos, calentamiento de remate por zona 4 y por zona 2 (`warmup` segundos cada
+   * uno), de saque, saludo en la red, sorteo y alineación. Entre sets, alineación y (en el decisivo) nuevo sorteo.
+   */
+  pregame?: boolean;
 }
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
-export type Phase = 'warmup' | 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
+export type Phase = 'ceremony' | 'warmup' | 'preServe' | 'inPlay' | 'pointOver' | 'matchOver';
+/** Momentos fuera del juego: entrada, saludo, sorteo, alineación y cambio de cancha. */
+export type CeremonyStep = 'entrance' | 'greeting' | 'toss' | 'lineup' | 'sides';
+/** Calentamiento: remate desde zona 4, desde zona 2 (opuesto) y saque. */
+export type WarmStage = 'spike4' | 'spike2' | 'serve';
+export const WARM_STAGE_LABELS: Record<WarmStage, string> = { spike4: 'Remate por zona 4', spike2: 'Remate por zona 2 (opuesto)', serve: 'Saque' };
 
 type BlockOutcome = 'stuff' | 'soft' | 'tool';
 
@@ -107,7 +117,8 @@ const DIFFICULTY_ACE: Record<Difficulty, number> = { easy: 0.4, normal: 1, hard:
 
 /** Una fila de calentamiento: su balón, en qué parte de la jugada va y quién remata. */
 interface WarmLane {
-  stage: 'idle' | 'set' | 'attack' | 'fly';
+  /** Remate: idle → set → attack → fly. Saque: idle → walk → serveWait → serveHit → fly. */
+  stage: 'idle' | 'set' | 'attack' | 'fly' | 'walk' | 'serveWait' | 'serveHit';
   until: number;
   hitter: string;
   option: SetOption;
@@ -115,6 +126,8 @@ interface WarmLane {
   plan: Plan | null;
   bounces: number;
   bomb?: boolean;
+  /** Fuerza del saque de calentamiento. */
+  power?: Power;
 }
 
 export class Simulation {
@@ -200,13 +213,45 @@ export class Simulation {
   private blockHold: BlockSetup | null = null;
   /** Calentamiento: filas de rematadores por equipo y la jugada en curso (un balón, alternando equipos). */
   private warm: {
+    stage: WarmStage;
+    /** Etapas que siguen (con sus segundos). */
+    next: { stage: WarmStage; seconds: number }[];
+    start: number;
     left: number;
     queues: Record<TeamId, string[]>;
     /** Cada equipo calienta a la vez con su propio balón. */
     lanes: Record<TeamId, WarmLane>;
   } | null = null;
 
+  /** Cancha cambiada (A juega en x>0). Se aplica a las funciones de cancha antes de cada paso. */
+  private flipped = false;
+  private readonly pregame: boolean;
+  /** Etapas de calentamiento de la previa (después de la entrada). */
+  private warmPlan: { stage: WarmStage; seconds: number }[] = [];
+  /** Termina el set: al acabar la pausa del punto viene el cambio de cancha. */
+  private setBreakPending = false;
+  /** Ceremonia en curso (fase 'ceremony'). */
+  private cer: {
+    step: CeremonyStep;
+    start: number;
+    /** Subpaso: saludo 0 = en fila, 1 = pasando; sorteo/cambio 0 = esperando, 1 = caminando a su lado. */
+    sub: number;
+    /** Instante en que todos llegaron (para una pausa corta antes de seguir). */
+    arrived: number | null;
+    tossWinner: TeamId | null;
+    sideBy: TeamId | null;
+    /** El lado se puede elegir después de ver la moneda. */
+    revealAt: number;
+    aiSideAt: number | null;
+    lineupDone: Set<TeamId>;
+    deciding: boolean;
+  } | null = null;
+  /** Votos para saltar la etapa (online hacen falta los dos): true = saltar toda la previa. */
+  private readonly skipVotes = new Map<TeamId, boolean>();
+
   constructor(opts: SimOptions) {
+    setSidesFlipped(false);
+    this.pregame = !!opts.pregame;
     this.rng = createRng(opts.seed);
     this.difficulty = opts.difficulty ?? 'normal';
     this.control = opts.control ?? null;
@@ -221,7 +266,11 @@ export class Simulation {
       }
     }
     this.match = createMatch({ setsToWin: opts.setsToWin }, this.setup('A'), this.setup('B'), opts.firstServer ?? 'A');
-    if ((opts.warmup ?? 0) > 0) this.startWarmup(opts.warmup!);
+    const w = opts.warmup ?? 0;
+    if (this.pregame) {
+      this.warmPlan = w > 0 ? [{ stage: 'spike4', seconds: w }, { stage: 'spike2', seconds: w }, { stage: 'serve', seconds: Math.round(w * 0.67) }] : [];
+      this.startEntrance();
+    } else if (w > 0) this.startWarmup([{ stage: 'spike4', seconds: w }]);
     else this.resetForServe();
   }
 
@@ -404,6 +453,7 @@ export class Simulation {
 
   /** Elige una opción. Se puede cambiar mientras no se haya presionado el timing. */
   choose(index: number, team: TeamId | null = this.control): void {
+    this.syncSides();
     const d = team ? this.decisions[team] : null;
     if (!d || d.pressedAt !== null || index < 0 || index >= d.options.length) return;
     d.chosen = index;
@@ -424,6 +474,7 @@ export class Simulation {
    * Mueve la mira: remate y saque en el campo rival (puede apuntarse afuera), pase y marca de defensa en el propio.
    */
   setAim(x: number, z: number, team: TeamId | null = this.control): void {
+    this.syncSides();
     const d = team ? this.decisions[team] : null;
     if (!d || !d.aim || !d.aimSide || d.pressedAt !== null) return;
     const s = sideSign(d.aimSide);
@@ -455,6 +506,7 @@ export class Simulation {
    * por defecto, el instante actual. En el saque, saca de inmediato.
    */
   press(at: number = this.time, team: TeamId | null = this.control): void {
+    this.syncSides();
     const d = team ? this.decisions[team] : null;
     if (!d || d.chosen === null || d.pressedAt !== null) return;
     // Golpe que pertenecía a la jugada anterior (tocado antes o justo al abrirse esta): se ignora. El saque no aplica.
@@ -464,11 +516,19 @@ export class Simulation {
     if (d.kind === 'serve' && this.phase === 'preServe') this.beginUserServe();
   }
 
+  /** Las funciones de cancha usan el lado de esta partida (puede haber dos simulaciones a la vez, online). */
+  private syncSides(): void {
+    setSidesFlipped(this.flipped);
+  }
+
   step(dt: number): void {
+    this.syncSides();
     if (this.phase === 'matchOver') return;
     this.time += dt;
     this.movePlayers(dt);
-    if (this.phase === 'warmup') {
+    if (this.phase === 'ceremony') {
+      this.stepCeremony();
+    } else if (this.phase === 'warmup') {
       this.stepWarmup(dt);
     } else if (this.phase === 'preServe') {
       this.ballPos = this.serverHand();
@@ -531,7 +591,10 @@ export class Simulation {
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) {
         if (this.match.winner) this.phase = 'matchOver';
-        else this.resetForServe();
+        else if (this.setBreakPending) {
+          this.setBreakPending = false;
+          this.startSetBreak();
+        } else this.resetForServe();
       }
     }
   }
@@ -540,28 +603,45 @@ export class Simulation {
 
   // ---------- calentamiento ----------
 
-  /** Segundos de calentamiento que quedan (null si no hay). */
+  /** Segundos de calentamiento que quedan en la etapa actual (null si no hay). */
   get warmupLeft(): number | null {
     return this.phase === 'warmup' && this.warm ? Math.max(0, this.warm.left) : null;
   }
 
-  /** Termina el calentamiento en cuanto acabe la jugada en curso. */
+  /** Etapa del calentamiento en curso. */
+  get warmStage(): WarmStage | null {
+    return this.phase === 'warmup' && this.warm ? this.warm.stage : null;
+  }
+
+  /** Termina todo el calentamiento en cuanto acaben las jugadas en curso. */
   skipWarmup(): void {
-    if (this.warm) this.warm.left = 0;
+    if (!this.warm) return;
+    this.warm.left = 0;
+    this.warm.next = [];
   }
 
   /**
-   * Calentamiento como en la liga: cada equipo hace fila de rematadores (puntas y opuestos por un lado, centrales por
-   * otro, intercalados), el líbero le pasa al colocador, el colocador coloca y el primero de la fila remata; después
-   * pasa al final de la fila. Un balón que alterna entre los dos equipos. Si el equipo es de una persona, ella remata.
+   * Calentamiento como en la liga. Remate: cada equipo hace fila de rematadores (puntas y opuestos por un lado,
+   * centrales por otro), el líbero le pasa al colocador, el colocador coloca y el primero de la fila remata; después
+   * pasa al final de la fila. Primero desde zona 4 y después, cambiando de mitad de red, desde zona 2. Saque: todos en
+   * fila detrás de su línea de fondo, sacando de a uno. Si el equipo es de una persona, ella remata y saca.
    */
-  private startWarmup(seconds: number): void {
+  private startWarmup(stages: { stage: WarmStage; seconds: number }[]): void {
+    const [first, ...next] = stages;
+    if (!first) return this.afterWarmup();
     this.phase = 'warmup';
+    this.cer = null;
+    this.skipVotes.clear();
     const queues = {} as Record<TeamId, string[]>;
     for (const team of TEAM_IDS) {
-      const all = [...this.players.values()].filter((p) => p.team === team && p.def.role !== 'S' && p.def.role !== 'L');
-      const wings = all.filter((p) => p.def.role !== 'MB').map((p) => p.key);
-      const middles = all.filter((p) => p.def.role === 'MB').map((p) => p.key);
+      const all = this.teamList(team);
+      if (first.stage === 'serve') {
+        queues[team] = all.map((p) => p.key);
+        continue;
+      }
+      const hitters = all.filter((p) => p.def.role !== 'S' && p.def.role !== 'L');
+      const wings = hitters.filter((p) => p.def.role !== 'MB').map((p) => p.key);
+      const middles = hitters.filter((p) => p.def.role === 'MB').map((p) => p.key);
       const q: string[] = [];
       while (wings.length || middles.length) {
         if (wings.length) q.push(wings.shift()!);
@@ -571,10 +651,15 @@ export class Simulation {
       queues[team] = q;
     }
     const lane = (start: number): WarmLane => ({ stage: 'idle', until: this.time + start, hitter: '', option: 'zone4', ball: this.restingBall(), plan: null, bounces: 0 });
+    // La primera etapa sin previa arranca ya formada; las demás, caminando a sus lugares.
+    const walk = !!this.warm || this.pregame;
     // Los dos equipos a la vez, un poco desfasados para que no rematen en el mismo instante.
-    this.warm = { left: seconds, queues, lanes: { A: lane(1.2), B: lane(2.4) } };
-    this.warmFormation(true);
+    const delay = walk ? 3 : 0;
+    this.warm = { stage: first.stage, next, start: this.time, left: first.seconds, queues, lanes: { A: lane(1.2 + delay), B: lane(2.4 + delay) } };
+    for (const p of this.players.values()) p.pace = walk ? 0.55 : undefined;
+    this.warmFormation(!walk);
     this.ballPos = v3(0, COURT.ballRadius, 0);
+    this.bus.emit({ type: 'ceremony', step: first.stage });
   }
 
   /** Lugares del calentamiento: colocador en su puesto, líbero pasando desde atrás, filas detrás de la línea de 3 m. */
@@ -586,19 +671,27 @@ export class Simulation {
         p.target = s;
         if (teleport) p.pos = clone(s);
       };
-      const players = [...this.players.values()].filter((p) => p.team === team);
+      const lane = w.lanes[team];
+      if (w.stage === 'serve') {
+        // Fila a lo largo de la línea de fondo, unos pasos atrás; el que saca va a su lugar.
+        let n = 0;
+        for (const key of w.queues[team]) {
+          if (lane.stage !== 'idle' && key === lane.hitter) continue;
+          place(key, v3(sideSign(team) * (COURT.halfLength + 2.9), 0, -4.4 + n++ * 0.8));
+        }
+        continue;
+      }
       let other = 0;
-      for (const p of players) {
+      for (const p of this.teamList(team)) {
         if (p.def.role === 'S' && this.match.lineups[team].includes(p.key)) place(p.key, this.warmSpot(team, 0.8, 1.7));
         else if (p.key === this.match.libero[team]) place(p.key, this.warmSpot(team, 5.2, 1.7));
         else if (!w.queues[team].includes(p.key)) place(p.key, v3(sideSign(team) * (2.5 + 0.7 * other++), 0, -6.5));
       }
-      // Dos filas: puntas/opuestos por la izquierda (zona 4), centrales por el medio.
+      // Dos filas: puntas/opuestos por la orilla (zona 4 o zona 2), centrales por el medio.
       let wing = 0;
       let mid = 0;
       for (const key of w.queues[team]) {
         // El que está rematando ahora maneja su propia carrera.
-        const lane = w.lanes[team];
         if (lane.stage !== 'idle' && key === lane.hitter) continue;
         const isMid = this.player(key).def.role === 'MB';
         const n = isMid ? mid++ : wing++;
@@ -608,11 +701,13 @@ export class Simulation {
   }
 
   /**
-   * Punto del calentamiento: cada equipo usa una mitad de la red (A la de z negativo, B la de z positivo).
+   * Punto del calentamiento de remate: cada equipo usa una mitad de la red. En zona 4 es su izquierda mirando la red;
+   * en zona 2, la derecha (los dos equipos cambian de mitad a la vez, así nunca se rematan de frente).
    * `depth` desde la red hacia el fondo de `team`; `lane` el equipo dueño de esa mitad (por defecto, el mismo).
    */
   private warmSpot(team: TeamId, depth: number, zAbs: number, y = 0, lane: TeamId = team): Vec3 {
-    return v3(sideSign(team) * depth, y, (lane === 'A' ? -1 : 1) * zAbs);
+    const zone2 = this.warm?.stage === 'spike2';
+    return v3(sideSign(team) * depth, y, sideSign(lane) * (zone2 ? -1 : 1) * zAbs);
   }
 
   /** Balón quieto en el piso (antes de la primera jugada de cada fila). */
@@ -640,7 +735,10 @@ export class Simulation {
     w.left -= dt;
     // Termina cuando se acaba el tiempo y los dos balones ya cayeron.
     if (w.left <= 0 && TEAM_IDS.every((t) => w.lanes[t].stage === 'idle')) return this.endWarmup();
-    for (const team of TEAM_IDS) this.stepLane(team, w.lanes[team], w.left > 0);
+    for (const team of TEAM_IDS) {
+      if (w.stage === 'serve') this.stepServeLane(team, w.lanes[team], w.left > 0);
+      else this.stepLane(team, w.lanes[team], w.left > 0);
+    }
     // La pelota "principal" (efectos, sonido) es la del equipo A.
     this.ballPos = this.warmupBalls!.A;
   }
@@ -655,7 +753,7 @@ export class Simulation {
       const hitter = w.queues[team][0];
       const role = this.player(hitter).def.role;
       lane.hitter = hitter;
-      lane.option = role === 'MB' ? 'quick' : role === 'OP' ? 'zone2' : 'zone4';
+      lane.option = role === 'MB' ? 'quick' : w.stage === 'spike2' ? 'zone2' : 'zone4';
       const libero = this.match.libero[team];
       const setter = this.court(team).find((k) => this.player(k).def.role === 'S') ?? this.court(team)[0];
       const from = libero ? this.player(libero).pos : this.warmSpot(team, 5.2, 1.7);
@@ -680,6 +778,7 @@ export class Simulation {
       const flight = TUNING.set.flightTime[lane.option];
       lane.ball = launch(at, point, flight, this.time);
       lane.plan = { key: attacker.key, team, time: this.time + flight, point, kind: 'attack', low: false };
+      attacker.pace = undefined;
       attacker.target = this.standPoint(lane.plan);
       lane.stage = 'attack';
       // Si el equipo es de una persona, remata ella: mira y barra de fuerza como en el partido.
@@ -725,25 +824,107 @@ export class Simulation {
       // Pasa al final de la fila.
       const q = w.queues[team];
       q.push(q.shift()!);
+      p.pace = 0.55;
       lane.plan = null;
       lane.stage = 'fly';
       lane.bounces = 0;
       lane.until = landingTime(lane.ball) + tune.gap;
       return;
     }
-    if (lane.stage === 'fly') lane.ball = this.hitWall(lane.ball) ?? lane.ball;
-    if (lane.stage === 'fly' && this.time >= landingTime(lane.ball)) {
-      // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
-      const bomb = lane.bomb && lane.bounces === 0;
-      const next = lane.bounces < TUNING.bounce.max ? this.nextBounce(lane.ball, bomb ? TUNING.attack.bombRestitution : undefined, bomb ? TUNING.attack.bombMaxUp : Infinity) : null;
-      if (next) {
-        lane.ball = next;
-        lane.bounces += 1;
-        return;
-      }
-      lane.stage = 'idle';
-      this.warmFormation();
+    this.stepFlight(lane);
+  }
+
+  /** Pelota de calentamiento en el aire: rebota en paredes y piso; cuando casi no sube, queda en el piso. */
+  private stepFlight(lane: WarmLane): void {
+    if (lane.stage !== 'fly') return;
+    lane.ball = this.hitWall(lane.ball) ?? lane.ball;
+    if (this.time < landingTime(lane.ball)) return;
+    // La pelota pica y rebota como en el partido; cuando ya casi no sube, queda en el piso.
+    const bomb = lane.bomb && lane.bounces === 0;
+    const next = lane.bounces < TUNING.bounce.max ? this.nextBounce(lane.ball, bomb ? TUNING.attack.bombRestitution : undefined, bomb ? TUNING.attack.bombMaxUp : Infinity) : null;
+    if (next) {
+      lane.ball = next;
+      lane.bounces += 1;
+      return;
     }
+    lane.stage = 'idle';
+    this.warmFormation();
+  }
+
+  /** Mira del saque de calentamiento en curso de cada equipo (la de la persona, o una al azar de la IA). */
+  private readonly warmAim: Record<TeamId, { x: number; z: number } | null> = { A: null, B: null };
+
+  /** Calentamiento de saque: el primero de la fila va a su lugar detrás de la línea, lanza y saca a la otra cancha. */
+  private stepServeLane(team: TeamId, lane: WarmLane, more: boolean): void {
+    const w = this.warm!;
+    const opp = otherTeam(team);
+    const laneZ = (team === 'A' ? -1 : 1) * 2.2;
+    if (lane.stage === 'idle') {
+      if (!more || this.time < lane.until) return;
+      lane.hitter = w.queues[team][0];
+      this.player(lane.hitter).target = v3(sideSign(team) * SERVE_SPOT[0], 0, laneZ);
+      lane.stage = 'walk';
+      this.warmFormation();
+      return;
+    }
+    const server = this.player(lane.hitter);
+    if (lane.stage === 'walk') {
+      if (distXZ(server.pos, server.target) > 0.3) return;
+      // Pelota en la mano; la persona apunta y elige la fuerza como en el partido.
+      lane.ball = { p0: v3(server.pos.x, 1.4, server.pos.z), v0: v3(), t0: this.time, g: 0 };
+      lane.stage = 'serveWait';
+      if (this.humans.has(team) && !this.decisions[team]) {
+        this.openDecision('serve', [{ label: 'Saque de calentamiento', option: { id: 'serve', type: 'float' } }], null, server.key);
+        const d = this.decisions[team];
+        const deep = toWorld(opp, 6.5, 0);
+        if (d) this.aimDecision(d, { x: deep.x, z: deep.z }, opp, 'power');
+        lane.until = this.time + TUNING.decision.serveTimeout;
+      } else lane.until = this.time + this.rng.range(0.6, 1.6);
+      return;
+    }
+    if (lane.stage === 'serveWait') {
+      const d = this.decisions[team];
+      const mine = d?.kind === 'serve' && d.playerKey === server.key ? d : null;
+      if (mine ? mine.pressedAt === null && this.time < lane.until : this.time < lane.until) return;
+      let power: Power = this.rng.chance(0.35) ? 'strong' : 'medium';
+      const random = toWorld(opp, this.rng.range(3, 8.3), this.rng.range(-4, 4));
+      let aim = { x: random.x, z: random.z };
+      if (mine) {
+        power = mine.pressedAt === null ? 'medium' : powerZone(serveMeter(mine.pressedAt - mine.startTime));
+        aim = this.localOr(mine);
+        this.closeDecision(team, mine.pressedAt === null ? 'bad' : powerTiming(power), power);
+      }
+      this.warmAim[team] = aim;
+      // Lanza la pelota y la golpea arriba, un poco adelante del cuerpo.
+      const windup = TUNING.serveWindup.safe;
+      const contact = v3(server.pos.x - sideSign(team) * 0.3, TUNING.serve.safe.contactHeight, server.pos.z);
+      lane.ball = launch(v3(server.pos.x, 1.4, server.pos.z), contact, windup, this.time);
+      lane.plan = { key: server.key, team, time: this.time + windup, point: contact, kind: 'serve', low: false };
+      lane.power = power;
+      lane.stage = 'serveHit';
+      return;
+    }
+    if (lane.stage === 'serveHit' && lane.plan && this.time >= lane.plan.time) {
+      const plan = lane.plan;
+      const at = positionAt(lane.ball, this.time);
+      const power: Power = lane.power ?? 'medium';
+      const cfg = TUNING.serve[server.def.serveStyle === 'jump' && power === 'strong' ? 'jump' : 'float'];
+      const pw = TUNING.power.serve[power];
+      const dest = this.warmAim[team] ?? toWorld(opp, 6, 0);
+      const target = this.noisy(v3(dest.x, COURT.ballRadius, dest.z), 0.5 * cfg.noise);
+      lane.ball = this.launchClearing(at, target, distXZ(at, target) / (cfg.speed * pw.speed), GRAVITY + cfg.gravityBonus * 0.5, this.time, true);
+      this.bus.emit({ type: 'contact', time: this.time, playerKey: plan.key, team, kind: 'serve', quality: 0.8, warmup: true, at });
+      const q = w.queues[team];
+      q.push(q.shift()!);
+      lane.plan = null;
+      lane.stage = 'fly';
+      lane.bounces = 0;
+      lane.bomb = false;
+      lane.until = landingTime(lane.ball) + TUNING.warmup.gap;
+      this.warmAim[team] = null;
+      return;
+    }
+    this.stepFlight(lane);
   }
 
   /** Mira de la decisión (la simulación usa siempre la oficial; `localAim` es solo para dibujar). */
@@ -752,11 +933,284 @@ export class Simulation {
   }
 
   private endWarmup(): void {
-    this.warm = null;
+    const next = this.warm!.next;
     this.plan = null;
+    for (const t of TEAM_IDS) this.decisions[t] = null;
+    if (next.length) return this.startWarmup(next);
     for (const p of this.players.values()) p.stamina = 1;
     this.bus.emit({ type: 'warmupEnd' });
-    this.resetForServe();
+    this.afterWarmup();
+  }
+
+  private afterWarmup(): void {
+    this.warm = null;
+    if (this.pregame) this.startGreeting();
+    else this.resetForServe();
+  }
+
+  // ---------- ceremonias: entrada, saludo, sorteo, alineación, cambio de cancha ----------
+
+  /** Ceremonia en curso (para la interfaz y las animaciones). */
+  get ceremony(): Readonly<{ step: CeremonyStep; sub: number; tossWinner: TeamId | null; sideBy: TeamId | null; revealAt: number; deciding: boolean }> | null {
+    return this.phase === 'ceremony' ? this.cer : null;
+  }
+
+  /** ¿Está jugando ya el partido (no en la previa ni en un cambio de cancha)? */
+  get playing(): boolean {
+    return this.phase === 'preServe' || this.phase === 'inPlay' || this.phase === 'pointOver';
+  }
+
+  private teamList(team: TeamId): PlayerState[] {
+    return [...this.players.values()].filter((p) => p.team === team).sort((a, b) => a.def.number - b.def.number);
+  }
+
+  private setCeremony(step: CeremonyStep, deciding = false): void {
+    this.phase = 'ceremony';
+    this.cer = { step, start: this.time, sub: 0, arrived: null, tossWinner: null, sideBy: null, revealAt: 0, aiSideAt: null, lineupDone: new Set(), deciding };
+    this.skipVotes.clear();
+    for (const t of TEAM_IDS) this.decisions[t] = null;
+    this.plan = null;
+    this.ballPos = v3(0.6, COURT.ballRadius, -COURT.halfWidth - 1.2);
+    this.bus.emit({ type: 'ceremony', step });
+  }
+
+  /** ¿Llegaron todos a su lugar? Devuelve true `hold` segundos después de que llegó el último. */
+  private allArrived(hold: number): boolean {
+    const c = this.cer!;
+    for (const p of this.players.values()) {
+      if (p.via || distXZ(p.pos, p.target) > 0.3) {
+        c.arrived = null;
+        return false;
+      }
+    }
+    c.arrived ??= this.time;
+    return this.time - c.arrived >= hold;
+  }
+
+  /** Entrada: salen del túnel en la esquina del fondo, en dos filas, y trotan a formarse frente a la tribuna. */
+  private startEntrance(): void {
+    this.setCeremony('entrance');
+    for (const team of TEAM_IDS) {
+      const s = sideSign(team);
+      this.teamList(team).forEach((p, i) => {
+        p.pos = v3(s * (12.6 + (i % 2) * 0.8), 0, -8 - Math.floor(i / 2) * 0.9);
+        p.target = v3(s * 3.6, 0, -4.4 + i * 0.8);
+        p.pace = 0.5;
+        p.via = null;
+      });
+    }
+  }
+
+  /** Saludo: los dos equipos en fila a cada lado de la red caminan en sentido contrario y chocan las manos. */
+  private startGreeting(): void {
+    this.setCeremony('greeting');
+    this.greetingLine(false);
+  }
+
+  private greetingLine(passing: boolean): void {
+    for (const team of TEAM_IDS) {
+      const s = sideSign(team);
+      const dir = team === 'A' ? 1 : -1;
+      this.teamList(team).forEach((p, i) => {
+        const z0 = -dir * (1 + i * 0.65);
+        p.target = v3(s * 0.75, 0, passing ? z0 + dir * 9.5 : z0);
+        p.pace = passing ? 0.27 : 0.55;
+      });
+    }
+  }
+
+  /** Todos (titulares y suplentes) a la banca de su lado, en fila. */
+  private toBenches(walkAround: boolean): void {
+    for (const team of TEAM_IDS) {
+      this.teamList(team).forEach((p, i) => {
+        p.target = v3(sideSign(team) * (2.5 + 0.7 * i), 0, -6.5);
+        p.pace = 0.55;
+        // Al cambiar de cancha rodean la red por los postes (cada equipo por su lado).
+        p.via = walkAround && Math.sign(p.pos.x) !== Math.sign(p.target.x) ? v3(0, 0, team === 'A' ? COURT.halfWidth + 2.2 : -COURT.halfWidth - 2.6) : null;
+      });
+    }
+  }
+
+  /** Sorteo: capitanes con el segundo árbitro; el que gana saca y el otro elige lado. */
+  private startToss(deciding: boolean): void {
+    this.setCeremony('toss', deciding);
+    this.toBenches(false);
+    for (const team of TEAM_IDS) {
+      const list = this.teamList(team);
+      const captain = list.find((p) => p.def.star) ?? list[1];
+      captain.target = v3(sideSign(team) * 0.8, 0, COURT.halfWidth + 0.6);
+    }
+    const c = this.cer!;
+    c.tossWinner = this.rng.chance(0.5) ? 'A' : 'B';
+    c.sideBy = otherTeam(c.tossWinner);
+    c.revealAt = this.time + 2.4;
+    if (!this.humans.has(c.sideBy)) c.aiSideAt = c.revealAt + this.rng.range(1, 2);
+    this.bus.emit({ type: 'toss', winner: c.tossWinner });
+  }
+
+  /** El que perdió el sorteo elige lado (izquierda o derecha vistos desde la cámara). El ganador saca primero. */
+  chooseSide(team: TeamId, left: boolean): void {
+    this.syncSides();
+    if (this.sideKey(team) === null) return;
+    const c = this.cer!;
+    this.flipped = team === 'A' ? !left : left;
+    this.syncSides();
+    this.match.serving = c.tossWinner!;
+    if (!c.deciding) this.match.firstServer = c.tossWinner!;
+    c.sub = 1;
+    c.arrived = null;
+    this.toBenches(true);
+    this.bus.emit({ type: 'sides', flipped: this.flipped, chosenBy: team });
+  }
+
+  /** Alineación: cada persona arma la suya (la IA usa la de siempre). Se espera a que estén todas. */
+  private startLineup(): void {
+    this.setCeremony('lineup');
+    for (const t of TEAM_IDS) if (!this.humans.has(t)) this.cer!.lineupDone.add(t);
+    if (this.cer!.lineupDone.size === TEAM_IDS.length) this.startSet();
+  }
+
+  /**
+   * Alineación del set: seis jugadores en orden de posición (1 = el que saca primero, 2 delantero derecho, …).
+   * El líbero reemplaza en zaga a los centrales (o, si no hay, a los que menos bloquean). Debe haber un colocador.
+   */
+  submitLineup(team: TeamId, lineup: string[]): boolean {
+    this.syncSides();
+    if (this.lineupKey(team) === null || !this.validLineup(team, lineup)) return false;
+    this.applyLineup(team, lineup);
+    this.cer!.lineupDone.add(team);
+    if (this.cer!.lineupDone.size === TEAM_IDS.length) this.startSet();
+    return true;
+  }
+
+  validLineup(team: TeamId, lineup: readonly string[]): boolean {
+    if (lineup.length !== 6 || new Set(lineup).size !== 6) return false;
+    for (const k of lineup) {
+      const p = this.players.get(k);
+      if (!p || p.team !== team || p.def.role === 'L') return false;
+    }
+    return lineup.some((k) => this.player(k).def.role === 'S');
+  }
+
+  private applyLineup(team: TeamId, lineup: string[]): void {
+    this.match.lineups[team] = [...lineup];
+    const mbs = lineup.filter((k) => this.player(k).def.role === 'MB');
+    const rest = lineup.filter((k) => !mbs.includes(k) && this.player(k).def.role !== 'S').sort((a, b) => this.player(a).def.attrs.block - this.player(b).def.attrs.block);
+    this.match.liberoReplaces[team] = [...mbs, ...rest].slice(0, 2);
+  }
+
+  /** Empieza el set: cada uno camina a su lugar para el primer saque. */
+  private startSet(): void {
+    this.cer = null;
+    this.resetForServe(true);
+  }
+
+  /** Fin de set: cambian de cancha (rodeando la red); en el decisivo, nuevo sorteo. Después, alineación. */
+  private startSetBreak(): void {
+    if (this.pregame && isDecidingSet(this.match)) return this.startToss(true);
+    this.flipped = !this.flipped;
+    this.syncSides();
+    this.setCeremony('sides');
+    this.toBenches(true);
+    this.bus.emit({ type: 'sides', flipped: this.flipped, chosenBy: null });
+  }
+
+  private stepCeremony(): void {
+    const c = this.cer!;
+    switch (c.step) {
+      case 'entrance':
+        if (this.allArrived(2)) this.startWarmup(this.warmPlan);
+        break;
+      case 'greeting':
+        if (c.sub === 0 && this.allArrived(0.8)) {
+          c.sub = 1;
+          c.arrived = null;
+          this.greetingLine(true);
+        } else if (c.sub === 1 && this.allArrived(0.6)) this.startToss(false);
+        break;
+      case 'toss':
+        if (c.sub === 0 && c.aiSideAt !== null && this.time >= c.aiSideAt) this.chooseSide(c.sideBy!, this.rng.chance(0.5));
+        else if (c.sub === 1 && this.allArrived(1)) {
+          if (this.pregame) this.startLineup();
+          else this.startSet();
+        }
+        break;
+      case 'sides':
+        if (this.allArrived(1)) {
+          if (this.pregame) this.startLineup();
+          else this.startSet();
+        }
+        break;
+      case 'lineup':
+        // Sin respuesta en 2 minutos, juega con la que tenía.
+        if (this.time - c.start > 120) this.startSet();
+        break;
+    }
+  }
+
+  // ---------- saltar la previa (online votan los dos) ----------
+
+  /** Etapa que se puede saltar ahora (entrada, calentamientos, saludo, cambio de cancha), o null. */
+  private skippable(): string | null {
+    if (this.phase === 'warmup' && this.warm) return `${this.warm.stage}:${this.warm.start}`;
+    if (this.phase === 'ceremony' && this.cer && (this.cer.step === 'entrance' || this.cer.step === 'greeting' || this.cer.step === 'sides')) return `${this.cer.step}:${this.cer.start}`;
+    return null;
+  }
+
+  /** ¿Ya votó este equipo saltar la etapa? */
+  skipVoted(team: TeamId): boolean {
+    return this.skipVotes.has(team);
+  }
+
+  /** Salta la etapa (o, con `all`, toda la previa hasta el sorteo). Con dos personas, cuando votan las dos. */
+  skip(team: TeamId | null = this.control, all = false): void {
+    this.syncSides();
+    if (!team || this.skipKey(team) === null) return;
+    this.skipVotes.set(team, all);
+    for (const t of TEAM_IDS) if (this.humans.has(t) && !this.skipVotes.has(t)) return;
+    const everyone = [...this.skipVotes.values()].every((v) => v);
+    this.skipVotes.clear();
+    const teleport = () => {
+      for (const p of this.players.values()) {
+        p.via = null;
+        p.pos = clone(p.target);
+      }
+    };
+    if (everyone && this.pregame && (this.phase === 'warmup' || this.cer?.step !== 'sides')) {
+      this.warm = null;
+      for (const p of this.players.values()) p.stamina = 1;
+      this.startToss(false);
+      teleport();
+      return;
+    }
+    if (this.phase === 'warmup' && this.warm) {
+      this.warm.left = 0;
+      return;
+    }
+    const c = this.cer!;
+    if (c.step === 'greeting') {
+      this.startToss(false);
+      teleport();
+    } else {
+      teleport();
+      c.arrived = this.time - 10;
+    }
+  }
+
+  /** Identidades de las entradas fuera de las jugadas (online): null si ese equipo no puede mandarla ahora. */
+  skipKey(team: TeamId): string | null {
+    const id = this.skippable();
+    return id && this.humans.has(team) && !this.skipVotes.has(team) ? `skip:${id}` : null;
+  }
+
+  sideKey(team: TeamId): string | null {
+    const c = this.phase === 'ceremony' ? this.cer : null;
+    return c && c.step === 'toss' && c.sub === 0 && c.sideBy === team && this.time >= c.revealAt ? `side:${c.start}` : null;
+  }
+
+  lineupKey(team: TeamId): string | null {
+    const c = this.phase === 'ceremony' ? this.cer : null;
+    return c && c.step === 'lineup' && !c.lineupDone.has(team) ? `lineup:${c.start}` : null;
   }
 
   private setup(team: TeamId): TeamSetup {
@@ -765,7 +1219,8 @@ export class Simulation {
     return { lineup: d.lineup.map(k), libero: k(d.libero), liberoReplaces: d.liberoReplaces.map(k) };
   }
 
-  private resetForServe(): void {
+  /** Antes del saque: cada uno a su lugar (con `walk`, caminando desde donde está: después de una ceremonia). */
+  private resetForServe(walk = false): void {
     this.phase = 'preServe';
     for (const t of TEAM_IDS) if (!this.humans.has(t)) this.aiBench(t);
     this.phaseTimer = TUNING.servePause;
@@ -800,8 +1255,9 @@ export class Simulation {
         if (idx < 0) target = v3(sideSign(team) * (2.5 + 0.7 * bench++), 0, -6.5);
         else if (!receiving && idx === 0) target = spot(team, p.def.serveStyle === 'jump' ? [TUNING.jumpServeDepth, SERVE_SPOT[1]] : SERVE_SPOT);
         else target = spot(team, receiving ? reception[idx] : DEFENSE_SPOTS[idx]);
-        p.pos = clone(target);
+        if (!walk) p.pos = clone(target);
         p.target = clone(target);
+        p.pace = walk ? 0.6 : undefined;
       }
     }
     this.ballPos = this.serverHand();
@@ -832,11 +1288,13 @@ export class Simulation {
       p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
     }
     for (const p of this.players.values()) {
-      const dx = p.target.x - p.pos.x;
-      const dz = p.target.z - p.pos.z;
+      if (p.via && len2(p.via.x - p.pos.x, p.via.z - p.pos.z) < 0.3) p.via = null;
+      const goal = p.via ?? p.target;
+      const dx = goal.x - p.pos.x;
+      const dz = goal.z - p.pos.z;
       const d = len2(dx, dz);
       if (d < 1e-6) continue;
-      const len = Math.min(d, moveSpeed(p.def) * dt);
+      const len = Math.min(d, moveSpeed(p.def) * (p.pace ?? 1) * dt);
       p.pos.x += (dx / d) * len;
       p.pos.z += (dz / d) * len;
     }
@@ -1215,6 +1673,7 @@ export class Simulation {
   }
 
   private serve(): void {
+    for (const p of this.players.values()) p.pace = undefined;
     const team = this.match.serving;
     const server = this.player(this.court(team)[0]);
     const ps = this.pendingServe!;
@@ -2117,6 +2576,7 @@ export class Simulation {
 
   /** Challenge: se revisa la jugada con la verdad (la simulación sabe dónde picó y si hubo toque). */
   challenge(team: TeamId): void {
+    this.syncSides();
     const c = this.pendingCall;
     if (!c || !this.canChallenge(team)) return;
     const overturned = c.calledWinner !== c.truthWinner;
@@ -2150,6 +2610,7 @@ export class Simulation {
       }
     }
     if (out.setWinner) for (const t of TEAM_IDS) this.challengesLeft[t] = TUNING.calls.challenges;
+    if (out.setWinner && !out.matchWinner) this.setBreakPending = true;
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });

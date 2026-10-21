@@ -18,6 +18,12 @@ export type SimEvent =
   | { type: 'matchEnd'; winner: TeamId }
   | { type: 'timeout'; team: TeamId }
   | { type: 'warmupEnd' }
+  /** Previa y entre sets: entrada, calentamientos (remate zona 4, zona 2, saque), saludo, sorteo, alineación, cambio de cancha. */
+  | { type: 'ceremony'; step: string }
+  /** Sorteo: el que gana saca; el otro elige lado. */
+  | { type: 'toss'; winner: TeamId }
+  /** Cambio de cancha (fin de set) o lado elegido en el sorteo (`chosenBy`). */
+  | { type: 'sides'; flipped: boolean; chosenBy: TeamId | null }
   /** Jugada cerrada: lo que cantaron los árbitros (puede estar mal) y hasta cuándo se puede pedir challenge. */
   | { type: 'call'; kind: 'line' | 'touch'; calledWinner: TeamId; calledReason: PointReason; until: number }
   /** Resultado del challenge: si se dio vuelta, y el detalle (distancia a la línea en metros, o si hubo toque). */

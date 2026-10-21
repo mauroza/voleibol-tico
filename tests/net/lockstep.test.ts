@@ -112,4 +112,43 @@ describe('online lockstep', () => {
     for (const r of after) expect(r.timing).toBe('bad');
     expect(ls.A.desync || ls.B.desync).toBe(false);
   }, 120_000);
+
+  it('previa online: se salta solo cuando votan los dos; lado y alineación llegan iguales a las dos computadoras', () => {
+    const net = pair(0.1);
+    const delay = delayForPing(0.2);
+    const opts = (control: TeamId) => new Simulation({ seed: 31, setsToWin: 2, teamA: TEAMS[0], teamB: TEAMS[3], control, humans: ['A', 'B'], tempo: 'online', inputLead: leadForDelay(delay), warmup: 20, pregame: true });
+    const host = opts('A');
+    const guest = opts('B');
+    const ls = { A: new Lockstep(host, net.a, 'A', delay), B: new Lockstep(guest, net.b, 'B', delay) };
+    const sims = { A: host, B: guest };
+    const steps: string[] = [];
+    host.bus.on((e) => { if (e.type === 'ceremony') steps.push(e.step); });
+    const frame = 1 / 60;
+    let t = 0;
+    while ((host.phase !== 'matchOver' || guest.phase !== 'matchOver') && t < 4 * 3600) {
+      t += frame;
+      net.tick(t);
+      for (const team of ['A', 'B'] as const) {
+        const sim = sims[team];
+        // El anfitrión quiere saltar enseguida; el invitado recién a los 5 s de cada etapa.
+        if (sim.skipKey(team) && (team === 'A' || t % 30 > 5)) sim.skip(team, false);
+        if (sim.sideKey(team)) sim.chooseSide(team, team === 'B');
+        if (sim.lineupKey(team)) {
+          const l = [...sim.match.lineups[team]];
+          [l[0], l[1]] = [l[1], l[0]];
+          sim.submitLineup(team, l);
+        }
+        bot(sim, team, t);
+        ls[team].advance(frame, 1);
+      }
+    }
+    expect(host.phase).toBe('matchOver');
+    expect(guest.match.points).toEqual(host.match.points);
+    expect(guest.match.sets).toEqual(host.match.sets);
+    expect(guest.time).toBeCloseTo(host.time, 6);
+    expect(ls.A.desync || ls.B.desync).toBe(false);
+    expect(steps).toContain('spike2');
+    expect(steps).toContain('serve');
+    expect(steps).toContain('lineup');
+  }, 120_000);
 });

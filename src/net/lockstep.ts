@@ -8,8 +8,12 @@ interface Input {
   tick: number;
   seq: number;
   team: TeamId;
-  k: 'choose' | 'aim' | 'press' | 'challenge';
+  k: Kind;
   i?: number;
+  /** Saltar: toda la previa. Lado: izquierda. */
+  a?: boolean;
+  /** Alineación (claves de jugador en orden de posición). */
+  l?: string[];
   x?: number;
   z?: number;
   at?: number;
@@ -19,10 +23,25 @@ interface Input {
 
 /** Identidad de una decisión, igual en las dos computadoras (la simulación es la misma). */
 const decisionKey = (d: { kind: string; playerKey: string; startTime: number }) => `${d.kind}:${d.playerKey}:${d.startTime}`;
-/** Lo que ese equipo puede tocar ahora: su decisión abierta o un challenge pendiente (null si nada). */
-const openKey = (sim: Simulation, team: TeamId): string | null => {
+type Kind = 'choose' | 'aim' | 'press' | 'challenge' | 'skip' | 'side' | 'lineup';
+
+/** Identidad de lo que ese equipo puede mandar ahora de ese tipo (null si no puede). */
+const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
+  if (k === 'challenge') return sim.challengeKey(team);
+  if (k === 'skip') return sim.skipKey(team);
+  if (k === 'side') return sim.sideKey(team);
+  if (k === 'lineup') return sim.lineupKey(team);
   const d = sim.decisions[team];
-  return d ? decisionKey(d) : sim.challengeKey(team);
+  return d ? decisionKey(d) : null;
+};
+/** ¿Ese equipo puede mandar algo ahora? (entonces el otro no avanza más allá de lo que ese ya confirmó). */
+const KINDS: readonly Kind[] = ['press', 'challenge', 'skip', 'side', 'lineup'];
+const openKey = (sim: Simulation, team: TeamId): string | null => {
+  for (const k of KINDS) {
+    const key = keyFor(sim, team, k);
+    if (key) return key;
+  }
+  return null;
 };
 
 /**
@@ -75,12 +94,35 @@ export class Lockstep {
   private aimClock = 0;
   private shownDecision: unknown = null;
   readonly remote: TeamId;
-  private readonly apply: { choose: Simulation['choose']; setAim: Simulation['setAim']; press: Simulation['press']; challenge: Simulation['challenge'] };
+  private readonly apply: {
+    choose: Simulation['choose'];
+    setAim: Simulation['setAim'];
+    press: Simulation['press'];
+    challenge: Simulation['challenge'];
+    skip: Simulation['skip'];
+    chooseSide: Simulation['chooseSide'];
+    submitLineup: Simulation['submitLineup'];
+  };
 
   constructor(private readonly sim: Simulation, private readonly net: Transport, readonly local: TeamId, private readonly delay = 14) {
     this.remote = otherTeam(local);
-    this.apply = { choose: sim.choose.bind(sim), setAim: sim.setAim.bind(sim), press: sim.press.bind(sim), challenge: sim.challenge.bind(sim) };
+    this.apply = {
+      choose: sim.choose.bind(sim),
+      setAim: sim.setAim.bind(sim),
+      press: sim.press.bind(sim),
+      challenge: sim.challenge.bind(sim),
+      skip: sim.skip.bind(sim),
+      chooseSide: sim.chooseSide.bind(sim),
+      submitLineup: sim.submitLineup.bind(sim),
+    };
     sim.challenge = () => this.push({ k: 'challenge' });
+    sim.skip = (_team?: TeamId | null, all = false) => this.push({ k: 'skip', a: all });
+    sim.chooseSide = (_team: TeamId, left: boolean) => this.push({ k: 'side', a: left });
+    sim.submitLineup = (_team: TeamId, lineup: string[]) => {
+      if (!sim.validLineup(local, lineup)) return false;
+      this.push({ k: 'lineup', l: [...lineup] });
+      return true;
+    };
     // Las acciones del jugador local no tocan la simulación directo: se programan para el tick de llegada.
     sim.choose = (i: number) => this.push({ k: 'choose', i });
     sim.setAim = (x: number, z: number) => {
@@ -111,7 +153,7 @@ export class Lockstep {
   }
 
   private push(input: Omit<Input, 'tick' | 'seq' | 'team' | 'dk'>, send = true): void {
-    const dk = openKey(this.sim, this.local);
+    const dk = keyFor(this.sim, this.local, input.k);
     if (!dk) return;
     // Nunca antes de lo ya prometido: el rival puede haber simulado hasta ahí.
     const tick = Math.max(this.tick + this.delay, this.promised + 1);
@@ -227,8 +269,11 @@ export class Lockstep {
     if (!due.length) return;
     for (const i of due) {
       // Una tecla que llega cuando su jugada ya pasó no se aplica a la siguiente (sería un golpe que nadie tocó).
-      if (openKey(this.sim, i.team) !== i.dk) continue;
+      if (keyFor(this.sim, i.team, i.k) !== i.dk) continue;
       if (i.k === 'challenge') this.apply.challenge(i.team);
+      else if (i.k === 'skip') this.apply.skip(i.team, !!i.a);
+      else if (i.k === 'side') this.apply.chooseSide(i.team, !!i.a);
+      else if (i.k === 'lineup') this.apply.submitLineup(i.team, i.l ?? []);
       else if (i.k === 'choose') this.apply.choose(i.i!, i.team);
       else if (i.k === 'aim') this.apply.setAim(i.x!, i.z!, i.team);
       else this.apply.press(i.at!, i.team);

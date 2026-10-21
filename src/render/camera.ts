@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sideSign } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 
 /** Hacia dónde mira la cámara de transmisión en x: sigue la pelota, con límite y atenuado. */
@@ -51,7 +52,14 @@ export class CameraDirector {
     const targetLook = new THREE.Vector3();
     let rate = 3;
     const d = this.sim.decision;
-    if (this.mode === 'replay') {
+    const cer = this.sim.ceremony;
+    if (cer && (cer.step === 'greeting' || cer.step === 'toss') && this.mode !== 'replay') {
+      // Saludo y sorteo: plano más cercano de la red.
+      this.mode = 'broadcast';
+      targetPos.set(0, 4.6, 11.5);
+      targetLook.set(0, 1.1, 0);
+      rate = 2;
+    } else if (this.mode === 'replay') {
       this.replayAngle += dtReal * 0.25;
       const r = 7.5;
       targetPos.set(this.replayFocus.x + Math.sin(this.replayAngle) * r, 3.2, this.replayFocus.z + Math.cos(this.replayAngle) * r);
@@ -62,7 +70,7 @@ export class CameraDirector {
       const aim = this.sim.localAim ?? d.aim;
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
-      const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
+      const toward = -sideSign(this.sim.player(d.playerKey).team);
       if (d.kind === 'set') {
         // Colocación: desde atrás y arriba del propio campo, con todos los atacantes a la vista.
         targetPos.set(u.x - toward * 8.5, 7, u.z * 0.3);
@@ -79,7 +87,7 @@ export class CameraDirector {
     } else if (d?.kind === 'block' && d.aim) {
       // Bloqueo y marca de defensa: desde atrás y arriba del propio campo, para ver la cancha, la red y al rematador.
       this.mode = 'decision';
-      const own = this.sim.player(d.playerKey).team === 'A' ? -1 : 1;
+      const own = sideSign(this.sim.player(d.playerKey).team);
       targetPos.set(own * 14, 11, d.aim.z * 0.2);
       targetLook.set(own * 3.2, 0, d.aim.z * 0.3);
       rate = 4;

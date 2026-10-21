@@ -53,8 +53,8 @@ export class TimeoutPanel {
   update(): void {
     this.button.textContent = `${IS_TOUCH ? '' : 'T · '}Tiempo (${this.sim.timeouts[this.team]}) · Cambios ${this.sim.subsLeft[this.team]}`;
     this.button.disabled = !this.sim.deadBall || this.sim.timeouts[this.team] <= 0;
-    // En el calentamiento no hay tiempos.
-    this.button.style.visibility = this.sim.phase === 'warmup' ? 'hidden' : '';
+    // En la previa y en los cambios de cancha no hay tiempos.
+    this.button.style.visibility = this.sim.playing ? '' : 'hidden';
     this.toast.style.opacity = performance.now() < this.toastUntil ? '1' : '0';
   }
 

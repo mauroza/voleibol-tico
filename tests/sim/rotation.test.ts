@@ -108,7 +108,7 @@ describe('colocación en abanico', () => {
             if (d.contactTime! - sim.time <= lead) sim.press();
           } else if (d.contactTime! - sim.time <= 0.03) sim.press();
         } else if (d && d.chosen === null) sim.choose(0);
-        else if (d && d.kind === 'serve' && sim.time - d.startTime > 0.8) sim.press();
+        else if (d && d.kind === 'serve' && sim.time - d.startTime > 0.7) sim.press();
         else if (d && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
         sim.step(TUNING.dt);
       }

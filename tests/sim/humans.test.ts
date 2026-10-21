@@ -19,7 +19,7 @@ describe('dos personas (online)', () => {
       for (const team of ['A', 'B'] as const) {
         const d = sim.decisions[team];
         if (!d) continue;
-        if (d.kind === 'serve' && sim.time - d.startTime > 0.8) sim.press(sim.time, team);
+        if (d.kind === 'serve' && sim.time - d.startTime > 0.7) sim.press(sim.time, team);
         else if (d.contactTime !== null && d.contactTime - sim.time <= 0.05) sim.press(sim.time, team);
       }
       sim.step(TUNING.dt);
@@ -68,7 +68,7 @@ describe('bloqueo con ESPACIO', () => {
     });
     while (sim.phase !== 'matchOver' && sim.time < 1200) {
       const d = sim.decision;
-      if (d?.kind === 'serve' && sim.time - d.startTime > 0.8) sim.press();
+      if (d?.kind === 'serve' && sim.time - d.startTime > 0.7) sim.press();
       else if (d?.kind === 'block' && jump && d.pressedAt === null && d.contactTime! - TUNING.block.jumpLead - sim.time <= 0) sim.press();
       else if (d && d.kind !== 'block' && d.contactTime !== null && d.contactTime - sim.time <= 0.03) sim.press();
       sim.step(TUNING.dt);

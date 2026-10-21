@@ -460,14 +460,15 @@ export class MatchView {
         const at = this.sim.setOptionPoint(d, i);
         const marker = this.setMarker(used++);
         const on = key === selKey;
-        const text = key === 'dump' ? 'SEGUNDA' : `#${this.sim.player(key).def.number}`;
+        // Sin números: solo los aros; el elegido dice el tempo (o "segunda").
+        const text = key === 'dump' ? (on ? 'SEGUNDA' : '') : '';
         marker.group.position.set(at.x, 0, at.z);
         marker.ring.scale.setScalar(on ? 1.25 : 1);
         (marker.ring.material as THREE.MeshBasicMaterial).color.set(on ? tempoColor : '#ffffff');
         (marker.ring.material as THREE.MeshBasicMaterial).opacity = on ? 0.95 : 0.5;
         marker.label.position.y = 0.7;
         // El elegido muestra además el tempo con que saldría (alta, media, rápida).
-        const tempo = on && selected.id === 'set' ? ` · ${TEMPO_LABELS[SET_TEMPO[selected.choice.option]]}` : '';
+        const tempo = on && selected.id === 'set' ? TEMPO_LABELS[SET_TEMPO[selected.choice.option]] : '';
         this.setMarkerText(marker, text + tempo, on ? tempoColor : '#ffffff');
         marker.group.visible = true;
       });
@@ -508,6 +509,10 @@ export class MatchView {
     m.text = key;
     const g = m.canvas.getContext('2d')!;
     g.clearRect(0, 0, 256, 64);
+    if (!text) {
+      (m.label.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+      return;
+    }
     g.fillStyle = 'rgba(10, 14, 24, 0.8)';
     g.beginPath();
     g.roundRect(4, 6, 248, 52, 14);

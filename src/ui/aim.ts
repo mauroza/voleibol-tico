@@ -1,4 +1,5 @@
 import type { MatchView } from '../render/scene';
+import { sideSign } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 
 const KEYS: Record<string, [number, number]> = {
@@ -74,7 +75,7 @@ export class AimInput {
     }
     if (!fwd && !side) return;
     // Desde la vista del rematador: "adelante" es hacia el fondo rival y "derecha" su derecha.
-    const toward = this.sim.player(d.playerKey).team === 'A' ? 1 : -1;
+    const toward = -sideSign(this.sim.player(d.playerKey).team);
     const from = this.sim.localAim ?? d.aim;
     this.sim.setAim(from.x + toward * fwd * AIM_SPEED * dtReal, from.z + toward * side * AIM_SPEED * dtReal);
   }

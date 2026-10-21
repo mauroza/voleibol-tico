@@ -19,7 +19,7 @@ function play(seed: number, bot: Bot, onCreate?: (sim: Simulation) => void, team
       // Bloqueo doble (el triple deja la cancha vacía); en lo demás, la primera opción.
       if (d.chosen === null) sim.choose(d.kind === 'block' && d.options.length > 1 ? 1 : 0);
       if (d.kind === 'serve') {
-        if (serveMeter(sim.time - d.startTime) >= 0.97) sim.press();
+        if (serveMeter(sim.time - d.startTime) >= 0.9) sim.press();
       } else if (d.kind === 'set' && d.contactTime !== null) {
         // Colocación segura: tempo alto (barra en verde).
         if (d.contactTime - sim.time <= TUNING.decision.setWindow * 0.8) sim.press();
@@ -160,7 +160,7 @@ describe('remate apuntado', () => {
         sim.setAim(target.x, target.z);
       } else if (d && d.kind !== 'attack' && d.chosen === null) sim.choose(0);
       if (d && d.contactTime !== null && d.contactTime - sim.time <= (d.kind === 'attack' ? lead : 0.03)) sim.press();
-      if (d?.kind === 'serve' && serveMeter(sim.time - d.startTime) >= 0.97) sim.press();
+      if (d?.kind === 'serve' && serveMeter(sim.time - d.startTime) >= 0.9) sim.press();
       sim.step(TUNING.dt);
       if (justHit) {
         const land = positionAt(sim.ball, landingTime(sim.ball));

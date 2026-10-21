@@ -24,7 +24,7 @@ const AIM_TITLES: Record<DecisionKind, string> = {
 
 const MOVE = 'Apunta con el mouse o flechas/WASD';
 const HINTS: Record<DecisionKind, (d: Decision) => string> = {
-  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente y arriesgado)`,
+  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente · la puntita morada: ¡ace!)`,
   pass: () => `${MOVE} dónde dejar la pelota · clic o ESPACIO justo cuando llegue (zona verde)`,
   set: (d) => (d.aim
     ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
@@ -36,7 +36,7 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
 /** En teléfono: sin teclas ni mouse, todo con el dedo y el botón de acción. */
 const DRAG = 'Arrastra el dedo en la cancha para apuntar';
 const TOUCH_HINTS: Record<DecisionKind, (d: Decision) => string> = {
-  serve: () => `${DRAG} · SACAR: la barra es la fuerza (verde seguro · rojo potente)`,
+  serve: () => `${DRAG} · SACAR: la barra es la fuerza (verde seguro · rojo potente · morado: ¡ace!)`,
   pass: () => `${DRAG} · RECIBIR justo cuando llegue (verde)`,
   set: (d) => (d.aim ? 'Apunta al aro del atacante · COLOCAR: verde alta · amarillo media · rojo rápida' : 'Toca una opción'),
   attack: (d) => d.options[0].option.id === 'free' ? `${DRAG} · REMATAR cuando llegue (verde)` : `${DRAG} · REMATAR: más tarde, más fuerte · cerca de la red verde = finta`,
@@ -90,7 +90,7 @@ export class DecisionPanel {
     sim.bus.on((e) => {
       if (e.type === 'decisionResolved' && e.team === sim.control) {
         this.feedback.textContent = e.label ?? (e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing]);
-        this.feedback.dataset.timing = e.power ? `power-${e.power}` : e.timing;
+        this.feedback.dataset.timing = e.label?.includes('ACE') ? 'ace' : e.power ? `power-${e.power}` : e.timing;
         this.feedbackUntil = performance.now() + 1000;
       }
     });
@@ -155,6 +155,9 @@ export class DecisionPanel {
     // Barra de fuerza (saque y remate): verde suave, amarillo medio, rojo muy fuerte. Si no, zona de timing.
     const power = d.meter === 'power';
     this.meter.classList.toggle('power', power);
+    // Saque: la puntita morada después del rojo es el ace.
+    this.meter.classList.toggle('serve', d.kind === 'serve');
+    this.meter.style.setProperty('--ace', `${TUNING.power.ace * 100}%`);
     // Colocación: la barra es el tempo.
     this.tempo.style.display = d.kind === 'set' && d.aim ? 'flex' : 'none';
     this.meter.style.setProperty('--medium', `${TUNING.power.medium * 100}%`);
@@ -163,7 +166,8 @@ export class DecisionPanel {
     this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
-    this.buttons.style.display = (d.aim && d.kind !== 'set') || d.kind === 'block' ? 'none' : 'grid';
+    // La colocación apuntada se elige solo moviendo la mira (sin botones numerados).
+    this.buttons.style.display = d.aim || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = (IS_TOUCH ? TOUCH_HINTS : HINTS)[d.kind](d);
   }

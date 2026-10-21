@@ -47,7 +47,7 @@ export function receiveFormation(roles: readonly Role[]): Spot[] {
   });
   return out;
 }
-export const SERVE_SPOT: Spot = [9.6, 2.5];
+export const SERVE_SPOT: Spot = [10.6, 2.5];
 export const APPROACH_SPOTS: Record<SetOption, Spot> = {
   zone4: [3.2, -3.6], zone4fast: [2.6, -3.9], quick: [2.0, 0.5], semi: [2.4, -0.8], zone2: [3.2, 3.6], pipe: [6.6, 0], back1: [6.6, 3.2],
 };

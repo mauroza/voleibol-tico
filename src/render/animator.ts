@@ -4,7 +4,11 @@ import { attackContactHeight, blockReach } from '../sim/players';
 import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
 import { DIMS, type Rig } from './character';
-import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, type Key, type Pose } from './pose';
+import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, walkPose, type Key, type Pose } from './pose';
+
+/** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
+const MOVING = 0.1;
+const WALK_MAX = 2.2;
 
 const DOWN = new THREE.Vector3(0, -1, 0);
 /** El remate llega al ápice justo en el contacto; el bloqueo, un instante después del remate rival. */
@@ -119,11 +123,16 @@ export class Animator {
     const dz = p.pos.z - this.prev.z;
     this.prev.set(p.pos.x, 0, p.pos.z);
     const teleport = Math.hypot(dx, dz) > 1;
-    const k = Math.min(1, dt * 12);
+    const k = Math.min(1, dt * 20);
     this.vx += ((dt > 0 && !teleport ? dx / dt : 0) - this.vx) * k;
     this.vz += ((dt > 0 && !teleport ? dz / dt : 0) - this.vz) * k;
     this.speed = Math.hypot(this.vx, this.vz);
-    this.runPhase += dt * (6 + this.speed * 2.2);
+    // Los pies van al ritmo de lo que avanza el cuerpo (nada de deslizarse): un ciclo de dos pasos cada `cycle` metros.
+    const fwd = this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw);
+    const side = this.vx * Math.cos(this.yaw) - this.vz * Math.sin(this.yaw);
+    const sideways = Math.abs(side) > Math.abs(fwd) * 1.2;
+    const cycle = sideways ? 1.1 : this.speed < WALK_MAX ? 1.3 : Math.min(2.6, 1.3 + (this.speed - WALK_MAX) * 0.4);
+    this.runPhase += (dt * 2 * Math.PI * this.speed) / cycle;
 
     const court = sim.court(p.team);
     const onCourt = court.includes(this.key);
@@ -132,16 +141,17 @@ export class Animator {
 
     // ---- Locomoción ----
     // En la banca, sentados (salvo en el calentamiento, que hacen fila); en cancha, listos.
-    const benched = !onCourt && sim.phase !== 'warmup' && this.speed < 0.3;
+    const benched = !onCourt && sim.phase !== 'warmup' && this.speed < MOVING;
     let pose: Pose = onCourt ? POSES.ready : benched ? POSES.sit : POSES.idle;
-    if (this.speed > 0.3) {
-      const fwd = this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw);
-      const side = this.vx * Math.cos(this.yaw) - this.vz * Math.sin(this.yaw);
-      const amount = Math.min(1, this.speed / 1.2);
-      const gait = Math.abs(side) > Math.abs(fwd) * 1.2
-        ? shufflePose(this.runPhase, Math.min(1, this.speed / 3))
-        : runPose(this.runPhase, Math.max(0.4, Math.min(1, this.speed / 5)), fwd < 0 ? -1 : 1);
-      pose = blendPose(pose, gait, amount);
+    if (this.speed > MOVING) {
+      const dir = fwd < 0 ? -1 : 1;
+      // Lento: camina; rápido: corre (con mezcla entre los dos para que no salte de un paso al otro).
+      const walk = walkPose(this.runPhase, Math.min(1, 0.45 + this.speed / 1.6), dir);
+      const run = runPose(this.runPhase, Math.max(0.45, Math.min(1, this.speed / 5)), dir);
+      const gait = sideways
+        ? shufflePose(this.runPhase, Math.min(1, 0.4 + this.speed / 3))
+        : blendPose(walk, run, Math.max(0, Math.min(1, (this.speed - WALK_MAX) / 1.2)));
+      pose = blendPose(pose, gait, Math.min(1, this.speed / 0.35));
     }
 
     // ---- Gesto técnico ----

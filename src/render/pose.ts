@@ -103,6 +103,24 @@ export function runPose(phase: number, k: number, dir: 1 | -1 = 1): Pose {
   };
 }
 
+/** Caminata: pasos cortos, brazos colgando que se balancean, cuerpo erguido. `dir` -1 = hacia atrás. */
+export function walkPose(phase: number, k: number, dir: 1 | -1 = 1): Pose {
+  const s = Math.sin(phase) * dir;
+  const c = Math.cos(phase);
+  return {
+    spine: [0.04, 0.05 * s * k, 0],
+    neck: [-0.04, 0, 0],
+    hipL: [-0.45 * s * k, 0, 0.03],
+    kneeL: [0.08 + Math.max(0, c) * 0.55 * k, 0, 0],
+    hipR: [0.45 * s * k, 0, -0.03],
+    kneeR: [0.08 + Math.max(0, -c) * 0.55 * k, 0, 0],
+    shoulderL: [0.35 * s * k, 0, 0.08],
+    elbowL: [-0.25, 0, 0],
+    shoulderR: [-0.35 * s * k, 0, -0.08],
+    elbowR: [-0.25, 0, 0],
+  };
+}
+
 /** Desplazamiento lateral de defensa: piernas que se abren y cierran, rodillas flexionadas, sin cruzar los pies. */
 export function shufflePose(phase: number, k: number): Pose {
   const open = (0.5 + 0.5 * Math.sin(phase)) * 0.35 * k;

@@ -45,7 +45,7 @@ export const TUNING = {
   serveRunUp: { safe: 0, float: 0.6, jump: 2.3 },
   serveRunTime: { safe: 0, float: 0.4, jump: 0.8 },
   /** El que saca en suspensión se para más atrás (unos pasos detrás de la línea) para tomar carrera. */
-  jumpServeDepth: 11.6,
+  jumpServeDepth: 12.6,
   pass: {
     base: 1.05, risk: 0.12, flightTime: 1.35, noise: 3.0, lowContactBase: 0.8,
     /** El saque presiona más a la recepción que un remate a la defensa (multiplica la presión). */
@@ -106,6 +106,13 @@ export const TUNING = {
   power: {
     medium: 0.5,
     strong: 0.82,
+    /**
+     * Saque morado: la puntita de la barra, después del rojo (muy difícil de acertar). Sale un misil a la línea que
+     * nadie alcanza: ace que pica en el piso. La IA lo logra muy de vez en cuando (más si saca muy bien).
+     */
+    ace: 0.975,
+    aceSpeed: 1.3,
+    aiAce: 0.025,
     spike: {
       soft: { speed: 0.75, risk: 0.6, noise: 0.7 },
       medium: { speed: 1, risk: 1, noise: 1 },

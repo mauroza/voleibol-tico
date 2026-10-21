@@ -48,7 +48,7 @@ describe('jugadas cerradas y challenge', () => {
     sim.bus.on((e) => { if (e.type === 'challenge' && e.team === 'A') results.push({ overturned: e.overturned, left: sim.challengesLeft.A, before }); });
     run(sim, () => {
       const d = sim.decisions.A;
-      if (d && (d.kind === 'serve' ? sim.time - d.startTime > 0.8 : d.contactTime !== null && d.contactTime - sim.time <= 0.05)) sim.press(sim.time, 'A');
+      if (d && (d.kind === 'serve' ? sim.time - d.startTime > 0.7 : d.contactTime !== null && d.contactTime - sim.time <= 0.05)) sim.press(sim.time, 'A');
       const call = sim.callPending;
       if (!call) return;
       const wronged: TeamId = otherTeam(call.calledWinner);

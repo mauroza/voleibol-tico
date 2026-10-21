@@ -102,6 +102,8 @@ interface Reach {
 }
 
 const TEAM_IDS: readonly TeamId[] = ['A', 'B'];
+/** La IA difícil acierta más el saque morado. */
+const DIFFICULTY_ACE: Record<Difficulty, number> = { easy: 0.4, normal: 1, hard: 1.6 };
 
 /** Una fila de calentamiento: su balón, en qué parte de la jugada va y quién remata. */
 interface WarmLane {
@@ -161,7 +163,9 @@ export class Simulation {
   /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
   private decoyRun: { key: string; time: number } | null = null;
   /** Saque en curso: lanzamiento y carrera hasta el golpe en `at`. */
-  private pendingServe: { type: ServeType; power: Power; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3 } | null = null;
+  private pendingServe: { type: ServeType; power: Power; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3; ace: boolean } | null = null;
+  /** El saque en el aire es un ace morado: nadie lo alcanza y pica en el piso. */
+  private aceServe = false;
   /** Saque que hará la IA en este punto (para animarlo antes). */
   private aiServe: { type: ServeType; power: Power; zone: Zone } | null = null;
   /** Tipo del último saque (la pelota del flotado baila; la del de suspensión gira). */
@@ -478,7 +482,9 @@ export class Simulation {
         if (this.phaseTimer <= 0) {
           if (!this.humans.has(this.match.serving)) {
             const ai = this.aiServe ?? this.chooseAiServe();
-            this.beginServe(ai.type, ai.power, ai.zone, this.aiTiming(this.match.serving), null, false);
+            const sk = this.player(this.court(this.match.serving)[0]).def.attrs.serve / 100;
+            const ace = ai.power === 'strong' && this.rng.chance(TUNING.power.aiAce * sk * DIFFICULTY_ACE[this.difficulty]);
+            this.beginServe(ai.type, ai.power, ai.zone, this.aiTiming(this.match.serving), null, false, ace);
           } else {
             const sd = this.decisions[this.match.serving];
             if (!sd) this.openServeDecision();
@@ -1168,12 +1174,14 @@ export class Simulation {
     const d = this.decisions[team]?.kind === 'serve' ? this.decisions[team] : null;
     if (!d || this.pendingServe) return;
     // La posición del medidor al presionar es la fuerza: verde = seguro, amarillo = flotado en salto, rojo = suspensión.
-    const power: Power = d.pressedAt === null ? 'medium' : powerZone(serveMeter(d.pressedAt - d.startTime));
+    const meter = d.pressedAt === null ? 0 : serveMeter(d.pressedAt - d.startTime);
+    const power: Power = d.pressedAt === null ? 'medium' : powerZone(meter);
+    const ace = d.pressedAt !== null && meter >= TUNING.power.ace;
     const timing: Timing = d.pressedAt === null ? 'bad' : powerTiming(power);
     const aim = d.aim;
-    this.closeDecision(team, timing, power);
+    this.closeDecision(team, timing, power, ace ? '¡ACE MORADO!' : undefined);
     const server = this.player(this.court(this.match.serving)[0]);
-    this.beginServe(server.def.serveStyle, power, 1, timing, aim, true);
+    this.beginServe(server.def.serveStyle, power, 1, timing, aim, true, ace);
   }
 
   /** La IA saca con su estilo; la fuerza, al azar (más fuerte si saca bien). */
@@ -1188,9 +1196,9 @@ export class Simulation {
     return { type: def.serveStyle, power, zone };
   }
 
-  private beginServe(type: ServeType, power: Power, zone: Zone, timing: Timing, aim: { x: number; z: number } | null, user: boolean): void {
+  private beginServe(type: ServeType, power: Power, zone: Zone, timing: Timing, aim: { x: number; z: number } | null, user: boolean, ace = false): void {
     const server = this.player(this.court(this.match.serving)[0]);
-    this.pendingServe = { type, power, zone, timing, aim, at: this.time + TUNING.serveWindup[type], user, from: clone(server.pos) };
+    this.pendingServe = { type, power, zone, timing, aim, at: this.time + TUNING.serveWindup[type], user, from: clone(server.pos), ace };
   }
 
   /** Carrera del sacador hacia la red en el final de la secuencia (salta desde atrás de la línea de fondo). */
@@ -1218,7 +1226,7 @@ export class Simulation {
     const serveAim = ps.aim;
     const base = TUNING.serve[choice.type];
     const pw = TUNING.power.serve[ps.power];
-    const cfg = { ...base, speed: base.speed * pw.speed, risk: base.risk * pw.risk };
+    const cfg = { ...base, speed: base.speed * pw.speed * (ps.ace ? TUNING.power.aceSpeed : 1), risk: base.risk * pw.risk };
     const cost = TUNING.stamina.cost;
     this.tire(server.key, choice.type === 'jump' ? cost.jumpServe : choice.type === 'float' ? cost.floatServe : cost.safeServe);
     // Golpe un poco adelante del cuerpo (en el salto, ya en el aire sobre la línea de fondo).
@@ -1231,10 +1239,16 @@ export class Simulation {
     q = this.boosted(q, ps.user ? timing : undefined);
     this.registerTouch(server, 'serve', q);
     const opp = otherTeam(team);
-    const isError = this.rng.chance(errorChance(cfg.risk, q));
+    // Morado: va justo donde apuntó (dentro de la cancha, pegado a la línea si apuntó ahí) y sin margen de error.
+    this.aceServe = ps.ace;
+    const isError = !ps.ace && this.rng.chance(errorChance(cfg.risk, q));
+    const aceSpot = (a: Vec3) => v3(clamp(a.x, -COURT.halfLength + 0.25, COURT.halfLength - 0.25), a.y, clamp(a.z, -COURT.halfWidth + 0.25, COURT.halfWidth - 0.25));
+    const aimed = serveAim ? v3(serveAim.x, COURT.ballRadius, serveAim.z)
+      : ps.ace ? toWorld(opp, this.rng.range(7.6, 8.7), this.rng.chance(0.5) ? 3.9 : -3.9, COURT.ballRadius)
+      : spot(opp, ZONE_SPOTS[choice.zone], COURT.ballRadius);
     const target = isError
       ? this.errorTarget(opp, from)
-      : this.keepOnSide(opp, this.noisy(serveAim ? v3(serveAim.x, COURT.ballRadius, serveAim.z) : spot(opp, ZONE_SPOTS[choice.zone], COURT.ballRadius), cfg.noise * (1 - q)));
+      : ps.ace ? this.keepOnSide(opp, aceSpot(aimed)) : this.keepOnSide(opp, this.noisy(aimed, cfg.noise * (1 - q)));
     this.ball = this.launchClearing(from, target, distXZ(from, target) / cfg.speed, GRAVITY + cfg.gravityBonus, this.time, !isError);
     this.ballPos = clone(from);
     this.threat = q * clamp01(cfg.speed / 22);
@@ -1490,6 +1504,11 @@ export class Simulation {
     const net = checkNet(this.ball);
     const crossTime = net.kind === 'none' ? Infinity : net.time;
     // Primero el lado donde está la pelota: un compañero puede jugarla antes de que llegue a la red.
+    // Ace morado: nadie llega; la pelota pica en el piso.
+    if (last.kind === 'serve' && this.aceServe) {
+      this.setFormations();
+      return;
+    }
     const here = this.planTouch(sideOfX(this.ball.p0.x));
     let blockTiming: Timing = 'bad';
     if (here && here.time < crossTime) {

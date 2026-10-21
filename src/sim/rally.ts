@@ -792,8 +792,14 @@ export class Simulation {
 
   /** Posición del balón de cada equipo en el calentamiento (A y B). */
   get warmupBalls(): Record<TeamId, Vec3> | null {
+    return this.warmupBallsAt(0);
+  }
+
+  /** Los dos balones del calentamiento `ahead` segundos más adelante (online se dibujan entre dos pasos). */
+  warmupBallsAt(ahead: number): Record<TeamId, Vec3> | null {
     if (!this.warm) return null;
-    const at = (t: Trajectory) => positionAt(t, t.g === 0 ? t.t0 : Math.min(this.time, landingTime(t)));
+    const now = this.time + ahead;
+    const at = (t: Trajectory) => positionAt(t, t.g === 0 ? t.t0 : Math.min(now, landingTime(t)));
     return { A: at(this.warm.lanes.A.ball), B: at(this.warm.lanes.B.ball) };
   }
 

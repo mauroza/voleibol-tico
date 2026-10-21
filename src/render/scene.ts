@@ -272,9 +272,13 @@ export class MatchView {
       // Online la simulación avanza en pasos fijos: la pelota se dibuja en el instante exacto del cuadro
       // (entre dos pasos), así no tiembla con la cámara lenta ni con distintas velocidades.
       const ahead = this.renderAhead();
-      if (ahead > 0 && (this.sim.phase === 'inPlay' || this.sim.phase === 'warmup')) {
+      if (ahead > 0 && this.sim.phase === 'inPlay') {
         const p = positionAt(this.sim.ball, this.sim.time + ahead);
         ballPos.set(p.x, p.y, p.z);
+      } else if (ahead > 0 && this.sim.phase === 'warmup') {
+        // Calentamiento: el balón principal es el de la fila del equipo A (no la pelota del partido, que está quieta).
+        const w = this.sim.warmupBallsAt(ahead);
+        if (w) ballPos.set(w.A.x, w.A.y, w.A.z);
       }
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
@@ -294,7 +298,7 @@ export class MatchView {
     this.updateSetMarkers();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
     // Calentamiento: el segundo balón (el del equipo B) con su sombra.
-    const warm = this.replay ? null : this.sim.warmupBalls;
+    const warm = this.replay ? null : this.sim.warmupBallsAt(this.renderAhead());
     this.ball2.visible = this.ball2Shadow.visible = !!warm;
     if (warm) {
       this.ball2.position.set(warm.B.x, warm.B.y, warm.B.z);

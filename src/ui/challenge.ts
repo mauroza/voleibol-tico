@@ -55,8 +55,9 @@ export class ChallengePanel {
     const can = !!call && this.sim.canChallenge(this.team);
     this.button.style.display = can ? '' : 'none';
     if (can && call) {
-      const kind = call.kind === 'touch' ? '¿Roce del bloqueo?' : '¿Dentro o fuera?';
-      (this.button.firstChild as HTMLElement).textContent = `${IS_TOUCH ? '' : 'C · '}Challenge — ${kind} (quedan ${this.sim.challengesLeft[this.team]})`;
+      const called = call.kind === 'touch' ? 'Cantaron: sin toque del bloqueo' : `Cantaron: ${call.calledIn ? 'DENTRO' : 'FUERA'}`;
+      const left = Math.max(0, Math.ceil(call.until - this.sim.time));
+      (this.button.firstChild as HTMLElement).textContent = `${called} · ${IS_TOUCH ? '' : 'C · '}Pedir challenge (${left} s · quedan ${this.sim.challengesLeft[this.team]})`;
       this.bar.style.transform = `scaleX(${Math.max(0, Math.min(1, (call.until - this.sim.time) / TUNING.calls.window))})`;
     }
     this.verdict.style.opacity = performance.now() < this.verdictUntil ? '1' : '0';

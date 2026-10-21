@@ -49,6 +49,26 @@ export class ReplayBuffer {
     return this.count ? this.times[(this.start + this.count - 1) % this.capacity] : 0;
   }
 
+  /**
+   * Estado en el instante t mezclado entre los dos cuadros que lo rodean (repetición suave aunque vaya lenta).
+   * `mix(a, b, k, out)` combina los datos; devuelve false si no hay cuadros.
+   */
+  sample(t: number, out: Float32Array, mix: (a: Float32Array, b: Float32Array, k: number, out: Float32Array) => void): boolean {
+    if (!this.count) return false;
+    let prev = this.start;
+    let next = this.start;
+    for (let k = 0; k < this.count; k++) {
+      const i = (this.start + k) % this.capacity;
+      next = i;
+      if (this.times[i] > t) break;
+      prev = i;
+    }
+    const span = this.times[next] - this.times[prev];
+    const k = span > 1e-6 ? Math.min(1, Math.max(0, (t - this.times[prev]) / span)) : 0;
+    mix(this.data[prev], this.data[next], k, out);
+    return true;
+  }
+
   /** Último cuadro con tiempo ≤ t (o el primero si t es anterior a todos). */
   frameAt(t: number): ReplayFrame | null {
     if (!this.count) return null;

@@ -113,12 +113,18 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   if (import.meta.env.DEV) Object.assign(window, { __game: { sim, view, hud, panel, stats } });
 
   let speed = 1;
+  let smoothRate = 1;
+  const fastBadge = document.createElement('div');
+  fastBadge.className = 'fast-badge';
+  fastBadge.textContent = '⏩ x4 (Shift+F para volver)';
+  ui.append(fastBadge);
   window.addEventListener('keydown', (e) => {
     sound?.unlock();
     const k = e.key.toLowerCase();
     if (k === 'escape' || k === 'p') setPaused(!pause.open);
     if (k === 'm') sound?.toggleMute();
-    if (k === 'f' && !online) speed = speed === 1 ? 4 : 1;
+    // x4 solo con Shift+F (la F sola está pegada a la D de apuntar y se tocaba sin querer).
+    if (k === 'f' && e.shiftKey && !e.repeat && !online) speed = speed === 1 ? 4 : 1;
     if (e.code === 'Space' && view.replaying) view.skipReplay();
   });
   window.addEventListener('pointerdown', () => {
@@ -155,7 +161,12 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
       const fmt = (ms: number | null) => (ms === null ? '…' : `${Math.round(ms)} ms`);
       pingEl.innerHTML = `<span data-level="${level(lockstep.myNet)}">Tú ${fmt(lockstep.myNet)}</span> · <span data-level="${level(lockstep.remoteNet)}">Rival ${fmt(lockstep.remoteNet)}</span>`;
     } else if (!view.replaying && !stopped) {
-      frameRate = pace * (sim.timeScale < 1 ? sim.timeScale : speed);
+      // Con una jugada tuya abierta nunca va acelerado (ni el saque ni el remate).
+      const target = sim.timeScale < 1 ? sim.timeScale : sim.decision ? 1 : speed;
+      // Al salir de la cámara lenta vuelve de a poco (en ~0.5 s): de golpe se sentía como si el juego se acelerara.
+      smoothRate = target < smoothRate ? target : smoothRate + (target - smoothRate) * Math.min(1, dtReal * 5);
+      frameRate = pace * smoothRate;
+      fastBadge.style.display = speed > 1 ? 'block' : 'none';
       let remaining = dtReal * frameRate;
       while (remaining > 1e-6) {
         const h = Math.min(remaining, TUNING.dt);

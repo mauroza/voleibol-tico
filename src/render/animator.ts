@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { sideSign } from '../sim/court';
+import { COURT, sideSign, type TeamId } from '../sim/court';
 import type { ContactKind } from '../sim/events';
 import { attackContactHeight, blockReach } from '../sim/players';
 import { TUNING } from '../sim/tuning';
@@ -9,6 +9,7 @@ import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose,
 
 /** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
 const MOVING = 0.1;
+const NET_PROBE = new THREE.Vector3();
 /** Mano arriba hacia la red para chocarla con el rival. */
 const HIGH_FIVE: Pose = { shoulderR: [-2.5, 0, -0.3], elbowR: [-0.25, 0, 0], shoulderL: [0, 0, 0.1], elbowL: [-0.2, 0, 0] };
 const WALK_MAX = 2.2;
@@ -276,18 +277,14 @@ export class Animator {
 
     // ---- Salto ----
     let lift = 0;
-    let drift = 0;
     if (this.jump) {
+      // El avance del salto largo (saque en suspensión, zaguero) lo da el propio desplazamiento del jugador: el cuerpo
+      // nunca se separa de su lugar, así no hay saltos bruscos al despegar ni al caer.
       lift = jumpOffset(now, this.jump.apex, this.jump.air, this.jump.peak);
-      // Salto largo tipo Nishida: despega muy atrás de la línea, golpea en su punto y cae adelante.
-      if (this.jump.broad) {
-        const u = Math.max(-0.5, Math.min(0.5, (now - this.jump.apex) / this.jump.air));
-        drift = u < 0 ? u * 2.4 : u * 1.2;
-      }
       if (now > this.jump.apex + this.jump.air / 2) this.jump = null;
     }
     this.rig.body.position.y = lift;
-    this.rig.body.position.z = drift;
+    this.rig.body.position.z = 0;
     this.keepFeetAboveFloor();
 
     // ---- Orientación ----
@@ -327,6 +324,28 @@ export class Animator {
       else this.contactAim = null;
     }
     if (aim) this.aimArms(aim.target, aim.arms, aim.weight);
+    this.keepOffNet(p.team);
+  }
+
+  /**
+   * Nadie pasa las manos ni los brazos al otro lado de la red: si un codo o una mano cruzaría el plano de la red
+   * (junto a ella), el jugador se dibuja un poco más atrás, lo justo para que quede de su lado.
+   */
+  private keepOffNet(team: TeamId): void {
+    const root = this.rig.root.position;
+    if (Math.abs(root.x) > 1.8 || Math.abs(root.z) > COURT.halfWidth + 1.5) return;
+    const s = sideSign(team);
+    this.rig.root.updateMatrixWorld(true);
+    let worst = 0;
+    for (const side of ['L', 'R'] as const) {
+      const elbow = this.rig.joints[`elbow${side}`];
+      for (const reach of [0, DIMS.forearm + 0.09]) {
+        const w = elbow.localToWorld(NET_PROBE.set(0, -reach, 0));
+        // Del lado propio s·x > 0; se deja un margen de 5 cm antes de la red.
+        worst = Math.max(worst, 0.05 - s * w.x);
+      }
+    }
+    if (worst > 0) root.x += s * worst;
   }
 
   /**

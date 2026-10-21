@@ -151,4 +151,55 @@ describe('online lockstep', () => {
     expect(steps).toContain('serve');
     expect(steps).toContain('lineup');
   }, 120_000);
+
+  it('online: tiempo, cambios y pausa llegan iguales a las dos computadoras', () => {
+    const net = pair(0.1);
+    const delay = delayForPing(0.2);
+    const host = make('A', delay);
+    const guest = make('B', delay);
+    host.skipWarmup();
+    guest.skipWarmup();
+    const ls = { A: new Lockstep(host, net.a, 'A', delay), B: new Lockstep(guest, net.b, 'B', delay) };
+    const frame = 1 / 60;
+    let t = 0;
+    let timeoutAt = -1;
+    let subbed = false;
+    let paused = 0;
+    let pauseFrames = 0;
+    while ((host.phase !== 'matchOver' || guest.phase !== 'matchOver') && t < 4 * 3600) {
+      t += frame;
+      net.tick(t);
+      const pts = host.match.points.A + host.match.points.B;
+      // A pide tiempo en el punto 3, cambia a uno y vuelve antes; B pausa en el punto 6 y A la levanta.
+      if (pts === 3 && timeoutAt < 0 && host.timeoutKey('A')) {
+        host.callTimeout('A');
+        timeoutAt = t;
+      }
+      if (timeoutAt > 0 && !subbed && host.timeoutInfo) {
+        const out = host.match.lineups.A[2];
+        const inn = host.bench('A').find((k) => host.player(k).def.role === host.player(out).def.role) ?? host.bench('A')[0];
+        subbed = host.substitute('A', out, inn);
+      }
+      if (subbed && host.timeoutInfo && host.subsLeft.A < 6) host.endTimeout('A');
+      if (pts === 6 && paused === 0 && guest.pauseKey('B')) {
+        guest.pauseGame('B');
+        paused = 1;
+      }
+      if (host.pausedBy) {
+        pauseFrames += 1;
+        if (pauseFrames > 120) host.resumeGame('A');
+      }
+      bot(host, 'A', t);
+      bot(guest, 'B', t);
+      ls.A.advance(frame, 1);
+      ls.B.advance(frame, 1);
+    }
+    expect(subbed).toBe(true);
+    expect(pauseFrames).toBeGreaterThan(100);
+    expect(host.phase).toBe('matchOver');
+    expect(guest.match.points).toEqual(host.match.points);
+    expect(guest.time).toBeCloseTo(host.time, 6);
+    expect(guest.match.lineups.A).toEqual(host.match.lineups.A);
+    expect(ls.A.desync || ls.B.desync).toBe(false);
+  }, 120_000);
 });

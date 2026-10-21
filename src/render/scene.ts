@@ -102,7 +102,11 @@ const POWER_COLORS: Record<Power, string> = { soft: '#5dff8f', medium: '#ffd23f'
 /** Floats por personaje en un cuadro de repetición: raíz x/z, giro, salto, cadera y un cuaternión por articulación. */
 const PER_RIG = 5 + JOINTS.length * 4;
 /** Segundos de juego antes y después del punto que muestra la repetición. */
-const REPLAY_BEFORE = 1.6;
+/** La repetición arranca un poco antes de la colocación (o del saque, si fue ace), y nunca más de 6 s atrás. */
+const REPLAY_LEAD = 0.6;
+const REPLAY_MAX = 6;
+/** Un cuadro de repetición cada 1/60 s de juego (sin importar los fps ni la cámara lenta). */
+const CAPTURE_STEP = 1 / 60;
 const REPLAY_AFTER = 0.4;
 const REPLAY_SPEED = 0.45;
 /** Segundos antes del saque de la IA en que la pelota sale de la mano (lanzamiento). */
@@ -161,9 +165,14 @@ export class MatchView {
   private readonly prevBall = new THREE.Vector3();
   private lastPower: Power | null = null;
   private lastAttackAt = new THREE.Vector3();
-  private pendingReplay: { at: number; focus: THREE.Vector3 } | null = null;
+  private pendingReplay: { at: number; focus: THREE.Vector3; land: THREE.Vector3 } | null = null;
   private replay: { playhead: number; to: number } | null = null;
-  private replayPointTime = 0;
+  private replayStart = 0;
+  /** Tiempos de la jugada en curso: saque y última colocación (para que la repetición la muestre entera). */
+  private rallyServe = 0;
+  private rallySet = -Infinity;
+  private lastCapture = -Infinity;
+  private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
   private pixelRatio = Math.min(window.devicePixelRatio, window.matchMedia?.('(pointer: coarse)').matches ? 1.25 : 1.5);
   private slowFrames = 0;
@@ -218,7 +227,8 @@ export class MatchView {
     uiRoot.append(this.badge);
 
     this.frame = new Float32Array(this.animators.length * PER_RIG + 3);
-    this.buffer = new ReplayBuffer(400, this.frame.length);
+    this.buffer = new ReplayBuffer(Math.ceil((REPLAY_MAX * 2) / CAPTURE_STEP), this.frame.length);
+    this.mixed = new Float32Array(this.frame.length);
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -253,8 +263,7 @@ export class MatchView {
     const ballPos = new THREE.Vector3();
     if (this.replay) {
       this.replay.playhead += dtReal * REPLAY_SPEED;
-      const f = this.buffer.frameAt(this.replay.playhead);
-      if (f) this.applyFrame(f.data, ballPos);
+      if (this.buffer.sample(this.replay.playhead, this.mixed, (a, b, k, out) => this.mixFrames(a, b, k, out))) this.applyFrame(this.mixed, ballPos);
       if (this.replay.playhead >= this.replay.to) this.endReplay();
     } else {
       for (const a of this.animators) a.update();
@@ -327,6 +336,11 @@ export class MatchView {
           this.director.punch(0.06, 0.3);
           this.speedLines.flash(1);
         }
+        if (!e.warmup && e.kind === 'serve') {
+          this.rallyServe = e.time;
+          this.rallySet = -Infinity;
+        }
+        if (!e.warmup && e.kind === 'set') this.rallySet = e.time;
         if (e.kind === 'attack') {
           this.lastAttackAt.copy(at);
           if (e.quality > 0.7) {
@@ -354,9 +368,12 @@ export class MatchView {
         const replay = this.policy.shouldReplay(e.reason);
         if (replay) {
           const b = this.sim.ballPos;
-          const focus = e.reason === 'ace' ? new THREE.Vector3(b.x, 0, b.z) : this.lastAttackAt.clone().setY(0);
-          this.pendingReplay = { at: this.sim.time + REPLAY_AFTER, focus };
-          this.replayPointTime = this.sim.time;
+          const land = new THREE.Vector3(b.x, 0, b.z);
+          const focus = e.reason === 'ace' ? land : this.lastAttackAt.clone().setY(0);
+          this.pendingReplay = { at: this.sim.time + REPLAY_AFTER, focus, land };
+          // Toda la jugada: desde un poco antes de la colocación (o del saque en un ace) hasta que pica.
+          const from = e.reason === 'ace' || this.rallySet < this.rallyServe ? this.rallyServe : this.rallySet;
+          this.replayStart = Math.max(from - REPLAY_LEAD, this.sim.time - REPLAY_MAX);
         }
       }
     });
@@ -622,8 +639,8 @@ export class MatchView {
   private startReplay(): void {
     const p = this.pendingReplay!;
     this.pendingReplay = null;
-    this.replay = { playhead: Math.max(this.buffer.firstTime, this.replayPointTime - REPLAY_BEFORE), to: this.buffer.lastTime };
-    this.director.startReplay(p.focus);
+    this.replay = { playhead: Math.max(this.buffer.firstTime, this.replayStart), to: this.buffer.lastTime };
+    this.director.startReplay(p.focus, p.land);
   }
 
   private endReplay(): void {
@@ -634,6 +651,9 @@ export class MatchView {
   // ---------- grabación ----------
 
   private captureFrame(ball: THREE.Vector3): void {
+    // Por tiempo de juego: la cámara lenta no llena el búfer ni lo deja corto.
+    if (this.sim.time - this.lastCapture < CAPTURE_STEP && this.sim.time >= this.lastCapture) return;
+    this.lastCapture = this.sim.time;
     let o = 0;
     for (const a of this.animators) {
       const r = a.rig;
@@ -656,6 +676,17 @@ export class MatchView {
     this.buffer.push(this.sim.time, this.frame);
   }
 
+  /** Mezcla dos cuadros: posiciones en línea recta, giros por el camino corto y articulaciones normalizadas. */
+  private mixFrames(a: Float32Array, b: Float32Array, k: number, out: Float32Array): void {
+    for (let i = 0; i < out.length; i++) out[i] = a[i] + (b[i] - a[i]) * k;
+    const stride = 5 + JOINTS.length * 4;
+    for (let p = 0; p < this.animators.length; p++) {
+      const i = p * stride + 2;
+      const d = Math.atan2(Math.sin(b[i] - a[i]), Math.cos(b[i] - a[i]));
+      out[i] = a[i] + d * k;
+    }
+  }
+
   private applyFrame(data: Float32Array, ball: THREE.Vector3): void {
     let o = 0;
     for (const a of this.animators) {
@@ -666,7 +697,7 @@ export class MatchView {
       r.hips.position.y = data[o + 4];
       o += 5;
       for (const j of JOINTS) {
-        r.joints[j].quaternion.set(data[o], data[o + 1], data[o + 2], data[o + 3]);
+        r.joints[j].quaternion.set(data[o], data[o + 1], data[o + 2], data[o + 3]).normalize();
         o += 4;
       }
     }

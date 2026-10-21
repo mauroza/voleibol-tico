@@ -2534,12 +2534,12 @@ export class Simulation {
     const miss = this.rng.chance(close.kind === 'line' ? cfg.lineMiss * (1 - close.margin / cfg.lineMargin) : cfg.touchMiss);
     const calledWinner = miss ? loser : truthWinner;
     const calledReason: PointReason = !miss ? truthReason : close.kind === 'touch' ? 'attackError' : truthReason === 'attackError' || truthReason === 'serviceError' || truthReason === 'error' ? 'landed' : 'error';
-    this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, until: this.time + cfg.window, aiAt: null };
+    this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, calledIn: miss ? !close.inside : close.inside, until: this.time + cfg.window, aiAt: null };
     this.bus.emit({ type: 'call', kind: close.kind, calledWinner, calledReason, until: this.pendingCall.until });
     // La IA perjudicada a veces pide challenge (casi siempre si el árbitro se equivocó).
     const wronged = otherTeam(calledWinner);
     if (!this.humans.has(wronged) && this.challengesLeft[wronged] > 0 && this.rng.chance(miss ? cfg.aiChallengeWrong : cfg.aiChallengeRight)) {
-      this.pendingCall.aiAt = this.time + this.rng.range(0.6, 1.6);
+      this.pendingCall.aiAt = this.time + this.rng.range(1.2, 3);
     }
   }
 
@@ -2552,6 +2552,8 @@ export class Simulation {
     truthReason: PointReason;
     calledWinner: TeamId;
     calledReason: PointReason;
+    /** En jugada de línea: si cantaron dentro. */
+    calledIn: boolean;
     until: number;
     aiAt: number | null;
   } | null = null;
@@ -2569,9 +2571,9 @@ export class Simulation {
   }
 
   /** Datos de la jugada cerrada pendiente (para la interfaz). */
-  get callPending(): { kind: 'line' | 'touch'; calledWinner: TeamId; until: number } | null {
+  get callPending(): { kind: 'line' | 'touch'; calledWinner: TeamId; calledIn: boolean; until: number } | null {
     const c = this.pendingCall;
-    return c ? { kind: c.kind, calledWinner: c.calledWinner, until: c.until } : null;
+    return c ? { kind: c.kind, calledWinner: c.calledWinner, calledIn: c.calledIn, until: c.until } : null;
   }
 
   /** Challenge: se revisa la jugada con la verdad (la simulación sabe dónde picó y si hubo toque). */

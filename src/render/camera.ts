@@ -28,6 +28,7 @@ export class CameraDirector {
   private readonly look = new THREE.Vector3(0, 0.5, 0);
   private shake = { start: -10, duration: 0.3, amplitude: 0 };
   private replayFocus = new THREE.Vector3();
+  private replayLand = new THREE.Vector3();
   private replayAngle = 0;
 
   constructor(private readonly camera: THREE.PerspectiveCamera, private readonly sim: Simulation, private readonly fixed: boolean) {}
@@ -36,14 +37,39 @@ export class CameraDirector {
     this.shake = { start: performance.now() / 1000, duration, amplitude };
   }
 
-  startReplay(focus: THREE.Vector3): void {
+  /**
+   * Repetición como en la tele: un plano abierto y casi fijo que encuadra toda la jugada, desde el atacante hasta
+   * donde picó la pelota. Corte directo, sin barrido de cámara.
+   */
+  startReplay(focus: THREE.Vector3, land: THREE.Vector3 = focus): void {
     this.mode = 'replay';
     this.replayFocus.copy(focus);
-    this.replayAngle = focus.x < 0 ? -0.9 : 0.9;
+    this.replayLand.copy(land);
+    this.replayAngle = 0;
+    const [pos, look] = this.replayShot(0);
+    this.pos.copy(pos);
+    this.look.copy(look);
   }
 
   endReplay(): void {
     this.mode = 'broadcast';
+  }
+
+  /** Plano de la repetición: del lado de la tribuna, elevado, mirando al medio entre el remate y el pique. */
+  private replayShot(t: number): [THREE.Vector3, THREE.Vector3] {
+    const a = this.replayFocus;
+    const b = this.replayLand;
+    const mid = new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
+    const span = Math.hypot(a.x - b.x, a.z - b.z);
+    // Más lejos cuanto más larga la jugada; un desplazamiento lateral muy lento para que no quede estático.
+    // En pantallas angostas (teléfono, tablet) se aleja más para que entre toda la jugada.
+    const dist = (10 + span * 0.55) * Math.max(1, 1.5 / this.camera.aspect) ** 0.5;
+    const drift = Math.sin(t * 0.35) * 1.2;
+    const z = Math.min(15, mid.z + dist);
+    // Por encima del público de la tribuna de enfrente.
+    const pos = new THREE.Vector3(mid.x * 0.55 + drift, 4.2 + span * 0.18 + Math.max(0, z - 9) * 0.35, z);
+    const look = new THREE.Vector3(mid.x, 1.3, mid.z);
+    return [pos, look];
   }
 
   update(dtReal: number, ballPos: THREE.Vector3): void {
@@ -60,10 +86,10 @@ export class CameraDirector {
       targetLook.set(0, 1.1, 0);
       rate = 2;
     } else if (this.mode === 'replay') {
-      this.replayAngle += dtReal * 0.25;
-      const r = 7.5;
-      targetPos.set(this.replayFocus.x + Math.sin(this.replayAngle) * r, 3.2, this.replayFocus.z + Math.cos(this.replayAngle) * r);
-      targetLook.set(this.replayFocus.x, 1.8, this.replayFocus.z);
+      this.replayAngle += dtReal;
+      const [pos, look] = this.replayShot(this.replayAngle);
+      targetPos.copy(pos);
+      targetLook.copy(look);
       rate = 6;
     } else if (d?.aim && d.kind !== 'block') {
       // Saque, pase o remate apuntado: tercera persona, detrás y arriba del jugador, mirando hacia la mira.

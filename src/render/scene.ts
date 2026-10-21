@@ -273,7 +273,9 @@ export class MatchView {
       // (entre dos pasos), así no tiembla con la cámara lenta ni con distintas velocidades.
       const ahead = this.renderAhead();
       if (ahead > 0 && this.sim.phase === 'inPlay') {
-        const p = positionAt(this.sim.ball, this.sim.time + ahead);
+        // Nunca más allá del pique ni del próximo golpe (si no, se dibujaba metida en el piso).
+        const stop = Math.min(landingTime(this.sim.ball), this.sim.upcoming?.time ?? Infinity);
+        const p = positionAt(this.sim.ball, Math.min(this.sim.time + ahead, Math.max(this.sim.time, stop)));
         ballPos.set(p.x, p.y, p.z);
       } else if (ahead > 0 && this.sim.phase === 'warmup') {
         // Calentamiento: el balón principal es el de la fila del equipo A (no la pelota del partido, que está quieta).
@@ -292,6 +294,8 @@ export class MatchView {
       const u = this.byKey.get(deciding)!.rig.root.position;
       this.userRing.position.set(u.x, 0.02, u.z);
     }
+    // La pelota nunca se hunde en el piso (en ningún caso: online, repetición, rebotes).
+    ballPos.y = Math.max(ballPos.y, COURT.ballRadius);
     this.ball.position.copy(ballPos);
     this.spinBall();
     this.updateAim();

@@ -154,6 +154,8 @@ export class Simulation {
    * Solo para dibujar; la simulación nunca lo lee, así no se desincroniza.
    */
   localAim: { x: number; z: number } | null = null;
+  /** Online: instante en que esta pantalla tocó saltar al bloqueo (solo para dibujar el salto sin esperar a la red). */
+  localJumpAt: number | null = null;
 
   /** Decisión de esta pantalla (el equipo `control`). */
   get decision(): Decision | null {

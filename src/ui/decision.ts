@@ -65,6 +65,8 @@ export class DecisionPanel {
   private feedbackUntil = 0;
   /** En pausa no se aceptan elecciones ni timing. */
   paused = false;
+  /** Online: tiempo de simulación entre el último paso y este cuadro (la barra avanza suave, sin saltos). */
+  ahead: () => number = () => 0;
 
   /** `clock(eventTimeStamp)` traduce el instante real de un evento al tiempo de simulación (entre cuadros). */
   constructor(root: HTMLElement, private readonly sim: Simulation, private readonly clock: (stamp: number) => number = () => sim.time) {
@@ -170,11 +172,13 @@ export class DecisionPanel {
     this.buttons.style.display = d.aim || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = (IS_TOUCH ? TOUCH_HINTS : HINTS)[d.kind](d);
+    // Online la barra termina un poco antes que la pelota (lo que tarda tu tecla en llegar): guiarse por la barra.
+    if ((d.lead ?? 0) > 0 && d.kind !== 'serve') this.hint.textContent += ' · Online: guíate por la barra, termina un poco antes que la pelota';
   }
 
   /** 0..1: posición del marcador. Llega a 1 en el instante ideal. */
   private meterValue(d: Decision): number {
-    return meterOf(d, this.sim.time);
+    return meterOf(d, this.sim.time + this.ahead());
   }
 
   private zoneBar(kind: 'good' | 'perfect'): HTMLElement {

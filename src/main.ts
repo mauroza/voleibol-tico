@@ -14,6 +14,8 @@ import { PauseMenu, showResult } from './ui/overlays';
 import { TimeoutPanel } from './ui/timeout';
 import { ChallengePanel } from './ui/challenge';
 import { IS_TOUCH, TouchControls } from './ui/touch';
+import { PregamePanel } from './ui/pregame';
+import { LineupEditor } from './ui/lineup';
 import { Lockstep, leadForDelay } from './net/lockstep';
 import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
@@ -45,17 +47,12 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     difficulty: setup.difficulty,
     // Online: los dos juegan con el mismo reloj, casi sin cámara lenta, y las barras se adelantan lo que tarda la red.
     tempo: online ? online.deal.tempo ?? 'fluido' : PACE_TEMPO[setup.pace] ?? 'fluido',
-    // 1:30 de calentamiento de remate antes de cada partido.
+    // Previa: entrada, 1:30 de remate por zona 4, 1:30 por zona 2, 1:00 de saque, saludo, sorteo y alineación.
     warmup: 90,
+    pregame: true,
     ...(online ? { humans: ['A', 'B'] as const, inputLead: leadForDelay(online.deal.delay) } : {}),
   });
   const lockstep = online ? new Lockstep(sim, online.net, online.local, online.deal.delay) : null;
-  // Calentamiento: cuenta regresiva y botón para saltarlo (online no se salta: el reloj es de los dos).
-  const warmBanner = document.createElement('div');
-  warmBanner.className = 'warmup-banner';
-  ui.append(warmBanner);
-  const skipWarm = () => { if (!online) sim.skipWarmup(); };
-  warmBanner.addEventListener('click', (e) => { e.stopPropagation(); skipWarm(); });
   const netStatus = document.createElement('div');
   netStatus.className = 'net-status';
   // Ping arriba: verde fluido, amarillo aceptable, rojo con retraso.
@@ -93,6 +90,9 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   // Tiempo y cambios: pausa el juego mientras el panel está abierto.
   const timeouts = new TimeoutPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = open || pause.open; }, !online);
   const challenges = new ChallengePanel(ui, sim, sim.control ?? 'A');
+  // Previa (cartel, saltar, sorteo) y alineación de cada set.
+  const pregame = new PregamePanel(ui, sim, sim.control ?? 'A', !!online);
+  const lineup = new LineupEditor(ui, sim, sim.control ?? 'A');
   const gamepad = new GamepadInput(sim, () => setPaused(!pause.open), clock);
   const aim = new AimInput(sim, view, view.canvas, clock, () => pause.open || timeouts.open);
   const touch = IS_TOUCH
@@ -118,7 +118,6 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     const k = e.key.toLowerCase();
     if (k === 'escape' || k === 'p') setPaused(!pause.open);
     if (k === 'm') sound?.toggleMute();
-    if (e.key === 'Enter' && sim.warmupLeft !== null) skipWarm();
     if (k === 'f' && !online) speed = speed === 1 ? 4 : 1;
     if (e.code === 'Space' && view.replaying) view.skipReplay();
   });
@@ -170,13 +169,8 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     timeouts.update();
     challenges.update();
     touch?.update();
-    const left = sim.warmupLeft;
-    warmBanner.style.display = left === null ? 'none' : 'block';
-    if (left !== null) {
-      const t = Math.ceil(left);
-      const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-      warmBanner.textContent = `Calentamiento · ${clock} · cuando le toque a tu rematador, apunta y remata${online ? '' : IS_TOUCH ? ' · toca aquí para saltar' : ' · Enter o clic aquí para saltar'}`;
-    }
+    pregame.update();
+    lineup.update();
     hud.update();
     panel.update();
     sound?.update(dtReal);

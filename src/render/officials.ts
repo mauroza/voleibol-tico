@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COURT, type TeamId } from '../sim/court';
+import { COURT, sideSign, type TeamId } from '../sim/court';
 import type { PointReason } from '../sim/events';
 import type { Simulation } from '../sim/rally';
 import { DIMS, SKIN_TONES, buildCharacter, type Look, type Rig } from './character';
@@ -136,7 +136,7 @@ export class Officials {
     const inCourt = !byCall && Math.abs(b.x) <= COURT.halfLength + 0.05 && Math.abs(b.z) <= COURT.halfWidth + 0.05;
     const first = this.people[0];
     // Mirando la cancha desde su silla (z negativo), el equipo A (x negativo) le queda a la derecha.
-    first.signal = winner === 'A' ? SIGNAL.pointRight : SIGNAL.pointLeft;
+    first.signal = sideSign(winner) < 0 ? SIGNAL.pointRight : SIGNAL.pointLeft;
     first.until = now + 2.2;
     const judges = this.people.filter((o) => o.corner);
     const nearest = judges.sort((a, c) => len(a.corner!, b) - len(c.corner!, b))[0];
@@ -154,6 +154,8 @@ export class Officials {
   update(): void {
     const now = performance.now() / 1000;
     for (const o of this.people) {
+      // Los DT cambian de banca con su equipo.
+      if (o.coachOf) o.rig.root.position.x = sideSign(o.coachOf) * 1.75;
       let pose = o.base;
       if (o.signal && now < o.until) pose = blendPose(o.base, o.signal, Math.min(1, (o.until - now) * 4, (now - (o.until - 2.2)) * 6 + 0.2));
       // Un poco de vida: respiran y el DT camina en su lugar.

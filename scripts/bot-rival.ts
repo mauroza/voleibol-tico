@@ -46,6 +46,9 @@ const sim = new Simulation({
   humans: ['A', 'B'],
   tempo: d0.tempo ?? 'fluido',
   inputLead: leadForDelay(d0.delay),
+  // Igual que el juego: previa completa (el bot vota saltarla entera).
+  warmup: 90,
+  pregame: true,
 });
 const ls = new Lockstep(sim, net, 'B', d0.delay);
 sim.bus.on((e) => {
@@ -56,6 +59,10 @@ sim.bus.on((e) => {
 /** Bot "humano": cada decisión elige en qué punto de la barra presionar (con algo de error). */
 let target: { d: unknown; meter: number } | null = null;
 function play(): void {
+  // Previa: salta todo, elige lado al azar y juega con su alineación de siempre.
+  if (sim.skipKey('B')) sim.skip('B', true);
+  if (sim.sideKey('B')) sim.chooseSide('B', Math.random() < 0.5);
+  if (sim.lineupKey('B')) sim.submitLineup('B', [...sim.match.lineups.B]);
   const d = sim.decision;
   if (!d || d.pressedAt !== null) return;
   if (!target || target.d !== d) {

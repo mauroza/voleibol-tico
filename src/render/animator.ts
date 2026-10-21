@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sideSign } from '../sim/court';
 import type { ContactKind } from '../sim/events';
 import { attackContactHeight, blockReach } from '../sim/players';
 import { TUNING } from '../sim/tuning';
@@ -8,6 +9,8 @@ import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose,
 
 /** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
 const MOVING = 0.1;
+/** Mano arriba hacia la red para chocarla con el rival. */
+const HIGH_FIVE: Pose = { shoulderR: [-2.5, 0, -0.3], elbowR: [-0.25, 0, 0], shoulderL: [0, 0, 0.1], elbowL: [-0.2, 0, 0] };
 const WALK_MAX = 2.2;
 
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -141,8 +144,10 @@ export class Animator {
 
     // ---- Locomoción ----
     // En la banca, sentados (salvo en el calentamiento, que hacen fila); en cancha, listos.
-    const benched = !onCourt && sim.phase !== 'warmup' && this.speed < MOVING;
-    let pose: Pose = onCourt ? POSES.ready : benched ? POSES.sit : POSES.idle;
+    // En la previa y los cambios de cancha están de pie, relajados.
+    const ceremony = sim.ceremony;
+    const benched = !onCourt && sim.playing && this.speed < MOVING;
+    let pose: Pose = ceremony ? POSES.idle : onCourt ? POSES.ready : benched ? POSES.sit : POSES.idle;
     if (this.speed > MOVING) {
       const dir = fwd < 0 ? -1 : 1;
       // Lento: camina; rápido: corre (con mezcla entre los dos para que no salte de un paso al otro).
@@ -253,6 +258,16 @@ export class Animator {
       else if (now >= this.mood.until) this.mood = null;
     }
 
+    // Saludo en la red: choca la mano con el rival que pasa enfrente.
+    if (ceremony?.step === 'greeting' && ceremony.sub === 1) {
+      let near = Infinity;
+      for (const o of sim.players.values()) {
+        if (o.team === p.team) continue;
+        if (Math.abs(o.pos.x) < 1.5 && Math.abs(p.pos.x) < 1.5) near = Math.min(near, Math.abs(o.pos.z - p.pos.z));
+      }
+      if (near < 1.2) pose = blendPose(pose, HIGH_FIVE, ease(1 - near / 1.2));
+    }
+
     // Respiración y peso que se mueve: nadie queda quieto como un robot.
     const breathe = Math.sin(performance.now() / 1000 * 1.6 + this.key.length * 1.7);
     const sp = pose.spine ?? [0, 0, 0];
@@ -279,7 +294,11 @@ export class Animator {
     let targetYaw: number;
     const b = sim.ballPos;
     // Fuera de la cancha miran al partido; en el calentamiento, la fila (también suplentes) mira a la red.
-    if (!onCourt && sim.phase !== 'warmup') targetYaw = 0;
+    if (ceremony) {
+      // Caminando miran hacia donde van; quietos, a la red en el saludo y el sorteo, y a la tribuna en lo demás.
+      if (this.speed > 0.4) targetYaw = Math.atan2(this.vx, this.vz);
+      else targetYaw = ceremony.step === 'greeting' || ceremony.step === 'toss' ? this.netYaw() : 0;
+    } else if (!onCourt && sim.phase !== 'warmup') targetYaw = 0;
     else if (sim.phase === 'warmup' && !(up && up.key === this.key) && this.speed < 2.6) targetYaw = this.netYaw();
     else if (sim.phase === 'preServe') {
       // Antes del saque: el equipo que saca mira a la red; el que recibe mira al sacador.
@@ -342,7 +361,7 @@ export class Animator {
 
   /** Mirando a la red: el equipo A hacia +x, el B hacia −x. */
   private netYaw(): number {
-    return this.sim.player(this.key).team === 'A' ? Math.PI / 2 : -Math.PI / 2;
+    return sideSign(this.sim.player(this.key).team) < 0 ? Math.PI / 2 : -Math.PI / 2;
   }
 
   private startJump(apex: number, air: number, peak: number, broad = false): void {

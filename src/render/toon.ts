@@ -54,6 +54,29 @@ export const OUTLINE = new THREE.ShaderMaterial({
   side: THREE.BackSide,
 });
 
+/** Contorno de los personajes (una sola malla con esqueleto): se infla por la normal ya deformada por los huesos. */
+export const OUTLINE_SKINNED = new THREE.ShaderMaterial({
+  uniforms: OUTLINE.uniforms,
+  vertexShader: /* glsl */ `
+    #include <common>
+    #include <skinning_pars_vertex>
+    uniform float thickness;
+    uniform float minThickness;
+    void main() {
+      #include <skinbase_vertex>
+      #include <begin_vertex>
+      #include <beginnormal_vertex>
+      #include <skinnormal_vertex>
+      #include <skinning_vertex>
+      float dist = -(modelViewMatrix * vec4(transformed, 1.0)).z;
+      transformed += normalize(objectNormal) * max(minThickness, thickness * dist);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+    }
+  `,
+  fragmentShader: OUTLINE.fragmentShader,
+  side: THREE.BackSide,
+});
+
 /** Malla toon con su contorno como hijo. */
 export function toonMesh(geometry: THREE.BufferGeometry, color: THREE.ColorRepresentation, outline = true): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, toon(color));

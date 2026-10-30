@@ -58,6 +58,55 @@ export function mergeParts(parts: readonly Part[]): THREE.BufferGeometry {
   return out;
 }
 
+/**
+ * Une las geometrías de cada articulación (ya en el espacio del personaje) en una sola, con el hueso de cada vértice
+ * (`skinIndex`, peso 1): todo el personaje se dibuja en una sola llamada y los huesos lo deforman en la GPU.
+ */
+export function mergeSkinned(pieces: readonly { geometry: THREE.BufferGeometry; bone: number }[]): THREE.BufferGeometry {
+  let vertices = 0;
+  let indices = 0;
+  for (const p of pieces) {
+    vertices += p.geometry.attributes.position.count;
+    indices += p.geometry.index!.count;
+  }
+  const out = new THREE.BufferGeometry();
+  const attr = (size: number) => new Float32Array(vertices * size);
+  const position = attr(3);
+  const normal = attr(3);
+  const color = attr(3);
+  const uv = attr(2);
+  const skinIndex = new Uint16Array(vertices * 4);
+  const skinWeight = new Float32Array(vertices * 4);
+  const index = new Uint32Array(indices);
+  let vo = 0;
+  let io = 0;
+  for (const p of pieces) {
+    const g = p.geometry;
+    const n = g.attributes.position.count;
+    position.set(g.attributes.position.array as Float32Array, vo * 3);
+    normal.set(g.attributes.normal.array as Float32Array, vo * 3);
+    color.set(g.attributes.color.array as Float32Array, vo * 3);
+    uv.set(g.attributes.uv.array as Float32Array, vo * 2);
+    for (let i = 0; i < n; i++) {
+      skinIndex[(vo + i) * 4] = p.bone;
+      skinWeight[(vo + i) * 4] = 1;
+    }
+    const src = g.index!;
+    for (let i = 0; i < src.count; i++) index[io + i] = src.getX(i) + vo;
+    io += src.count;
+    vo += n;
+  }
+  out.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  out.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4));
+  out.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
+  out.setIndex(new THREE.BufferAttribute(index, 1));
+  out.computeBoundingSphere();
+  return out;
+}
+
 /** Matriz de una pieza: posición, rotación (Euler) y escala. */
 export function placed(x: number, y: number, z: number, rot: [number, number, number] = [0, 0, 0], scale: [number, number, number] = [1, 1, 1]): THREE.Matrix4 {
   return new THREE.Matrix4().compose(

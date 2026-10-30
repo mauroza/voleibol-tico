@@ -44,7 +44,13 @@ export interface Decision {
   lead?: number;
   /** Colocación: el usuario fijó la opción con una tecla (si no, sale de la mira y del tempo de la barra). */
   locked?: boolean;
+  /** Recepción: cuánto antes del contacto (s) está el punto ideal (la zona verde se corre a la izquierda). */
+  shift?: number;
 }
+
+/** Largo (s) de la barra de timing de una decisión. */
+export const meterWindow = (d: { kind: DecisionKind }): number =>
+  d.kind === 'set' ? TUNING.decision.setWindow : d.kind === 'pass' ? TUNING.decision.passWindow : TUNING.decision.slowWindow;
 
 /** El usuario presiona antes del contacto; después del contacto ya es tarde. */
 export function judgeTiming(pressedAt: number | null, contactTime: number): Timing {
@@ -95,5 +101,5 @@ export function meterOf(d: Decision, now: number): number {
   const t = d.pressedAt ?? now;
   if (d.kind === 'serve') return serveMeter(t - d.startTime);
   if (d.contactTime === null) return 0;
-  return contactMeter(t, d.contactTime - (d.lead ?? 0), d.kind === 'set' ? TUNING.decision.setWindow : TUNING.decision.slowWindow);
+  return contactMeter(t, d.contactTime - (d.lead ?? 0), meterWindow(d));
 }

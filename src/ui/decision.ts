@@ -1,5 +1,6 @@
+import { SET_TEMPO } from '../sim/actions';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
-import { meterOf, type Decision, type DecisionKind, type Power } from '../sim/decision';
+import { meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
@@ -67,6 +68,8 @@ export class DecisionPanel {
   paused = false;
   /** Online: tiempo de simulación entre el último paso y este cuadro (la barra avanza suave, sin saltos). */
   ahead: () => number = () => 0;
+  /** Ancho de la barra en px (se mide al armar el panel y al cambiar el tamaño de la ventana). */
+  private meterWidth = 0;
 
   /** `clock(eventTimeStamp)` traduce el instante real de un evento al tiempo de simulación (entre cuadros). */
   constructor(root: HTMLElement, private readonly sim: Simulation, private readonly clock: (stamp: number) => number = () => sim.time) {
@@ -89,6 +92,7 @@ export class DecisionPanel {
     root.append(this.el, this.feedback);
 
     window.addEventListener('keydown', (e) => this.onKey(e));
+    window.addEventListener('resize', () => { this.meterWidth = 0; });
     sim.bus.on((e) => {
       if (e.type === 'decisionResolved' && e.team === sim.control) {
         this.feedback.textContent = e.label ?? (e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing]);
@@ -109,7 +113,9 @@ export class DecisionPanel {
     this.el.style.display = 'block';
     const preview = this.sim.setPreview;
     if (d !== this.shown || d.chosen !== this.shownChosen || preview !== this.shownPreview || (d.pressedAt !== null) !== this.shownPressed) this.rebuild(d);
-    this.marker.style.left = `${(this.meterValue(d) * 100).toFixed(1)}%`;
+    // Se desplaza con transform (lo mueve la GPU, sin recalcular la página): la línea corre suave, sin trabarse.
+    if (!this.meterWidth) this.meterWidth = this.meter.clientWidth;
+    this.marker.style.transform = `translate3d(${(this.meterValue(d) * this.meterWidth).toFixed(1)}px, 0, 0)`;
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -140,6 +146,10 @@ export class DecisionPanel {
     this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · ${p.def.height.toFixed(2)} m${d.kind === 'attack' && eliteJump(p.def) >= 0.1 ? ' · salto élite' : d.kind === 'attack' && p.def.height >= 2 ? ' (en picada)' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
+    if (d.kind === 'set' && d.aim && d.pressedAt === null) {
+      const max = this.maxTempo(d);
+      this.title.textContent = `Colocación · recepción ${max === 2 ? 'doble positiva: alta, media o rápida' : max === 1 ? 'positiva: alta o media' : 'complicada: solo alta'}`;
+    }
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
@@ -162,18 +172,34 @@ export class DecisionPanel {
     this.meter.style.setProperty('--ace', `${TUNING.power.ace * 100}%`);
     // Colocación: la barra es el tempo.
     this.tempo.style.display = d.kind === 'set' && d.aim ? 'flex' : 'none';
-    this.meter.style.setProperty('--medium', `${TUNING.power.medium * 100}%`);
-    this.meter.style.setProperty('--strong', `${TUNING.power.strong * 100}%`);
+    // Colocación: solo los tempos que permite la recepción (alta siempre; media y rápida con buen pase).
+    const maxTempo = d.kind === 'set' && d.aim ? this.maxTempo(d) : 2;
+    this.meter.style.setProperty('--medium', `${(maxTempo >= 1 ? TUNING.power.medium : 1) * 100}%`);
+    this.meter.style.setProperty('--strong', `${(maxTempo >= 2 ? TUNING.power.strong : 1) * 100}%`);
+    for (const [i, span] of [...this.tempo.children].entries()) (span as HTMLElement).style.display = i <= maxTempo ? 'flex' : 'none';
     this.perfectZone.style.display = this.goodZone.style.display = power ? 'none' : 'block';
-    this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
-    this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
+    // Zonas de timing: en la recepción se corren según el punto ideal de esta jugada.
+    const w = meterWindow(d);
+    const right = `${(((d.shift ?? 0) / w) * 100).toFixed(1)}%`;
+    this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / w) * 100).toFixed(1)}%`;
+    this.goodZone.style.width = `${((TUNING.decision.goodWindow / w) * 100).toFixed(1)}%`;
+    this.perfectZone.style.right = right;
+    this.goodZone.style.right = right;
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
     // La colocación apuntada se elige solo moviendo la mira (sin botones numerados).
     this.buttons.style.display = d.aim || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = (IS_TOUCH ? TOUCH_HINTS : HINTS)[d.kind](d);
+    this.meterWidth = 0;
     // Online la barra termina un poco antes que la pelota (lo que tarda tu tecla en llegar): guiarse por la barra.
     if ((d.lead ?? 0) > 0 && d.kind !== 'serve') this.hint.textContent += ' · Online: guíate por la barra, termina un poco antes que la pelota';
+  }
+
+  /** Tempo más rápido que se puede colocar con esta recepción (0 alta, 1 media, 2 rápida). */
+  private maxTempo(d: Decision): number {
+    let max = 0;
+    for (const o of d.options) if (o.option.id === 'set') max = Math.max(max, SET_TEMPO[o.option.choice.option]);
+    return max;
   }
 
   /** 0..1: posición del marcador. Llega a 1 en el instante ideal. */

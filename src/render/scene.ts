@@ -12,7 +12,7 @@ import { DIMS, buildCharacter, lookFor, type Rig } from './character';
 import { PlayerStatus } from './status';
 import { Officials } from './officials';
 import { Effects } from './fx';
-import { JOINTS } from './pose';
+import { JOINTS, resetPosePool } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
 import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
@@ -189,7 +189,7 @@ export class MatchView {
     this.scene.background = new THREE.Color('#0b1018');
     this.scene.fog = new THREE.Fog('#0b1018', 26, 58);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.88;
     this.camera.position.set(0, 11, 19);
     this.camera.lookAt(0, 0.5, 0);
     // Desarrollo: ?cam=x,y,z,lx,ly,lz fija la cámara (para revisar de cerca).
@@ -202,8 +202,8 @@ export class MatchView {
     this.director = new CameraDirector(this.camera, sim, !!fixed);
     // Luz de estadio: cielo blanco frío desde los focos, rebote cálido del piso de madera; principal casi cenital
     // (sin sombras duras de costado) y un relleno cálido desde el lado opuesto para que nadie quede plano.
-    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.95));
-    const key = new THREE.DirectionalLight('#f4f7ff', 2.4);
+    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.75));
+    const key = new THREE.DirectionalLight('#f4f7ff', 1.9);
     key.position.set(3, 20, 7);
     this.scene.add(key);
     const fill = new THREE.DirectionalLight('#ffe2bd', 0.75);
@@ -249,6 +249,7 @@ export class MatchView {
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    this.prewarm();
     // Compilar los shaders ahora (también los de efectos aún invisibles) para evitar tirones la primera vez que aparecen.
     this.renderer.compile(this.scene, this.camera);
   }
@@ -283,6 +284,7 @@ export class MatchView {
       if (this.buffer.sample(this.replay.playhead, this.mixed, (a, b, k, out) => this.mixFrames(a, b, k, out))) this.applyFrame(this.mixed, ballPos);
       if (this.replay.playhead >= this.replay.to) this.endReplay();
     } else {
+      resetPosePool();
       for (const a of this.animators) a.update();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
@@ -467,10 +469,16 @@ export class MatchView {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), mat);
     const barX = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.09), mat);
     const barZ = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 1.4), mat);
-    this.aimCross.add(ring, barX, barZ);
+    // Borde oscuro debajo: la mira resalta sobre la madera clara y bajo los focos.
+    const dark = new THREE.MeshBasicMaterial({ color: '#0b0f18', transparent: true, opacity: 0.8, depthWrite: false, depthTest: false });
+    const ringBack = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.46, 32), dark);
+    const barXBack = new THREE.Mesh(new THREE.PlaneGeometry(1.48, 0.17), dark);
+    const barZBack = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 1.48), dark);
+    for (const b of [ringBack, barXBack, barZBack]) b.renderOrder = 9;
+    this.aimCross.add(ringBack, barXBack, barZBack, ring, barX, barZ);
     this.aimCross.rotation.x = -Math.PI / 2;
     this.aimSpread.rotation.x = -Math.PI / 2;
-    for (const k of this.aimCross.children) k.renderOrder = 10;
+    for (const k of [ring, barX, barZ]) k.renderOrder = 10;
     this.aimSpread.renderOrder = 10;
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
@@ -517,6 +525,35 @@ export class MatchView {
       });
     }
     for (let i = used; i < this.setMarkers.length; i++) this.setMarkers[i].group.visible = false;
+  }
+
+  /**
+   * Precarga en la GPU todo lo que se puede llegar a dibujar (público, gradas, árbitros, efectos, aros de colocación,
+   * mira...). Si no, la primera vez que un cambio de cámara lo mete en cuadro la GPU lo sube y compila en ese momento:
+   * eran los tirones al pasar a apuntar, colocar o a la repetición.
+   */
+  private prewarm(): void {
+    this.setMarker(6);
+    const changed: { o: THREE.Object3D; visible: boolean; culled: boolean }[] = [];
+    this.scene.traverse((o) => {
+      changed.push({ o, visible: o.visible, culled: o.frustumCulled });
+      o.visible = true;
+      o.frustumCulled = false;
+    });
+    try {
+      // Programas de sombreado para la pantalla y subida de geometrías y texturas (a un destino chiquito, invisible).
+      this.renderer.compile(this.scene, this.camera);
+      const target = new THREE.WebGLRenderTarget(32, 32);
+      this.renderer.setRenderTarget(target);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setRenderTarget(null);
+      target.dispose();
+    } finally {
+      for (const c of changed) {
+        c.o.visible = c.visible;
+        c.o.frustumCulled = c.culled;
+      }
+    }
   }
 
   private setMarker(i: number): SetMarker {
@@ -751,8 +788,8 @@ export class MatchView {
     c.width = c.height = 128;
     const g = c.getContext('2d')!;
     const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(255,250,235,0.34)');
-    grad.addColorStop(0.55, 'rgba(255,248,230,0.2)');
+    grad.addColorStop(0, 'rgba(255,250,235,0.14)');
+    grad.addColorStop(0.55, 'rgba(255,248,230,0.08)');
     grad.addColorStop(1, 'rgba(255,248,230,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, 128, 128);

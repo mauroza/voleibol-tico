@@ -105,8 +105,14 @@ export class Arena {
     this.excitement[side] = big ? 1 : 0.75;
   }
 
+  /** Último instante en que se movió al público (se anima a 30 cuadros por segundo: no hace falta más). */
+  private crowdAt = -1;
+
   update(t: number, dt = 0): void {
     for (const s of ['A', 'B'] as const) this.excitement[s] = Math.max(0.15, this.excitement[s] - dt * 0.35);
+    this.updateFlags(t);
+    if (t - this.crowdAt < 1 / 30 && t >= this.crowdAt) return;
+    this.crowdAt = t;
     this.fans.forEach((f, i) => {
       const e = this.excitement[f.side];
       // Solo los más emocionados saltan, cada uno a su ritmo; el resto se mueve poco.
@@ -120,6 +126,9 @@ export class Arena {
     });
     this.bodies.instanceMatrix.needsUpdate = true;
     this.heads.instanceMatrix.needsUpdate = true;
+  }
+
+  private updateFlags(t: number): void {
     this.flags.forEach((flag, i) => {
       flag.rotation.z = Math.sin(t * 3 + i) * 0.35;
       flag.rotation.y = Math.sin(t * 2.2 + i * 1.7) * 0.3;

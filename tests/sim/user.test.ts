@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TEAMS } from '../../src/data/teams';
 import { landingTime, positionAt, timeAtHeightDescending } from '../../src/sim/ball';
 import { isInCourt, sideOfX } from '../../src/sim/court';
-import { serveMeter, type DecisionKind } from '../../src/sim/decision';
+import { meterWindow, serveMeter, type DecisionKind } from '../../src/sim/decision';
 import { Simulation } from '../../src/sim/rally';
 import type { Timing } from '../../src/sim/resolver';
 import { TUNING } from '../../src/sim/tuning';
@@ -98,7 +98,7 @@ describe('control del equipo completo', () => {
         if (d.contactTime - sim.time < 0.9) sim.choose(0);
       } else {
         // Con mira (remate, pase) el tiempo corre más lento para apuntar; sin mira, el ritmo normal de la decisión.
-        const near = d.contactTime - sim.time <= (d.kind === 'set' ? cfg.setWindow : cfg.slowWindow);
+        const near = d.contactTime - sim.time <= meterWindow(d);
         const aiming = !!d.aim && d.kind !== 'block';
         const expected = aiming ? (near ? cfg.aimSlowScale : cfg.aimApproachScale) : near ? cfg.slowScale : cfg.approachScale;
         expect(sim.timeScale).toBe(expected);
@@ -116,9 +116,9 @@ describe('control del equipo completo', () => {
     sim.bus.on((e) => { if (e.type === 'decisionResolved' && e.kind === 'pass') timing = e.timing; });
     while (sim.phase !== 'matchOver' && timing === null) {
       const d = sim.decision;
-      if (d && d.kind === 'pass' && d.pressedAt === null && d.contactTime! - sim.time > 0.2) {
-        // El cuadro va 0.2 s antes del contacto, pero la tecla se presionó 0.03 s antes del contacto.
-        sim.press(d.contactTime! - 0.03);
+      if (d && d.kind === 'pass' && d.pressedAt === null && d.contactTime! - (d.shift ?? 0) - sim.time > 0.2) {
+        // El cuadro va 0.2 s antes del punto ideal, pero la tecla se presionó 0.03 s antes de él.
+        sim.press(d.contactTime! - (d.shift ?? 0) - 0.03);
       } else if (d && d.chosen === null) {
         sim.choose(0);
       }
@@ -249,7 +249,7 @@ describe('fuerza, saque, pase dirigido y defensa', () => {
       const d = until(sim, (x) => x.kind === 'pass');
       expect(d.aimSide).toBe('A');
       sim.setAim(-2.5, -2);
-      sim.press(d.contactTime! - 0.03);
+      sim.press(d.contactTime! - (d.shift ?? 0) - 0.03);
       while (sim.decision === d) sim.step(TUNING.dt);
       const t = timeAtHeightDescending(sim.ball, TUNING.setHeight);
       if (t !== null) {

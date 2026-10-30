@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { mergeParts, placed, type Part } from './merge';
+import { mergeParts, mergeSkinned, placed, type Part } from './merge';
 import type { JointName } from './pose';
-import { OUTLINE, toon, toonVertexColors } from './toon';
+import { OUTLINE_SKINNED, toon, toonVertexColors } from './toon';
 
 /** Medidas del personaje (metros). */
 export const DIMS = {
@@ -167,19 +167,47 @@ const FACE_INK = '#24160f';
 const SHOE = '#f4f4f4';
 const PAD = '#22252b';
 
-function joint(parent: THREE.Object3D, x: number, y: number, z: number): THREE.Object3D {
-  const j = new THREE.Object3D();
+/** Piezas de cada articulación del personaje que se está armando (se unen al final en una sola malla). */
+let pending: { bone: THREE.Bone; parts: Part[] }[] = [];
+
+function joint(parent: THREE.Object3D, x: number, y: number, z: number): THREE.Bone {
+  const j = new THREE.Bone();
   j.position.set(x, y, z);
   parent.add(j);
   return j;
 }
 
-/** Fusiona las piezas de una articulación en una malla toon (color por vértice) con contorno. */
-function attach(parent: THREE.Object3D, parts: Part[]): void {
-  const geometry = mergeParts(parts);
-  const mesh = new THREE.Mesh(geometry, toonVertexColors());
-  mesh.add(new THREE.Mesh(geometry, OUTLINE));
-  parent.add(mesh);
+/** Piezas que se mueven con una articulación (color por vértice). */
+function attach(parent: THREE.Bone, parts: Part[]): void {
+  pending.push({ bone: parent, parts });
+}
+
+/**
+ * Todo el cuerpo en una sola malla con esqueleto (cada articulación es un hueso) y su contorno: 2 llamadas de dibujo
+ * por personaje en vez de ~24. Muchas menos llamadas = sin tirones, también en el teléfono.
+ */
+function skinCharacter(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  const bones = [...new Set(pending.map((p) => p.bone))];
+  const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const pieces = pending.map((p) => {
+    const geometry = mergeParts(p.parts);
+    geometry.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, p.bone.matrixWorld));
+    return { geometry, bone: bones.indexOf(p.bone) };
+  });
+  pending = [];
+  const geometry = mergeSkinned(pieces);
+  for (const p of pieces) p.geometry.dispose();
+  const skeleton = new THREE.Skeleton(bones);
+  const mesh = new THREE.SkinnedMesh(geometry, toonVertexColors());
+  const outline = new THREE.SkinnedMesh(geometry, OUTLINE_SKINNED);
+  root.add(mesh, outline);
+  root.updateMatrixWorld(true);
+  mesh.bind(skeleton);
+  outline.bind(skeleton, mesh.bindMatrix);
+  // Los huesos mueven la malla (saltos, planchas): no se recorta con la caja de la pose inicial.
+  mesh.frustumCulled = false;
+  outline.frustumCulled = false;
 }
 
 /**
@@ -264,6 +292,7 @@ export function buildCharacter(look: Look): Rig {
   const LL = leg(1);
   const RL = leg(-1);
 
+  skinCharacter(root);
   return {
     root,
     body,

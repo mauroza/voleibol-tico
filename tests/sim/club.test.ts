@@ -33,7 +33,7 @@ describe('sobres y club', () => {
     expect(new Set(team.roster.map((x) => x.number)).size).toBe(12);
     // La repetida sube la media.
     expect(cardPlayer(cardById('yujinishida')!, 'x', 2).attrs.attackPower).toBeGreaterThanOrEqual(cardPlayer(cardById('yujinishida')!, 'x', 1).attrs.attackPower);
-    const sim = new Simulation({ seed: 4, setsToWin: 1, teamA: team, teamB: TEAMS[2], control: null });
+    const sim = new Simulation({ seed: 4, setsToWin: 1, teamA: team, teamB: TEAMS[2] });
     for (let i = 0; i < 120 * 60 * 20 && sim.phase !== 'matchOver'; i++) sim.step(1 / 120);
     expect(sim.phase).toBe('matchOver');
   }, 60_000);

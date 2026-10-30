@@ -329,3 +329,10 @@ body.touch #hud > *:not(.touch-zone) { z-index: 6; }
 body.touch #hud > .overlay { z-index: 12; }
 body.touch .decision { pointer-events: none; }
 body.touch .decision button, body.touch .decision .meter { pointer-events: auto; }
+
+/* La página nunca se desplaza ni rebota (barra del navegador, jalar para recargar): todo vive en capas fijas. */
+html { height: 100%; overscroll-behavior: none; }
+body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
+body.touch { touch-action: none; }
+.app-menu { overscroll-behavior: contain; touch-action: pan-y; }
+.am-install { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; font-size: 13px; color: var(--am-gold); }

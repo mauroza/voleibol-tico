@@ -1,4 +1,4 @@
-import { enterMobileMode } from './touch';
+import { CAN_FULLSCREEN, IS_TOUCH, enterMobileMode } from './touch';
 import type { TempoProfile } from '../sim/rally';
 import { TEAMS, type TeamDef } from '../data/teams';
 import type { Role } from '../sim/players';
@@ -240,6 +240,11 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     const hero = h('div', 'am-hero');
     hero.innerHTML = `<div class="am-logo"><b>VOLEIBOL</b><span>TICO</span></div>
       <p class="am-tag">Hola, <b>${esc(p.nickname)}</b> · ${p.wins} ${p.wins === 1 ? 'victoria' : 'victorias'} · ${Object.keys(p.cards).length} cartas</p>`;
+    // iPhone no deja poner una página en pantalla completa: como app (desde la pantalla de inicio) sí.
+    const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone;
+    if (IS_TOUCH && !CAN_FULLSCREEN && !standalone && ONLINE_AVAILABLE) {
+      hero.append(h('p', 'am-install', `${icon('expand', 14)} Para jugar en pantalla completa: <b>Compartir → Agregar a inicio</b> y ábrelo desde ese ícono.`));
+    }
     const list = h('nav', 'am-list');
     const item = (ic: IconName, title: string, sub: string, to: () => void, extra = '') => {
       const b = button('am-item', `<span class="am-item-ic">${icon(ic, 26)}</span><span class="am-item-txt"><b>${title}</b><small>${sub}</small></span>${extra}<span class="am-item-go">${icon('back', 18)}</span>`, to);

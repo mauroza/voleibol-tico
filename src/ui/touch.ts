@@ -13,9 +13,13 @@ const ACTION_LABELS: Record<DecisionKind, string> = {
   block: 'SALTAR',
 };
 
-/** Al tocar "Jugar": pantalla completa y horizontal (donde el navegador lo permite; si no, sigue igual). */
-export function enterMobileMode(): void {
-  if (!IS_TOUCH) return;
+/** El usuario quiere pantalla completa: si el navegador la quita (gesto del sistema), vuelve con el siguiente toque. */
+let wantFullscreen = false;
+
+const fullscreenElement = (): Element | null =>
+  document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement ?? null;
+
+function requestFullscreen(): void {
   const doc = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
   try {
     const p = doc.requestFullscreen?.({ navigationUI: 'hide' }) ?? doc.webkitRequestFullscreen?.();
@@ -26,6 +30,58 @@ export function enterMobileMode(): void {
     // Sin pantalla completa (iPhone, artefacto): se juega igual.
   }
 }
+
+/** ¿El navegador deja poner la página en pantalla completa? (el iPhone no; ahí sirve "Agregar a inicio"). */
+export const CAN_FULLSCREEN = typeof document !== 'undefined'
+  && !!(document.documentElement.requestFullscreen || (document.documentElement as HTMLElement & { webkitRequestFullscreen?: unknown }).webkitRequestFullscreen);
+
+export function toggleFullscreen(): void {
+  if (fullscreenElement()) {
+    wantFullscreen = false;
+    void document.exitFullscreen?.().catch(() => {});
+  } else {
+    wantFullscreen = true;
+    requestFullscreen();
+  }
+}
+
+/**
+ * Deslizar el dedo nunca mueve la página: ni la barra del navegador, ni "jalar para recargar", ni rebotes. Solo se
+ * desplazan los paneles que de verdad tienen contenido para desplazar (menú, alineación, chat).
+ */
+let scrollLocked = false;
+function lockPageScroll(): void {
+  if (scrollLocked) return;
+  scrollLocked = true;
+  const scrollable = (el: Element | null): boolean => {
+    for (let e = el; e && e !== document.body; e = e.parentElement) {
+      const s = getComputedStyle(e);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight + 1) return true;
+      if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && e.scrollWidth > e.clientWidth + 1) return true;
+    }
+    return false;
+  };
+  document.addEventListener('touchmove', (e) => {
+    const t = e.target as Element | null;
+    if (t instanceof HTMLInputElement && t.type === 'range') return;
+    if (!scrollable(t) && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  // Volver a pantalla completa con el siguiente toque si el sistema la quitó (al soltar el dedo: el navegador solo
+  // acepta pedirla en ese momento).
+  document.addEventListener('pointerup', () => {
+    if (wantFullscreen && !fullscreenElement()) requestFullscreen();
+  }, true);
+}
+
+/** Al tocar "Jugar": pantalla completa y horizontal (donde el navegador lo permite; si no, sigue igual). */
+export function enterMobileMode(): void {
+  if (!IS_TOUCH) return;
+  lockPageScroll();
+  wantFullscreen = true;
+  requestFullscreen();
+}
+
+if (IS_TOUCH && typeof document !== 'undefined') lockPageScroll();
 
 /**
  * Controles táctiles en dos zonas grandes y transparentes (no tapan el juego): la mitad izquierda apunta (arrastrar,
@@ -69,6 +125,8 @@ export class TouchControls {
     const bar = document.createElement('div');
     bar.className = 'touch-bar';
     if (actions.pause) bar.append(this.small(svgIcon('pause', 18), 'Pausa', actions.pause));
+    // Pantalla completa a mano (por si se salió); donde no existe (iPhone) no se muestra.
+    if (CAN_FULLSCREEN) bar.append(this.small(svgIcon('expand', 18), 'Pantalla completa', toggleFullscreen));
     const mute = this.small(svgIcon('sound', 18), 'Sonido', () => { mute.innerHTML = svgIcon(actions.mute() ? 'mute' : 'sound', 18); });
     bar.append(mute);
 

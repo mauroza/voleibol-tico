@@ -136,6 +136,14 @@ function benchDetour(pos: Vec3, goal: Vec3): Vec3 {
   return goal;
 }
 
+/**
+ * Estrategia de bloqueo (se planea entre puntos): normal (un poco hacia adentro), cerrar la línea (el bloqueo se pone
+ * por fuera, sobre la banda) o cerrar la diagonal (se mete hacia el centro).
+ */
+export type BlockFocus = 'normal' | 'line' | 'cross';
+/** Corrimiento del bloqueo hacia adentro de la cancha (m) según la estrategia; negativo = hacia la banda. */
+const FOCUS_SHIFT: Record<BlockFocus, number> = { normal: 0.35, line: -0.3, cross: 0.95 };
+
 /** Una fila de calentamiento: su balón, en qué parte de la jugada va y quién remata. */
 interface WarmLane {
   /** Remate: idle → set → attack → fly. Saque: idle → walk → serveWait → serveHit → fly. */
@@ -358,6 +366,21 @@ export class Simulation {
   // Identidades (iguales en las dos computadoras) de lo que cada persona puede mandar entre puntos; null si no puede.
   private deadBallId(): string {
     return `${this.match.setNumber}:${this.match.points.A + this.match.points.B}`;
+  }
+
+  /** Estrategia de cada equipo (la IA, siempre normal). */
+  readonly blockFocus: Record<TeamId, BlockFocus> = { A: 'normal', B: 'normal' };
+
+  strategyKey(team: TeamId): string | null {
+    return this.humans.has(team) && this.deadBall && !this.pausedBy ? `st:${this.deadBallId()}:${this.blockFocus[team]}` : null;
+  }
+
+  /** Cambia la estrategia de bloqueo: solo con la pelota muerta (se planea antes de cada punto). */
+  setStrategy(team: TeamId, focus: BlockFocus): boolean {
+    this.syncSides();
+    if (this.strategyKey(team) === null || !(focus in FOCUS_SHIFT)) return false;
+    this.blockFocus[team] = focus;
+    return true;
   }
 
   timeoutKey(team: TeamId): string | null {
@@ -2137,7 +2160,9 @@ export class Simulation {
     const cfg = TUNING.block;
     const fast = [1, 1.3, 1.6][this.intent?.tempo ?? 0];
     const side = Math.sign(attack.point.z) || 1;
-    const z = clamp(attack.point.z - side * cfg.insideShift + this.rng.range(-1, 1) * cfg.readError * fast, -COURT.halfWidth, COURT.halfWidth);
+    // Estrategia del equipo que bloquea: normal, cerrar la línea o cerrar la diagonal.
+    const shift = this.humans.has(team) ? FOCUS_SHIFT[this.blockFocus[team]] : cfg.insideShift;
+    const z = clamp(attack.point.z - side * shift + this.rng.range(-1, 1) * cfg.readError * fast, -COURT.halfWidth, COURT.halfWidth);
     let keys = this.pickBlockers(team, n, z);
     // La finta: el central del bloqueo (solo la IA) puede saltar con el central que amaga y no llegar al remate.
     this.bite = null;

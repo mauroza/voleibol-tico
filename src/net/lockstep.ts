@@ -23,7 +23,7 @@ interface Input {
 
 /** Identidad de una decisión, igual en las dos computadoras (la simulación es la misma). */
 const decisionKey = (d: { kind: string; playerKey: string; startTime: number }) => `${d.kind}:${d.playerKey}:${d.startTime}`;
-type Kind = 'choose' | 'aim' | 'press' | 'challenge' | 'skip' | 'side' | 'lineup' | 'timeout' | 'endTimeout' | 'sub' | 'pause' | 'resume';
+type Kind = 'choose' | 'aim' | 'press' | 'challenge' | 'skip' | 'side' | 'lineup' | 'timeout' | 'endTimeout' | 'sub' | 'pause' | 'resume' | 'strategy';
 
 /** Identidad de lo que ese equipo puede mandar ahora de ese tipo (null si no puede). */
 const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
@@ -36,6 +36,7 @@ const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
   if (k === 'sub') return sim.subKey(team);
   if (k === 'pause') return sim.pauseKey(team);
   if (k === 'resume') return sim.resumeKey(team);
+  if (k === 'strategy') return sim.strategyKey(team);
   const d = sim.decisions[team];
   return d ? decisionKey(d) : null;
 };
@@ -47,7 +48,7 @@ const keyFor = (sim: Simulation, team: TeamId, k: Kind): string | null => {
  * esperar a la otra por un tirón de internet.
  */
 const FAST: ReadonlySet<Kind> = new Set<Kind>(['choose', 'aim', 'press']);
-const SLOW_KINDS: readonly Kind[] = ['challenge', 'skip', 'side', 'lineup', 'timeout', 'endTimeout', 'sub', 'pause', 'resume'];
+const SLOW_KINDS: readonly Kind[] = ['challenge', 'skip', 'side', 'lineup', 'timeout', 'endTimeout', 'sub', 'pause', 'resume', 'strategy'];
 /** Margen extra (ticks) de las acciones lentas: 0.4 s de juego. */
 const SLACK = 48;
 const fastOpen = (sim: Simulation, team: TeamId): boolean => !!keyFor(sim, team, 'press');
@@ -121,6 +122,7 @@ export class Lockstep {
     substitute: Simulation['substitute'];
     pauseGame: Simulation['pauseGame'];
     resumeGame: Simulation['resumeGame'];
+    setStrategy: Simulation['setStrategy'];
   };
 
   constructor(private readonly sim: Simulation, private readonly net: Transport, readonly local: TeamId, private readonly delay = 14) {
@@ -138,6 +140,7 @@ export class Lockstep {
       substitute: sim.substitute.bind(sim),
       pauseGame: sim.pauseGame.bind(sim),
       resumeGame: sim.resumeGame.bind(sim),
+      setStrategy: sim.setStrategy.bind(sim),
     };
     // Tiempos, cambios y pausa: viajan como las jugadas y se aplican en el mismo tick en las dos computadoras.
     sim.callTimeout = () => {
@@ -149,6 +152,11 @@ export class Lockstep {
     sim.substitute = (_team: TeamId, outKey: string, inKey: string) => {
       if (!sim.canSubstitute(local, outKey, inKey)) return false;
       this.push({ k: 'sub', l: [outKey, inKey] });
+      return true;
+    };
+    sim.setStrategy = (_team: TeamId, focus) => {
+      if (!sim.strategyKey(local)) return false;
+      this.push({ k: 'strategy', l: [focus] });
       return true;
     };
     sim.pauseGame = () => this.push({ k: 'pause' });
@@ -349,6 +357,7 @@ export class Lockstep {
       else if (i.k === 'sub') this.apply.substitute(i.team, i.l?.[0] ?? '', i.l?.[1] ?? '');
       else if (i.k === 'pause') this.apply.pauseGame(i.team);
       else if (i.k === 'resume') this.apply.resumeGame(i.team);
+      else if (i.k === 'strategy') this.apply.setStrategy(i.team, (i.l?.[0] ?? 'normal') as 'normal');
       else if (i.k === 'choose') this.apply.choose(i.i!, i.team);
       else if (i.k === 'aim') this.apply.setAim(i.x!, i.z!, i.team);
       else this.apply.press(i.at!, i.team);

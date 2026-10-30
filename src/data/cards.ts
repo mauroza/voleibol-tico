@@ -7,9 +7,10 @@ import { createRng, type Rng } from '../sim/rng';
  */
 export type Rarity = 'leyenda' | 'elite' | 'internacional' | 'promesa';
 
+/** Rareza por color: verde promesa, azul internacional, morado épico, dorado increíble. */
 export const RARITY_LABELS: Record<Rarity, string> = {
-  leyenda: 'Leyenda',
-  elite: 'Élite',
+  leyenda: 'Increíble',
+  elite: 'Épico',
   internacional: 'Internacional',
   promesa: 'Promesa',
 };
@@ -34,6 +35,7 @@ export interface Card {
 export const COUNTRY_NAMES: Record<string, string> = {
   JPN: 'Japón', BRA: 'Brasil', BUL: 'Bulgaria', FRA: 'Francia', POL: 'Polonia', ITA: 'Italia', USA: 'Estados Unidos',
   ARG: 'Argentina', NED: 'Países Bajos', CUB: 'Cuba', SLO: 'Eslovenia', CAN: 'Canadá', SRB: 'Serbia', CRC: 'Costa Rica',
+  IRI: 'Irán', GER: 'Alemania',
 };
 
 type Row = [name: string, country: string, role: Role, height: number, number: number, overall: number, specialty: Specialty, skin: number, hair: number];
@@ -87,6 +89,46 @@ const VNL: Row[] = [
   ['Tine Urnaut', 'SLO', 'OH', 2.0, 8, 84, 'attackPower', 0, 0],
   ['Stephen Maar', 'CAN', 'OH', 2.0, 11, 83, 'serve', 0, 0],
   ['Uroš Kovačević', 'SRB', 'OH', 1.98, 18, 83, 'reception', 0, 1],
+  // Japón
+  ['Kento Miyaura', 'JPN', 'OP', 1.89, 2, 85, 'serve', 1, 0],
+  ['Taishi Onodera', 'JPN', 'MB', 2.01, 9, 84, 'block', 1, 0],
+  ['Kentaro Takahashi', 'JPN', 'MB', 2.01, 13, 83, 'block', 1, 1],
+  ['Tatsunori Otsuka', 'JPN', 'OH', 1.94, 21, 84, 'reception', 1, 0],
+  // Brasil
+  ['Yoandy Leal', 'BRA', 'OH', 2.02, 9, 88, 'attackPower', 5, 11],
+  ['Flávio Gualberto', 'BRA', 'MB', 2.03, 4, 84, 'block', 4, 11],
+  ['Fernando Kreling', 'BRA', 'S', 1.85, 7, 84, 'setting', 0, 1],
+  // Italia
+  ['Daniele Lavia', 'ITA', 'OH', 1.97, 15, 87, 'reception', 0, 0],
+  ['Mattia Bottolo', 'ITA', 'OH', 1.99, 9, 83, 'serve', 0, 1],
+  ['Simone Anzani', 'ITA', 'MB', 2.04, 7, 86, 'block', 0, 0],
+  ['Riccardo Sbertoli', 'ITA', 'S', 1.89, 1, 82, 'setting', 0, 1],
+  // Polonia
+  ['Aleksander Śliwka', 'POL', 'OH', 1.97, 2, 87, 'reception', 0, 0],
+  ['Łukasz Kaczmarek', 'POL', 'OP', 2.04, 4, 85, 'attackPower', 0, 11],
+  ['Jakub Popiwczak', 'POL', 'L', 1.80, 6, 84, 'defense', 0, 0],
+  // Francia
+  ['Benjamin Toniutti', 'FRA', 'S', 1.83, 6, 86, 'setting', 0, 0],
+  ['Nicolas Le Goff', 'FRA', 'MB', 2.06, 12, 84, 'block', 0, 1],
+  ['Yacine Louati', 'FRA', 'OH', 1.99, 3, 84, 'attackPower', 4, 11],
+  ['Kévin Tillie', 'FRA', 'OH', 2.0, 2, 84, 'reception', 0, 1],
+  ['Théo Faure', 'FRA', 'OP', 2.04, 18, 83, 'attackPower', 0, 1],
+  // Estados Unidos
+  ['Thomas Jaeschke', 'USA', 'OH', 1.98, 9, 84, 'reception', 0, 1],
+  ['Jeffrey Jendryk', 'USA', 'MB', 2.07, 17, 83, 'block', 0, 0],
+  ['Kyle Ensing', 'USA', 'OP', 2.01, 7, 82, 'serve', 0, 2],
+  // Eslovenia, Serbia, Bulgaria, Argentina, Cuba, Canadá, Irán, Alemania
+  ['Rok Možič', 'SLO', 'OH', 1.98, 18, 86, 'serve', 0, 0],
+  ['Jan Kozamernik', 'SLO', 'MB', 2.05, 9, 84, 'block', 0, 0],
+  ['Gregor Ropret', 'SLO', 'S', 1.94, 6, 83, 'setting', 0, 0],
+  ['Aleksandar Atanasijević', 'SRB', 'OP', 2.0, 9, 86, 'attackPower', 0, 1],
+  ['Simeon Nikolov', 'BUL', 'S', 2.0, 1, 85, 'setting', 0, 2],
+  ['Bruno Lima', 'ARG', 'OP', 1.98, 18, 84, 'attackPower', 0, 1],
+  ['Luciano Palonsky', 'ARG', 'OH', 1.98, 10, 83, 'serve', 0, 0],
+  ['Miguel Ángel López', 'CUB', 'OH', 1.89, 13, 86, 'attackPower', 5, 11],
+  ['Eric Loeppky', 'CAN', 'OH', 1.94, 4, 83, 'reception', 0, 1],
+  ['Amin Esmaeilnezhad', 'IRI', 'OP', 2.01, 6, 83, 'attackPower', 1, 0],
+  ['Georg Grozer', 'GER', 'OP', 2.0, 9, 85, 'serve', 0, 11],
 ];
 
 const rarityFor = (overall: number): Rarity => (overall >= 90 ? 'leyenda' : overall >= 86 ? 'elite' : 'internacional');
@@ -204,18 +246,12 @@ export function overallOf(p: PlayerDef): number {
   return Math.round(keys.reduce((s, k) => s + a[k], 0) / keys.length);
 }
 
-/** Abre un sobre: 4 cartas, la primera siempre de la VNL. */
+/** Probabilidad de cada rareza en un sobre (un solo jugador por sobre). */
+export const PACK_ODDS: Record<Rarity, number> = { leyenda: 0.07, elite: 0.2, internacional: 0.38, promesa: 0.35 };
+
+/** Abre un sobre: un jugador. Dorado increíble, morado épico, azul internacional o verde promesa. */
 export function openPack(rng: Rng): Card[] {
-  const vnl = (): Card => {
-    const tier = rng.weighted<Rarity>([
-      { item: 'leyenda', weight: 0.12 },
-      { item: 'elite', weight: 0.38 },
-      { item: 'internacional', weight: 0.5 },
-    ]);
-    return rng.pick(VNL_CARDS.filter((c) => c.rarity === tier));
-  };
-  const cards = [vnl()];
-  for (let i = 0; i < 3; i++) cards.push(rng.chance(0.25) ? vnl() : prospect(1 + Math.floor(rng.range(0, 999_999))));
-  // La mejor, al final (se revela de última).
-  return cards.sort((a, b) => a.overall - b.overall);
+  const tier = rng.weighted<Rarity>((Object.keys(PACK_ODDS) as Rarity[]).map((item) => ({ item, weight: PACK_ODDS[item] })));
+  if (tier === 'promesa') return [prospect(1 + Math.floor(rng.range(0, 999_999)))];
+  return [rng.pick(VNL_CARDS.filter((c) => c.rarity === tier))];
 }

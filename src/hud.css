@@ -115,3 +115,61 @@ body:has(#hud .scoreboard) #help { display: none; }
   #hud .timeout-button { top: calc(var(--edge) + var(--safe-t)); }
   #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 40px); }
 }
+
+/* Arriba a la derecha: Estrategia y Tiempo, juntos (sin encimarse). */
+#hud .hud-actions { position: fixed; z-index: 6; top: calc(var(--edge) + var(--safe-t)); right: calc(var(--edge) + var(--safe-r)); display: flex; gap: 6px; align-items: center; }
+#hud .hud-actions .timeout-button, #hud .hud-actions .strategy-button { position: static; }
+#hud .strategy-button { padding: 8px 12px; border-radius: 10px; font: 600 12px var(--am-body); background: #060a17d9; border: 1px solid #4dc3ff55; color: #cfeeff; cursor: pointer; white-space: nowrap; }
+#hud .strategy-button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 900px) { #hud .hud-actions { top: calc(var(--edge) + var(--safe-t) + 52px); } }
+@media (max-width: 900px) and (max-height: 480px) { #hud .hud-actions { top: calc(var(--edge) + var(--safe-t) + 42px); } }
+@media (max-width: 600px) { #hud .hud-actions { top: calc(var(--edge) + var(--safe-t)); } #hud .strategy-button { padding: 6px 8px; font-size: 11px; } }
+@media (max-height: 480px) { #hud .strategy-button { padding: 6px 9px; font-size: 11px; } }
+@media (max-width: 900px) { #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 92px); } }
+/* Panel de estrategia */
+#hud .strategy-box { width: min(760px, calc(100vw - 20px)); font-family: var(--am-body); }
+#hud .strategy-box h2 { font-family: var(--am-display); font-weight: 400; letter-spacing: 1px; font-size: 30px; font-style: normal; }
+#hud .strat-hint { color: var(--am-muted); font-size: 13px; margin: 0 0 10px; }
+#hud .strat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+#hud .strat-option { display: grid; gap: 6px; text-align: left; padding: 10px; border-radius: 14px; border: 2px solid #ffffff1c; background: #060a17; color: #fff; font: inherit; transition: border-color .15s, transform .15s; }
+#hud .strat-option:hover { transform: translateY(-2px); }
+#hud .strat-option.active { border-color: #4dc3ff; box-shadow: 0 0 0 3px #4dc3ff33; background: #0b1a33; }
+#hud .strat-option b { font-family: var(--am-display); font-weight: 400; font-size: 22px; letter-spacing: 1px; }
+#hud .strat-option small { color: var(--am-muted); font-size: 12px; line-height: 1.4; }
+#hud .strat-svg { width: 100%; height: auto; border-radius: 8px; }
+@media (max-height: 480px) {
+  #hud .strat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #hud .strat-option small { display: none; }
+  #hud .strat-option b { font-size: 16px; }
+  #hud .strategy-box h2 { font-size: 22px; }
+  #hud .strat-hint { display: none; }
+}
+
+/* Las ventanas (pausa, tiempo, estrategia, resultado) siempre por encima del marcador y los botones. */
+#hud .overlay { z-index: 20; }
+
+/* Pantallas medianas: Estrategia y Tiempo ocupan la segunda fila a la derecha; el comentario va en la tercera fila,
+   centrado, para no encimarse con ellos. */
+@media (max-width: 900px) {
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 96px); max-width: calc(100% - 32px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 132px); }
+}
+@media (max-width: 900px) and (max-height: 480px) {
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 80px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 110px); }
+}
+/* Angostas: botones en la primera fila, marcador en la segunda, comentario en la tercera. */
+@media (max-width: 600px) {
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 96px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 132px); }
+}
+/* Hasta 1180 px el marcador y los dos botones no caben en una fila: los botones bajan a la segunda. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  #hud .hud-actions { top: calc(var(--edge) + var(--safe-t) + 52px); }
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 96px); max-width: calc(100% - 32px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 132px); }
+}
+@media (min-width: 901px) and (max-width: 1180px) and (max-height: 480px) {
+  #hud .hud-actions { top: calc(var(--edge) + var(--safe-t) + 42px); }
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 80px); }
+}

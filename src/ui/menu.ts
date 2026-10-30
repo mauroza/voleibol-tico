@@ -538,7 +538,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const packsScreen = (): HTMLElement => {
     const p = loadProfile();
     const el = h('section', 'am-packs');
-    el.append(heading('Sobres', 'Cada victoria te da un sobre: 4 cartas, al menos una figura de la VNL.'));
+    el.append(heading('Sobres', 'Cada victoria te da un sobre con un jugador: verde promesa, azul internacional, morado épico o dorado increíble.'));
     const stage = h('div', 'am-pack-stage');
     const pack = h('div', `am-pack${p.packs ? '' : ' empty'}`, `<div class="am-pack-face">${crestSvg({ short: 'VNL', primary: '#14213d', secondary: '#f6c445', crest: 5 }, 90)}<b>SOBRE</b><small>Liga de Naciones</small></div>`);
     const count = h('p', 'am-pack-count', p.packs ? `Tienes <b>${p.packs}</b> ${p.packs === 1 ? 'sobre' : 'sobres'}` : 'No tienes sobres. Gana un partido para conseguir uno.');

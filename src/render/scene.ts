@@ -1,7 +1,7 @@
 import { settings } from '../data/profile';
 import * as THREE from 'three';
 import { landingTime, positionAt } from '../sim/ball';
-import { COURT } from '../sim/court';
+import { COURT, sideSign } from '../sim/court';
 import { IS_TOUCH } from '../ui/touch';
 import { AVG_HEIGHT, isTall, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
@@ -501,7 +501,9 @@ export class MatchView {
     const y = k < 0.65
       ? hand.y + (apex - hand.y) * (1 - (1 - k / 0.65) ** 2)
       : apex - (apex - contact) * ((k - 0.65) / 0.35) ** 2;
-    out.set(hand.x + (p.x - hand.x) * k, y, hand.z + (p.z - hand.z) * k);
+    // Termina donde la golpea la mano: 30 cm delante del sacador (el mismo punto desde el que sale el saque).
+    const tx = p.x - sideSign(this.sim.match.serving) * 0.3;
+    out.set(hand.x + (tx - hand.x) * k, y, hand.z + (p.z - hand.z) * k);
   }
 
   private buildAim(): void {

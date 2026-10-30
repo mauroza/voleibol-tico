@@ -26,6 +26,8 @@ export function flagSvg(code: string): string {
     CAN: `${v(['#d52b1e', '#fff', '#fff', '#d52b1e'])}<rect x="12.5" y="6.5" width="5" height="7" fill="#d52b1e"/>`,
     SRB: h(['#c6363c', '#0c4076', '#fff']),
     CRC: '<rect width="30" height="20" fill="#002b7f"/><rect y="3.3" width="30" height="13.4" fill="#fff"/><rect y="6.7" width="30" height="6.6" fill="#ce1126"/>',
+    IRI: `${h(['#239f40', '#fff', '#da0000'])}<circle cx="15" cy="10" r="2" fill="#da0000"/>`,
+    GER: h(['#000', '#dd0000', '#ffce00']),
   };
   return `<svg class="flag" viewBox="0 0 30 20" width="24" height="16" aria-label="${COUNTRY_NAMES[code] ?? code}">${body[code] ?? '<rect width="30" height="20" fill="#556"/>'}</svg>`;
 }

@@ -21,6 +21,9 @@ import { toon } from './toon';
 /**
  * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
  */
+/** Radio con que se dibuja la pelota (más grande que la real para que se vea bien de lejos). */
+const BALL_DRAW_RADIUS = COURT.ballRadius * 1.6;
+
 function ballTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
@@ -201,7 +204,7 @@ export class MatchView {
     this.scene.add(this.arena.group);
     this.buildCourt();
     this.buildPlayers();
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(COURT.ballRadius * 1.6, 32, 20), toon('#ffffff', ballTexture()));
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_DRAW_RADIUS, 32, 20), toon('#ffffff', ballTexture()));
     this.ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.18, 20),
       new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 }),
@@ -294,8 +297,9 @@ export class MatchView {
       const u = this.byKey.get(deciding)!.rig.root.position;
       this.userRing.position.set(u.x, 0.02, u.z);
     }
-    // La pelota nunca se hunde en el piso (en ningún caso: online, repetición, rebotes).
-    ballPos.y = Math.max(ballPos.y, COURT.ballRadius);
+    // La pelota nunca se hunde en el piso (en ningún caso: online, repetición, rebotes). Se dibuja más grande que la de
+    // la simulación (para verla bien), así que se apoya con su radio visible: si no, quedaba medio enterrada y "plana".
+    ballPos.y = Math.max(ballPos.y, BALL_DRAW_RADIUS);
     this.ball.position.copy(ballPos);
     this.spinBall();
     this.updateAim();
@@ -305,7 +309,7 @@ export class MatchView {
     const warm = this.replay ? null : this.sim.warmupBallsAt(this.renderAhead());
     this.ball2.visible = this.ball2Shadow.visible = !!warm;
     if (warm) {
-      this.ball2.position.set(warm.B.x, warm.B.y, warm.B.z);
+      this.ball2.position.set(warm.B.x, Math.max(warm.B.y, BALL_DRAW_RADIUS), warm.B.z);
       this.ball2Shadow.position.set(warm.B.x, 0.012, warm.B.z);
       this.ball2.rotation.x += 0.05;
     }

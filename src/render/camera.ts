@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sideSign } from '../sim/court';
+import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
 
 /** Hacia dónde mira la cámara de transmisión en x: sigue la pelota, con límite y atenuado. */
@@ -61,16 +62,17 @@ export class CameraDirector {
     const b = this.replayLand;
     const mid = new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
     const span = Math.hypot(a.x - b.x, a.z - b.z);
-    // Más lejos cuanto más larga la jugada; un desplazamiento lateral muy lento para que no quede estático.
-    // En pantallas angostas (teléfono, tablet) se aleja más para que entre toda la jugada.
-    const dist = (10 + span * 0.55) * Math.max(1, 1.5 / this.camera.aspect) ** 0.5;
-    const drift = Math.sin(t * 0.35) * 1.2;
-    const z = Math.min(15, mid.z + dist);
-    // Por encima del público de la tribuna de enfrente.
-    const pos = new THREE.Vector3(mid.x * 0.55 + drift, 4.2 + span * 0.18 + Math.max(0, z - 9) * 0.35, z);
-    const look = new THREE.Vector3(mid.x, 1.3, mid.z);
+    // Siempre dentro del pabellón, antes de la tribuna (sin público tapando): para encuadrar la jugada entera se sube
+    // en vez de alejarse. Más alto cuanto más larga la jugada y en pantallas angostas.
+    const narrow = Math.max(1, 1.5 / this.camera.aspect) ** 0.5;
+    const drift = Math.sin(t * 0.35) * 1;
+    const z = Math.min(TUNING.hall.standZ - 0.8, mid.z + 7.5);
+    const y = (4.6 + span * 0.32) * narrow;
+    const pos = new THREE.Vector3(mid.x * 0.5 + drift, Math.min(y, TUNING.hall.ceiling - 1.5), z);
+    const look = new THREE.Vector3(mid.x, 1, mid.z);
     return [pos, look];
   }
+
 
   update(dtReal: number, ballPos: THREE.Vector3): void {
     if (this.fixed) return;
@@ -136,7 +138,8 @@ export class CameraDirector {
     // Nunca contra las paredes ni dentro de la tribuna: la cámara queda dentro del pabellón.
     if (this.mode === 'aim' || this.mode === 'decision') {
       targetPos.x = Math.max(-15.5, Math.min(15.5, targetPos.x));
-      targetPos.z = Math.max(-9, Math.min(13, targetPos.z));
+      // Nunca dentro de la tribuna de enfrente (el público tapaba la jugada).
+      targetPos.z = Math.max(-9, Math.min(TUNING.hall.standZ - 0.6, targetPos.z));
     }
     const k = 1 - Math.exp(-rate * dtReal);
     this.pos.lerp(targetPos, k);

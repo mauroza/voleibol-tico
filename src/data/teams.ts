@@ -26,6 +26,8 @@ export interface TeamSpec {
   style: TeamStyle;
   seed: number;
   variance?: number;
+  /** Nombres de jugadores conocidos por posición en la planilla (0 colocador, 1 punta, 2 central, 3 opuesto, …). */
+  names?: Partial<Record<number, string>>;
 }
 
 const ROLE_BASE: Record<Role, Attributes> = {
@@ -79,7 +81,7 @@ function weighted(r: number, weights: readonly number[]): number {
 }
 
 export function makeTeam(spec: TeamSpec): TeamDef {
-  const { seed, variance = 6, ...info } = spec;
+  const { seed, variance = 6, names = {}, ...info } = spec;
   const rng = createRng(seed);
   const bonus = STYLE_BONUS[spec.style];
   const roster = ROLES.map((role, i): PlayerDef => {
@@ -117,16 +119,17 @@ export function makeTeam(spec: TeamSpec): TeamDef {
     p.legSleeve = weighted(looks.next(), [0.62, 0.14, 0.14, 0.1]);
     p.sleeveColor = looks.chance(0.75) ? 0 : 1;
   }
+  for (const [i, name] of Object.entries(names)) if (name && roster[Number(i)]) roster[Number(i)].name = name;
   const ids = roster.map((p) => p.id);
   return { ...info, roster, lineup: ids.slice(0, 6), libero: ids[6], liberoReplaces: [ids[2], ids[5]] };
 }
 
+/** Equipos de la primera división masculina de Costa Rica (los colores son aproximados; el resto de la planilla es inventada). */
 export const TEAMS: readonly TeamDef[] = [
-  makeTeam({ id: 'SJ', name: 'Leones de San José', province: 'San José', primary: '#c8102e', secondary: '#1d3f8f', style: 'balanced', seed: 101 }),
-  makeTeam({ id: 'AL', name: 'Manudos de Alajuela', province: 'Alajuela', primary: '#d0021b', secondary: '#111111', style: 'power', seed: 102 }),
-  makeTeam({ id: 'CA', name: 'Volcanes de Cartago', province: 'Cartago', primary: '#1f4e9c', secondary: '#ffffff', style: 'block', seed: 103 }),
-  makeTeam({ id: 'HE', name: 'Flores de Heredia', province: 'Heredia', primary: '#d6202a', secondary: '#f4c430', style: 'defense', seed: 104 }),
-  makeTeam({ id: 'GU', name: 'Toros de Guanacaste', province: 'Guanacaste', primary: '#1e7d32', secondary: '#f2c500', style: 'serve', seed: 105 }),
-  makeTeam({ id: 'PU', name: 'Mareas de Puntarenas', province: 'Puntarenas', primary: '#3fa9f5', secondary: '#ffffff', style: 'fast', seed: 106 }),
-  makeTeam({ id: 'LI', name: 'Tortugas de Limón', province: 'Limón', primary: '#0f7a3d', secondary: '#111111', style: 'athletic', seed: 107 }),
+  makeTeam({ id: 'SJ', name: 'San José', province: 'San José', primary: '#c8102e', secondary: '#1d3f8f', style: 'balanced', seed: 101, names: { 0: 'Ignacio', 1: 'Stanley Grant' } }),
+  makeTeam({ id: 'SC', name: 'San Carlos', province: 'Alajuela', primary: '#1e7d32', secondary: '#ffffff', style: 'power', seed: 102 }),
+  makeTeam({ id: 'CA', name: 'Cartago', province: 'Cartago', primary: '#1f4e9c', secondary: '#ffffff', style: 'block', seed: 103 }),
+  makeTeam({ id: 'TU', name: 'Turrialba', province: 'Cartago', primary: '#f28c00', secondary: '#111111', style: 'serve', seed: 104 }),
+  makeTeam({ id: 'UC', name: 'UCR', province: 'San José', primary: '#2a7fd4', secondary: '#f4c430', style: 'defense', seed: 105 }),
+  makeTeam({ id: 'LI', name: 'Limón', province: 'Limón', primary: '#0f7a3d', secondary: '#f2c500', style: 'athletic', seed: 107 }),
 ];

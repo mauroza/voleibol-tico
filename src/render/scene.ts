@@ -15,7 +15,7 @@ import { Effects } from './fx';
 import { JOINTS, resetPosePool } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
-import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
+import { TEMPO_LABELS, TEMPO_TIME } from '../sim/actions';
 import { meterOf, powerZone, type Power } from '../sim/decision';
 import { toon } from './toon';
 
@@ -133,6 +133,8 @@ export class MatchView {
   private readonly ballShadow: THREE.Mesh;
   /** Mira del remate apuntado: cruz, círculo de dispersión (dónde puede caer) y trayectoria punteada. */
   private readonly aimGroup = new THREE.Group();
+  /** Sombra del bloqueo rival sobre la cancha mientras se apunta el remate. */
+  private blockShade!: THREE.Mesh;
   private readonly aimSpread = new THREE.Mesh(
     new THREE.RingGeometry(0.92, 1, 40),
     new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, depthTest: false }),
@@ -319,6 +321,7 @@ export class MatchView {
     this.ball.position.copy(ballPos);
     this.spinBall();
     this.updateAim();
+    this.updateBlockShade();
     this.updateSetMarkers();
     this.ballShadow.position.set(ballPos.x, 0.012, ballPos.z);
     // Calentamiento: el segundo balón (el del equipo B) con su sombra.
@@ -483,6 +486,48 @@ export class MatchView {
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
     this.scene.add(this.aimGroup);
+    // Sombra del bloqueo: hasta 3 cuñas (una por bloqueador) desde el rematador, a través de las manos, hasta el fondo.
+    const shadow = new THREE.BufferGeometry();
+    shadow.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 6 * 3), 3));
+    this.blockShade = new THREE.Mesh(shadow, new THREE.MeshBasicMaterial({ color: '#ff2b2b', transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide }));
+    this.blockShade.renderOrder = 8;
+    this.blockShade.frustumCulled = false;
+    this.blockShade.visible = false;
+    this.scene.add(this.blockShade);
+  }
+
+  /** Dibuja la sombra del bloqueo rival mientras el usuario apunta su remate (lo de adentro pasa por las manos). */
+  private updateBlockShade(): void {
+    const shadow = this.replay ? null : this.sim.blockShadow;
+    this.blockShade.visible = !!shadow && this.aimGroup.visible;
+    if (!shadow || !this.blockShade.visible) return;
+    const pos = this.blockShade.geometry.attributes.position as THREE.BufferAttribute;
+    const half = TUNING.block.bodyHalfWidth;
+    const { from, side } = shadow;
+    const far = side * (COURT.halfLength + 1);
+    const y = 0.02;
+    // Punto en el fondo sobre la recta que sale del rematador y pasa por el borde de la mano en la red.
+    const reach = (z: number): number => from.z + ((z - from.z) * (far - from.x)) / (side * 0.05 - from.x);
+    for (let w = 0; w < 3; w++) {
+      const wall = shadow.walls[w];
+      const o = w * 6;
+      if (!wall) {
+        for (let i = 0; i < 6; i++) pos.setXYZ(o + i, 0, -10, 0);
+        continue;
+      }
+      const a = wall.z - half;
+      const b = wall.z + half;
+      const nx = side * 0.05;
+      const fa = reach(a);
+      const fb = reach(b);
+      pos.setXYZ(o, nx, y, a);
+      pos.setXYZ(o + 1, far, y, fa);
+      pos.setXYZ(o + 2, far, y, fb);
+      pos.setXYZ(o + 3, nx, y, a);
+      pos.setXYZ(o + 4, far, y, fb);
+      pos.setXYZ(o + 5, nx, y, b);
+    }
+    pos.needsUpdate = true;
   }
 
   /**
@@ -508,9 +553,10 @@ export class MatchView {
         const key = o.option.id === 'set' ? o.option.choice.attackerKey : 'dump';
         if (seen.has(key)) return;
         seen.add(key);
-        const at = this.sim.setOptionPoint(d, i);
-        const marker = this.setMarker(used++);
         const on = key === selKey;
+        // El elegido, a la distancia de la red que marca la mira (pegada o despegada).
+        const at = on ? this.sim.setOptionPoint(d, preview, this.sim.setDepthAt(d, preview)) : this.sim.setOptionPoint(d, i);
+        const marker = this.setMarker(used++);
         // Sin números: solo los aros; el elegido dice el tempo (o "segunda").
         const text = key === 'dump' ? (on ? 'SEGUNDA' : '') : '';
         marker.group.position.set(at.x, 0, at.z);
@@ -519,7 +565,7 @@ export class MatchView {
         (marker.ring.material as THREE.MeshBasicMaterial).opacity = on ? 0.95 : 0.5;
         marker.label.position.y = 0.7;
         // El elegido muestra además el tempo con que saldría (alta, media, rápida).
-        const tempo = on && selected.id === 'set' ? TEMPO_LABELS[SET_TEMPO[selected.choice.option]] : '';
+        const tempo = on && selected.id === 'set' ? `${TEMPO_LABELS[selected.choice.tempo]} (${TEMPO_TIME[selected.choice.tempo]})` : '';
         this.setMarkerText(marker, text + tempo, on ? tempoColor : '#ffffff');
         marker.group.visible = true;
       });
@@ -656,11 +702,11 @@ export class MatchView {
       // Colocación: la trayectoria va al atacante elegido (no a la mira), con el tiempo de vuelo de ese tempo.
       const i = this.sim.setPreview ?? 0;
       const opt = d.options[i].option;
-      const at = this.sim.setOptionPoint(d, i);
+      const at = this.sim.setOptionPoint(d, i, this.sim.setDepthAt(d, i));
       from.set(up!.point.x, up!.point.y, up!.point.z);
       tx = at.x;
       tz = at.z;
-      T = opt.id === 'set' ? TUNING.set.flightTime[opt.choice.option] : TUNING.attack.tipFlightTime;
+      T = opt.id === 'set' ? TUNING.set.flightTime[opt.choice.option][opt.choice.tempo] : TUNING.attack.tipFlightTime;
       endY = opt.id === 'set' ? 3.1 : COURT.ballRadius;
       spread = 0.3;
     } else if (d.kind === 'pass') {

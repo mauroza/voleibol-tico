@@ -55,13 +55,13 @@ describe('control del equipo completo', () => {
     expect(kinds).toEqual(new Set(['serve', 'pass', 'set', 'attack', 'block']));
   });
 
-  it('el colocador ofrece rápida y semi-rápida al central cuando el pase es bueno', () => {
+  it('el colocador ofrece rápida (tiempo 1) y media (tiempo 2) al central cuando el pase es bueno', () => {
     const labels = new Set<string>();
     play(3, 'perfect', (sim) => sim.bus.on((e) => {
       if (e.type === 'decision' && e.decision.kind === 'set') e.decision.options.forEach((o) => labels.add(o.label));
     }));
-    expect(labels).toContain('Rápida al central');
-    expect(labels).toContain('Semi-rápida al centro');
+    expect(labels).toContain('Central (zona 3) · rápida (tiempo 1)');
+    expect(labels).toContain('Central (zona 3) · media (tiempo 2)');
   });
 
   it('elegir bloqueo triple pone a tres delanteros a bloquear', () => {

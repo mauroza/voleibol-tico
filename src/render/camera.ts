@@ -96,10 +96,13 @@ export class CameraDirector {
       rate = 6;
     } else if (d?.aim && d.kind !== 'block') {
       // Saque, pase o remate apuntado: tercera persona, detrás y arriba del jugador, mirando hacia la mira.
-      const aim = this.sim.localAim ?? d.aim;
+      // La cámara no sigue a la mira (miraba hacia ella y el mouse o el dedo, quietos, la seguían corriendo): enfoca el
+      // centro del campo rival desde atrás del jugador.
       this.mode = 'aim';
       const u = this.sim.player(d.playerKey).pos;
       const toward = -sideSign(this.sim.player(d.playerKey).team);
+      // Pase y balón propio: hacia la zona del colocador; remate y saque: el centro del campo rival.
+      const rival = d.aimSide === this.sim.player(d.playerKey).team ? -toward * 1.5 : toward * 4.5;
       if (d.kind === 'set') {
         // Colocación: plano fijo desde atrás y arriba del propio campo (no sigue al colocador, que se mueve), con la red
         // entera y todos los atacantes a la vista: punta, central, opuesto y zagueros.
@@ -107,11 +110,11 @@ export class CameraDirector {
         targetLook.set(-toward * 1.4, 0.4, 0);
       } else if (d.kind === 'serve') {
         // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
-        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6 + aim.z * 0.2);
-        targetLook.set(u.x + (aim.x - u.x) * 0.78, 0, u.z + (aim.z - u.z) * 0.78);
+        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6);
+        targetLook.set(u.x + (rival - u.x) * 0.78, 0, u.z * 0.22);
       } else {
-        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7 + aim.z * 0.15);
-        targetLook.set(u.x + (aim.x - u.x) * 0.6, 0.2, u.z + (aim.z - u.z) * 0.6);
+        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7);
+        targetLook.set(u.x + (rival - u.x) * 0.6, 0.2, u.z * 0.4);
       }
       rate = 5;
     } else if (d?.kind === 'block' && d.aim) {

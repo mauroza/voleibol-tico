@@ -1,4 +1,5 @@
 import { settings } from '../data/profile';
+import { audio } from '../audio/music';
 import * as THREE from 'three';
 import { landingTime, positionAt } from '../sim/ball';
 import { COURT, sideSign } from '../sim/court';
@@ -181,6 +182,9 @@ export class MatchView {
   private status: PlayerStatus | null = null;
   private officials: Officials | null = null;
   private readonly badge = document.createElement('div');
+  /** Cortina de la repetición (como en la tele): barras que cruzan la pantalla con el logo; el corte va detrás. */
+  private readonly stinger = document.createElement('div');
+  private transitioning = false;
   private readonly buffer: ReplayBuffer;
   private readonly frame: Float32Array;
   private readonly policy = new ReplayPolicy();
@@ -196,7 +200,8 @@ export class MatchView {
   private lastCapture = -Infinity;
   private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
-  private pixelRatio = Math.min(window.devicePixelRatio, { alta: 1.5, media: 1, baja: 0.75 }[settings().quality]);
+  // En teléfonos y tablets (pantallas de 2x o 3x) la calidad alta se queda en 1.25: casi igual de nítido y mucho más liviano.
+  private pixelRatio = Math.min(window.devicePixelRatio, { alta: IS_TOUCH ? 1.25 : 1.5, media: 1, baja: 0.75 }[settings().quality]);
   private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {
@@ -229,7 +234,8 @@ export class MatchView {
     const rim = new THREE.DirectionalLight('#cfe0ff', 0.5);
     rim.position.set(0, 6, -20);
     this.scene.add(rim);
-    this.scene.add(this.courtGlow());
+    // Charco de luz (mezcla aditiva sobre toda la cancha): solo en calidad alta; en media y baja ahorra GPU.
+    if (settings().quality === 'alta') this.scene.add(this.courtGlow());
 
     this.arena = new Arena(sim.teams);
     this.scene.add(this.arena.group);
@@ -259,6 +265,10 @@ export class MatchView {
     this.badge.className = 'replay-badge';
     this.badge.textContent = 'REPETICIÓN';
     uiRoot.append(this.badge);
+    this.stinger.className = 'stinger';
+    this.stinger.innerHTML = '<span class="st-bar st-a"></span><span class="st-bar st-b"></span><span class="st-bar st-c"></span>'
+      + '<span class="st-logo"><b>VOLEIBOL</b><i>TICO</i><small>REPETICIÓN</small></span>';
+    uiRoot.append(this.stinger);
 
     this.frame = new Float32Array(this.animators.length * PER_RIG + 3);
     this.buffer = new ReplayBuffer(Math.ceil((REPLAY_MAX * 2) / CAPTURE_STEP), this.frame.length);
@@ -289,7 +299,24 @@ export class MatchView {
   }
 
   skipReplay(): void {
-    if (this.replay) this.endReplay();
+    if (this.replay && !this.transitioning) this.transition(() => this.endReplay(), false);
+  }
+
+  /**
+   * Cortina: las barras cruzan la pantalla (1.1 s); a la mitad, con la pantalla tapada, se hace el corte (`mid`).
+   * Con logo al entrar a la repetición; solo las barras al volver al juego.
+   */
+  private transition(mid: () => void, logo: boolean): void {
+    this.transitioning = true;
+    this.stinger.classList.remove('run', 'logo');
+    void this.stinger.offsetWidth;
+    this.stinger.classList.add('run');
+    this.stinger.classList.toggle('logo', logo);
+    audio.whoosh();
+    window.setTimeout(() => {
+      mid();
+      this.transitioning = false;
+    }, 530);
   }
 
   render(dtReal: number): void {
@@ -299,7 +326,7 @@ export class MatchView {
     if (this.replay) {
       this.replay.playhead += dtReal * REPLAY_SPEED;
       if (this.buffer.sample(this.replay.playhead, this.mixed, (a, b, k, out) => this.mixFrames(a, b, k, out))) this.applyFrame(this.mixed, ballPos);
-      if (this.replay.playhead >= this.replay.to) this.endReplay();
+      if (this.replay.playhead >= this.replay.to && !this.transitioning) this.transition(() => this.endReplay(), false);
     } else {
       resetPosePool();
       for (const a of this.animators) a.update();
@@ -322,7 +349,11 @@ export class MatchView {
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
       // Tras un challenge, la repetición espera a que termine el plano de la marca.
-      if (this.pendingReplay && this.sim.time >= this.pendingReplay.at && now >= this.markHold) this.startReplay();
+      if (this.pendingReplay && this.sim.time >= this.pendingReplay.at && now >= this.markHold && !this.transitioning) {
+        this.transition(() => {
+          if (this.pendingReplay) this.startReplay();
+        }, true);
+      }
     }
 
     // Anillo bajo el jugador que está decidiendo.

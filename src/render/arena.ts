@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { TeamDef } from '../data/teams';
 import type { TeamId } from '../sim/court';
 import { toon, toonMesh } from './toon';
+import { settings } from '../data/profile';
 
 /** Bandera de Costa Rica: azul, blanco, rojo (doble), blanco, azul. */
 function flagTexture(): THREE.CanvasTexture {
@@ -81,6 +82,12 @@ export class Arena {
     this.buildHall();
     const rowsFar = this.buildStand(-1, 6);
     const rowsNear = this.buildStand(1, 3);
+    // Calidad baja: la mitad del público (uno sí, uno no; las tribunas se ven igual de llenas de lejos).
+    if (settings().quality === 'baja') {
+      const keep = this.fans.filter((_, i) => i % 2 === 0);
+      this.fans.length = 0;
+      this.fans.push(...keep);
+    }
     const total = this.fans.length;
     this.bodies = new THREE.InstancedMesh(FAN_BODY, toon('#ffffff'), total);
     this.heads = new THREE.InstancedMesh(FAN_HEAD, toon('#ffffff'), total);

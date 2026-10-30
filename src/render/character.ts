@@ -94,6 +94,9 @@ function numberMaterial(n: number, ink: string): THREE.MeshToonMaterial {
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     m = toon('#fff', t);
+    // Recorte por alfa en vez de transparencia: se dibuja como sólido (sin ordenar ni mezclar), mucho más barato.
+    m.transparent = false;
+    m.alphaTest = 0.5;
     numberMaterials.set(key, m);
   }
   return m;
@@ -122,7 +125,8 @@ function backMaterial(name: string, n: number, ink: string): THREE.MeshToonMater
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     m = toon('#fff', t);
-    m.transparent = true;
+    m.transparent = false;
+    m.alphaTest = 0.5;
     backMaterials.set(key, m);
   }
   return m;

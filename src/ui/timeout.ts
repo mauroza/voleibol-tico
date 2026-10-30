@@ -4,6 +4,8 @@ import { SPECIALTY_LABELS } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { ROLE_LABELS } from './menu';
 import { IS_TOUCH } from './touch';
+import { cardById, overallOf } from '../data/cards';
+import { esc, portraitSvg } from './cards-ui';
 
 /**
  * Tiempo y cambios: con la pelota muerta, T (o el botón) pide tiempo (30 s; se puede volver antes). Offline además
@@ -14,7 +16,7 @@ export class TimeoutPanel {
   open = false;
   private readonly el = document.createElement('div');
   private readonly box = document.createElement('div');
-  private readonly button = document.createElement('button');
+  readonly button = document.createElement('button');
   private readonly toast = document.createElement('div');
   private picked: string | null = null;
   private toastUntil = 0;
@@ -99,21 +101,32 @@ export class TimeoutPanel {
     this.toastUntil = performance.now() + 2200;
   }
 
-  private card(key: string, kind: 'court' | 'bench'): HTMLButtonElement {
+  /**
+   * Ficha de un jugador como en Mi club: cara con la camisa del equipo, número, apellido, puesto y fuerte, media y
+   * estamina. Las cartas de los sobres llevan el color de su rareza.
+   */
+  private card(key: string, kind: 'court' | 'bench', slot = ''): HTMLButtonElement {
     const p = this.sim.player(key);
+    const t = this.sim.teams[this.team];
+    const cardId = p.def.id.startsWith('MC-c-') ? p.def.id.slice(5) : null;
+    const rarity = cardId ? cardById(cardId)?.rarity ?? 'basico' : 'basico';
     const b = document.createElement('button');
-    b.className = `sub-card ${kind}`;
+    b.className = `sub-card ${kind} sub-${rarity}`;
     b.classList.toggle('picked', this.picked === key);
     const pct = Math.round(p.stamina * 100);
     const color = p.stamina > 0.6 ? '#5dff8f' : p.stamina > 0.38 ? '#ffd23f' : '#ff4a3a';
-    b.innerHTML = `<b>#${p.def.number}</b> <span></span><i>${ROLE_LABELS[p.def.role]} · ${SPECIALTY_LABELS[p.def.specialty]}</i>
-      <span class="sub-stamina"><span style="width:${pct}%;background:${color}"></span></span>`;
-    b.querySelector('span')!.textContent = p.def.name;
+    const parts = p.def.name.split(' ');
+    b.innerHTML = `${slot ? `<span class="sub-slot">${slot}</span>` : ''}
+      <span class="sub-face">${portraitSvg(p.def.skin, p.def.hair, t.primary, t.secondary)}<span class="sub-num">${p.def.number}</span></span>
+      <span class="sub-info"><b>${esc(parts[parts.length - 1])}</b><small>${ROLE_LABELS[p.def.role]} · ${SPECIALTY_LABELS[p.def.specialty]}</small>
+        <span class="sub-stamina" title="Estamina ${pct}%"><span style="width:${pct}%;background:${color}"></span></span></span>
+      <span class="sub-ovr">${overallOf(p.def)}</span>`;
+    b.title = `${p.def.name} · estamina ${pct}%`;
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       if (kind === 'court') this.picked = this.picked === key ? null : key;
       else if (this.picked) {
-        if (this.sim.substitute(this.team, this.picked, key)) this.say(`Entra #${p.def.number}`);
+        if (this.sim.substitute(this.team, this.picked, key)) this.say(`Entra #${p.def.number} ${p.def.name}`);
         else this.say(this.sim.subsLeft[this.team] <= 0 ? 'No quedan cambios en este set' : 'Ahora no se puede cambiar');
         this.picked = null;
       } else this.say('Primero elige al titular que sale');
@@ -128,10 +141,12 @@ export class TimeoutPanel {
     this.header = h;
     const hint = document.createElement('p');
     hint.className = 'sub-hint';
-    hint.textContent = 'Clic en un titular y luego en un suplente para cambiarlo. El tiempo recupera un poco de estamina.';
+    hint.textContent = this.picked
+      ? `Sale #${this.sim.player(this.picked).def.number}: ahora toca al suplente que entra.`
+      : 'Toca un titular y después un suplente para cambiarlo. La barra es la estamina; el número, la media.';
     const court = document.createElement('div');
     court.className = 'sub-list';
-    court.append(...this.sim.match.lineups[this.team].map((k) => this.card(k, 'court')));
+    court.append(...this.sim.match.lineups[this.team].map((k, i) => this.card(k, 'court', `P${i + 1}`)));
     const bench = document.createElement('div');
     bench.className = 'sub-list';
     bench.append(...this.sim.bench(this.team).map((k) => this.card(k, 'bench')));

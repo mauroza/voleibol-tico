@@ -7,13 +7,15 @@ import { Simulation } from '../../src/sim/rally';
 import { TEAMS } from '../../src/data/teams';
 
 describe('sobres y club', () => {
-  it('cada sobre trae 4 cartas y al menos una figura de la VNL', () => {
+  it('cada sobre trae un jugador y salen todas las rarezas', () => {
     const rng = createRng(9);
-    for (let i = 0; i < 200; i++) {
+    const seen = new Set<string>();
+    for (let i = 0; i < 400; i++) {
       const cards = openPack(rng);
-      expect(cards).toHaveLength(4);
-      expect(cards.some((c) => c.rarity !== 'promesa')).toBe(true);
+      expect(cards).toHaveLength(1);
+      seen.add(cards[0].rarity);
     }
+    expect([...seen].sort()).toEqual(['elite', 'internacional', 'leyenda', 'promesa']);
   });
 
   it('las figuras pedidas están en la colección', () => {

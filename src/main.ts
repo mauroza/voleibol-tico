@@ -16,6 +16,7 @@ import { isKey, loadProfile, settings, typingIn, updateProfile } from './data/pr
 import { clubTeam } from './data/club';
 import { audio } from './audio/music';
 import { Chat } from './ui/chat';
+import { StrategyPanel } from './ui/strategy';
 import { recordMatch, startClubSync } from './net/leaderboard';
 import { icon } from './ui/crest';
 import { PauseMenu, showResult } from './ui/overlays';
@@ -123,6 +124,12 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   };
   // Tiempo y cambios: pausa el juego mientras el panel está abierto.
   const timeouts = new TimeoutPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = (open && !online) || pause.open; }, !!online);
+  // Estrategia (entre puntos): junto al botón de tiempo, arriba a la derecha.
+  const strategy = new StrategyPanel(ui, sim, sim.control ?? 'A', (open) => { panel.paused = (open && !online) || pause.open; });
+  const hudActions = document.createElement('div');
+  hudActions.className = 'hud-actions';
+  hudActions.append(strategy.button, timeouts.button);
+  ui.append(hudActions);
   const challenges = new ChallengePanel(ui, sim, sim.control ?? 'A');
   // Previa (cartel, saltar, sorteo) y alineación de cada set.
   const pregame = new PregamePanel(ui, sim, sim.control ?? 'A', !!online);
@@ -202,7 +209,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
       pause.set(!!sim.pausedBy);
       panel.paused = pause.open;
     }
-    const stopped = !online && (pause.open || timeouts.open);
+    const stopped = !online && (pause.open || timeouts.open || strategy.open);
     if (lockstep) {
       // Online: pasos fijos sincronizados; si el rival todavía no confirmó, se espera.
       const waiting = !view.replaying && lockstep.advance(dtReal, pace);
@@ -238,6 +245,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     if (view.replaying || stopped) frameRate = 0;
     view.render(stopped ? 0 : dtReal);
     timeouts.update();
+    strategy.update();
     challenges.update();
     touch?.update();
     pregame.update();

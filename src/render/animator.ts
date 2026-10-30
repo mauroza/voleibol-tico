@@ -74,6 +74,12 @@ export class Animator {
   private mood: { pose: Pose; until: number } | null = null;
   /** `broad`: salto largo hacia la red (ataque de zaguero tipo pipe). */
   private jump: { apex: number; air: number; peak: number; broad?: boolean } | null = null;
+  /**
+   * Golpe con la mano (remate y saque): dónde y cuándo la mano tiene que tocar la pelota. Alrededor de ese instante el
+   * cuerpo se acomoda lo justo para que la mano llegue exacto a la pelota (antes a veces le pegaba al aire).
+   */
+  private strike: { target: THREE.Vector3; at: number } | null = null;
+  private readonly hand = new THREE.Vector3();
   /** Salto de bloqueo de una persona ya visto: su instante y el punto más alto con que se dibuja. */
   private seenJump: { at: number; apex: number } | null = null;
 
@@ -91,6 +97,7 @@ export class Animator {
     const b = point ?? this.sim.ballPos;
     const plancha = !!this.dive && Math.abs(this.dive.at - time) < 0.1;
     if (kind !== 'serve') this.contactAim = { target: new THREE.Vector3(b.x, b.y, b.z), arms: kind === 'attack' ? 'right' : 'both', at: time };
+    if (kind !== 'attack' && kind !== 'serve') this.strike = null;
     this.action = { track: plancha ? TRACKS.plancha : trackFor(kind, this.sim.ballPos.y < 0.6), at: time };
   }
 
@@ -188,6 +195,7 @@ export class Animator {
           this.startJump(up.time + 0.01, broad ? SPIKE_AIR * 1.3 : SPIKE_AIR, this.liftToReach(TRACKS.spike, 'R', up.point.y, 0.3, 1.9), broad);
         }
         aim = { target, arms: 'right', weight: ease(1 - lead / 0.14) * 0.9 };
+        this.strike = { target, at: up.time };
       } else if (up.kind === 'set') {
         // Colocación en salto corto si la pelota viene más alta de lo que alcanzan las manos.
         if (!this.jump) {
@@ -246,6 +254,10 @@ export class Animator {
           const h = TUNING.serve[seq.type].contactHeight;
           this.startJump(seq.contactTime + 0.01, jump ? SPIKE_AIR * 1.15 : 0.5, this.liftToReach(track, 'R', h, jump ? 0.4 : 0.1, jump ? 1.5 : 0.5), jump);
         }
+        // La pelota se golpea donde la lanza la simulación: 30 cm delante del sacador, a la altura del saque.
+        const target = new THREE.Vector3(p.pos.x - sideSign(p.team) * 0.3, TUNING.serve[seq.type].contactHeight, p.pos.z);
+        this.strike = { target, at: seq.contactTime };
+        aim = { target, arms: 'right', weight: ease(1 - (seq.contactTime - now) / 0.16) * 0.9 };
       }
     } else if (this.action) {
       active = this.action;
@@ -341,7 +353,35 @@ export class Animator {
       else this.contactAim = null;
     }
     if (aim) this.aimArms(aim.target, aim.arms, aim.weight);
+    this.reachStrike(now);
     this.keepOffNet(p.team);
+  }
+
+  /**
+   * Remate y saque: en los ~0.2 s alrededor del golpe, el cuerpo se corre (y sube o baja apenas) lo que falte para
+   * que la mano derecha quede justo en la pelota en el instante del contacto. Suave antes y después.
+   */
+  private reachStrike(now: number): void {
+    const s = this.strike;
+    if (!s) return;
+    const rel = now - s.at;
+    if (rel > 0.25) {
+      this.strike = null;
+      return;
+    }
+    const w = ease(1 - Math.min(1, Math.abs(rel) / (rel < 0 ? 0.22 : 0.18)));
+    if (w <= 0) return;
+    // Dos pasadas: la segunda corrige lo que movió el brazo al acomodarse el cuerpo.
+    for (let i = 0; i < 2; i++) {
+      this.rig.root.updateMatrixWorld(true);
+      this.rig.joints.elbowR.localToWorld(this.hand.set(0, -DIMS.forearm - 0.05, 0));
+      const dx = Math.max(-0.7, Math.min(0.7, s.target.x - this.hand.x));
+      const dz = Math.max(-0.7, Math.min(0.7, s.target.z - this.hand.z));
+      const dy = Math.max(-0.35, Math.min(0.35, s.target.y - this.hand.y));
+      this.rig.root.position.x += dx * w;
+      this.rig.root.position.z += dz * w;
+      this.rig.body.position.y += (dy * w) / this.rig.root.scale.y;
+    }
   }
 
   /**

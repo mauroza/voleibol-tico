@@ -356,3 +356,60 @@ body.touch { touch-action: none; }
   .am-rank-row { grid-template-columns: 30px minmax(0, 1fr) 36px 40px 44px; gap: 6px; padding: 8px 6px; }
   .am-rank-row > span:nth-child(6) { display: none; }
 }
+
+/* Rarezas con colores claros: verde promesa, azul internacional, morado épico, dorado increíble. */
+.vcard-promesa { background: radial-gradient(120% 80% at 30% 0%, #6ee7a1, #16a34a 45%, #0b4d26 100%); border-color: #bbf7d0; color: #f0fff5; box-shadow: 0 18px 40px #000a, 0 0 26px #22c55e66; }
+.vcard-internacional { background: radial-gradient(120% 80% at 30% 0%, #93c5fd, #2563eb 45%, #0b2a6b 100%); border-color: #dbeafe; color: #f2f7ff; box-shadow: 0 18px 40px #000a, 0 0 26px #3b82f666; }
+.vcard-internacional .vcard-name, .vcard-promesa .vcard-name { border-color: #ffffff55; }
+.vcard-elite { background: radial-gradient(120% 80% at 30% 0%, #e9b8ff, #9333ea 45%, #3b0a6b 100%); border-color: #f3d9ff; color: #fff7ff; box-shadow: 0 18px 44px #000a, 0 0 34px #a855f7aa; }
+.vcard-elite .vcard-name { border-color: #ffffff55; }
+.vcard-leyenda { background: radial-gradient(120% 80% at 30% 0%, #fff6c2, #f5c518 35%, #b7791f 70%, #5a3a06 100%); border-color: #fff3b0; color: #2a1800; box-shadow: 0 18px 50px #000a, 0 0 44px #fbbf24cc; }
+.vcard-leyenda .vcard-ovr, .vcard-leyenda .vcard-name { text-shadow: 0 1px 0 #fff8; }
+.vcard-leyenda .vcard-name { border-color: #2a180055; }
+.vcard-ovr small, .vcard-rarity { font-weight: 800; }
+.pchip-promesa { border-color: #22c55e99; background: linear-gradient(90deg, #0f3d22, #060a17 70%); }
+.pchip-promesa .pchip-ovr { background: #22c55e; color: #03200e; }
+.pchip-internacional { border-color: #3b82f699; background: linear-gradient(90deg, #0c2554, #060a17 70%); }
+.pchip-internacional .pchip-ovr { background: #3b82f6; color: #fff; }
+.pchip-elite { border-color: #a855f7aa; background: linear-gradient(90deg, #35115e, #060a17 70%); }
+.pchip-elite .pchip-ovr { background: #a855f7; color: #fff; }
+.pchip-leyenda { border-color: #fbbf24cc; background: linear-gradient(90deg, #4a3305, #060a17 70%); }
+.pchip-leyenda .pchip-ovr { background: linear-gradient(135deg, #fff1a8, #f5c518 50%, #b7791f); color: #2a1800; }
+.am-flip.r-leyenda.flipped .vcard { box-shadow: 0 0 60px #fbbf24, 0 0 0 2px #fff6c2 inset; }
+.am-flip.r-elite.flipped .vcard { box-shadow: 0 0 50px #a855f7; }
+.am-flip.r-internacional.flipped .vcard { box-shadow: 0 0 34px #3b82f6aa; }
+.am-flip.r-promesa.flipped .vcard { box-shadow: 0 0 28px #22c55e88; }
+/* Un solo jugador por sobre: carta grande en el centro. */
+.am-reveal .am-flip { width: min(230px, 60vw); }
+
+/* Cambios: fichas con cara, media y estamina (como la plantilla de Mi club). */
+#hud .timeout-box { width: min(760px, calc(100vw - 20px)); font-family: var(--am-body); }
+#hud .timeout-box h2 { font-family: var(--am-display); font-weight: 400; letter-spacing: 1px; font-size: 30px; font-style: normal; }
+#hud .sub-hint { color: var(--am-muted); font-size: 13px; margin: 0 0 8px; }
+#hud .sub-label { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--am-muted); margin: 10px 0 6px; }
+#hud .sub-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 215px), 1fr)); gap: 8px; }
+#hud .sub-card { position: relative; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; text-align: left;
+  border-radius: 12px; border: 1px solid #ffffff1c; background: #060a17; color: #fff; font: inherit; transition: transform .15s, border-color .15s, background .15s; min-width: 0; }
+#hud .sub-card:hover { transform: translateY(-2px); background: #0d1530; }
+#hud .sub-card.picked { border-color: #ffe14d; box-shadow: 0 0 0 2px #ffe14d55, 0 0 20px #ffe14d33; background: #2a2410; }
+#hud .sub-slot { position: absolute; top: -7px; left: 8px; font-size: 9px; font-weight: 800; letter-spacing: 1px; padding: 1px 6px; border-radius: 999px; background: #e5293e; }
+#hud .sub-face { position: relative; width: 46px; height: 46px; border-radius: 10px; overflow: hidden; background: linear-gradient(180deg, #2a3a66, #121a33); }
+#hud .sub-face .portrait { width: 100%; height: 100%; display: block; }
+#hud .sub-num { position: absolute; right: 2px; bottom: 1px; font-family: var(--am-display); font-size: 15px; text-shadow: 0 1px 3px #000; }
+#hud .sub-info { display: grid; gap: 2px; min-width: 0; }
+#hud .sub-info b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hud .sub-info small { font-size: 11px; color: var(--am-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hud .sub-stamina { display: block; height: 5px; border-radius: 999px; background: #ffffff18; overflow: hidden; margin-top: 2px; }
+#hud .sub-stamina span { display: block; height: 100%; border-radius: inherit; }
+#hud .sub-ovr { font-family: var(--am-display); font-size: 26px; line-height: 1; padding: 4px 8px; border-radius: 8px; background: #ffffff12; }
+#hud .sub-promesa { border-color: #22c55e88; } #hud .sub-promesa .sub-ovr { background: #22c55e; color: #03200e; }
+#hud .sub-internacional { border-color: #3b82f688; } #hud .sub-internacional .sub-ovr { background: #3b82f6; }
+#hud .sub-elite { border-color: #a855f7aa; } #hud .sub-elite .sub-ovr { background: #a855f7; }
+#hud .sub-leyenda { border-color: #fbbf24cc; } #hud .sub-leyenda .sub-ovr { background: linear-gradient(135deg, #fff1a8, #f5c518 50%, #b7791f); color: #2a1800; }
+@media (max-height: 480px) {
+  #hud .sub-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: 6px; }
+  #hud .sub-card { grid-template-columns: 36px minmax(0, 1fr) auto; padding: 4px 8px 4px 4px; }
+  #hud .sub-face { width: 36px; height: 36px; }
+  #hud .sub-ovr { font-size: 20px; }
+  #hud .timeout-box h2 { font-size: 22px; }
+}

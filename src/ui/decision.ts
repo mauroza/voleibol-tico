@@ -1,3 +1,4 @@
+import { SET_TEMPO } from '../sim/actions';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
 import { meterOf, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
@@ -145,6 +146,10 @@ export class DecisionPanel {
     this.title.textContent = d.kind === 'block' ? TITLES.block : `${what} · #${p.def.number} ${ROLE_LABELS[p.def.role]}${p.def.star ? ' ★ figura' : ''} · ${p.def.height.toFixed(2)} m${d.kind === 'attack' && eliteJump(p.def) >= 0.1 ? ' · salto élite' : d.kind === 'attack' && p.def.height >= 2 ? ' (en picada)' : ''} · fuerte: ${SPECIALTY_LABELS[p.def.specialty]}`;
     const preview = this.sim.setPreview;
     if (d.kind === 'set' && d.pressedAt !== null && preview !== null) this.title.textContent += ` ✓ ${d.options[preview].label}`;
+    if (d.kind === 'set' && d.aim && d.pressedAt === null) {
+      const max = this.maxTempo(d);
+      this.title.textContent = `Colocación · recepción ${max === 2 ? 'doble positiva: alta, media o rápida' : max === 1 ? 'positiva: alta o media' : 'complicada: solo alta'}`;
+    }
     this.buttons.replaceChildren(
       ...d.options.map((o, i) => {
         const b = document.createElement('button');
@@ -167,8 +172,11 @@ export class DecisionPanel {
     this.meter.style.setProperty('--ace', `${TUNING.power.ace * 100}%`);
     // Colocación: la barra es el tempo.
     this.tempo.style.display = d.kind === 'set' && d.aim ? 'flex' : 'none';
-    this.meter.style.setProperty('--medium', `${TUNING.power.medium * 100}%`);
-    this.meter.style.setProperty('--strong', `${TUNING.power.strong * 100}%`);
+    // Colocación: solo los tempos que permite la recepción (alta siempre; media y rápida con buen pase).
+    const maxTempo = d.kind === 'set' && d.aim ? this.maxTempo(d) : 2;
+    this.meter.style.setProperty('--medium', `${(maxTempo >= 1 ? TUNING.power.medium : 1) * 100}%`);
+    this.meter.style.setProperty('--strong', `${(maxTempo >= 2 ? TUNING.power.strong : 1) * 100}%`);
+    for (const [i, span] of [...this.tempo.children].entries()) (span as HTMLElement).style.display = i <= maxTempo ? 'flex' : 'none';
     this.perfectZone.style.display = this.goodZone.style.display = power ? 'none' : 'block';
     this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
     this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
@@ -180,6 +188,13 @@ export class DecisionPanel {
     this.meterWidth = 0;
     // Online la barra termina un poco antes que la pelota (lo que tarda tu tecla en llegar): guiarse por la barra.
     if ((d.lead ?? 0) > 0 && d.kind !== 'serve') this.hint.textContent += ' · Online: guíate por la barra, termina un poco antes que la pelota';
+  }
+
+  /** Tempo más rápido que se puede colocar con esta recepción (0 alta, 1 media, 2 rápida). */
+  private maxTempo(d: Decision): number {
+    let max = 0;
+    for (const o of d.options) if (o.option.id === 'set') max = Math.max(max, SET_TEMPO[o.option.choice.option]);
+    return max;
   }
 
   /** 0..1: posición del marcador. Llega a 1 en el instante ideal. */

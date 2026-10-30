@@ -45,6 +45,7 @@ export function availableSetOptions(
   setterIsSpecialist: boolean,
   players: ReadonlyMap<string, PlayerState>,
 ): SetChoice[] {
+  // Rápidas solo con recepción doble positiva; medias (semi y zagueros) con recepción positiva.
   const combos = setterIsSpecialist && passQuality >= TUNING.set.minPassForCombination;
   const semi = setterIsSpecialist && passQuality >= TUNING.set.minPassForSemi;
   const choices: SetChoice[] = [];
@@ -62,8 +63,8 @@ export function availableSetOptions(
         if (combos) add('quick');
         if (semi) add('semi');
       }
-    } else if (role === 'OH' && combos) add('pipe');
-    else if (role === 'OP' && combos) add('back1');
+    } else if (role === 'OH' && semi) add('pipe');
+    else if (role === 'OP' && semi) add('back1');
   });
   if (choices.length > 0) return choices;
   const fallback = court.find((key, i) => key !== setterKey && isFrontIndex(i) && players.get(key)!.def.role !== 'L')

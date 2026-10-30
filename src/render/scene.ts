@@ -189,7 +189,7 @@ export class MatchView {
     this.scene.background = new THREE.Color('#0b1018');
     this.scene.fog = new THREE.Fog('#0b1018', 26, 58);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.88;
     this.camera.position.set(0, 11, 19);
     this.camera.lookAt(0, 0.5, 0);
     // Desarrollo: ?cam=x,y,z,lx,ly,lz fija la cámara (para revisar de cerca).
@@ -202,8 +202,8 @@ export class MatchView {
     this.director = new CameraDirector(this.camera, sim, !!fixed);
     // Luz de estadio: cielo blanco frío desde los focos, rebote cálido del piso de madera; principal casi cenital
     // (sin sombras duras de costado) y un relleno cálido desde el lado opuesto para que nadie quede plano.
-    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.95));
-    const key = new THREE.DirectionalLight('#f4f7ff', 2.4);
+    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.75));
+    const key = new THREE.DirectionalLight('#f4f7ff', 1.9);
     key.position.set(3, 20, 7);
     this.scene.add(key);
     const fill = new THREE.DirectionalLight('#ffe2bd', 0.75);
@@ -469,10 +469,16 @@ export class MatchView {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), mat);
     const barX = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.09), mat);
     const barZ = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 1.4), mat);
-    this.aimCross.add(ring, barX, barZ);
+    // Borde oscuro debajo: la mira resalta sobre la madera clara y bajo los focos.
+    const dark = new THREE.MeshBasicMaterial({ color: '#0b0f18', transparent: true, opacity: 0.8, depthWrite: false, depthTest: false });
+    const ringBack = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.46, 32), dark);
+    const barXBack = new THREE.Mesh(new THREE.PlaneGeometry(1.48, 0.17), dark);
+    const barZBack = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 1.48), dark);
+    for (const b of [ringBack, barXBack, barZBack]) b.renderOrder = 9;
+    this.aimCross.add(ringBack, barXBack, barZBack, ring, barX, barZ);
     this.aimCross.rotation.x = -Math.PI / 2;
     this.aimSpread.rotation.x = -Math.PI / 2;
-    for (const k of this.aimCross.children) k.renderOrder = 10;
+    for (const k of [ring, barX, barZ]) k.renderOrder = 10;
     this.aimSpread.renderOrder = 10;
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
@@ -782,8 +788,8 @@ export class MatchView {
     c.width = c.height = 128;
     const g = c.getContext('2d')!;
     const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
-    grad.addColorStop(0, 'rgba(255,250,235,0.34)');
-    grad.addColorStop(0.55, 'rgba(255,248,230,0.2)');
+    grad.addColorStop(0, 'rgba(255,250,235,0.14)');
+    grad.addColorStop(0.55, 'rgba(255,248,230,0.08)');
     grad.addColorStop(1, 'rgba(255,248,230,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, 128, 128);

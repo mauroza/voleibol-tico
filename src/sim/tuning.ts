@@ -59,9 +59,12 @@ export const TUNING = {
   set: {
     base: 1.05,
     noise: 2.0,
-    minPassForCombination: 0.55,
-    /** La semi-rápida tolera un pase algo peor que la rápida. */
-    minPassForSemi: 0.4,
+    /**
+     * Tempos según la recepción: las rápidas (rápida al central, rápida a punta) solo con recepción doble positiva;
+     * las medias (semi-rápida, zagueros) con recepción positiva; con una recepción complicada, solo pelotas altas.
+     */
+    minPassForCombination: 0.78,
+    minPassForSemi: 0.5,
     outOfSystemPass: 0.3,
     rescueFlightTime: 1.5,
     flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.85, back1: 0.9 },

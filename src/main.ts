@@ -1,5 +1,6 @@
 import './style.css';
 import './menu.css';
+import './hud.css';
 import { Sound } from './audio/sound';
 import { TEAMS } from './data/teams';
 import { MatchView } from './render/scene';

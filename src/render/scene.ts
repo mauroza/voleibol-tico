@@ -24,6 +24,8 @@ import { toon } from './toon';
  * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
  */
 /** Radio con que se dibuja la pelota (más grande que la real para que se vea bien de lejos). */
+/** Puntos de la trayectoria prevista. */
+const AIM_DOTS = 22;
 const BALL_DRAW_RADIUS = COURT.ballRadius * 1.6;
 
 function ballTexture(): THREE.CanvasTexture {
@@ -148,10 +150,16 @@ export class MatchView {
   private readonly setMarkers: SetMarker[] = [];
   /** Sin prueba de profundidad: la mira se ve aunque quede detrás de un jugador o de la red. */
   private readonly aimMat = new THREE.MeshBasicMaterial({ color: '#ffe14d', side: THREE.DoubleSide, depthWrite: false, depthTest: false });
-  private readonly aimPath = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(Array.from({ length: 24 }, () => new THREE.Vector3())),
-    new THREE.LineDashedMaterial({ color: '#ffe14d', dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: 0.9 }),
+  /**
+   * Trayectoria prevista: puntos luminosos que avanzan despacio hacia el destino (se lee hacia dónde va), más chicos
+   * al final. Una sola llamada de dibujo.
+   */
+  private readonly aimPath = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(1, 8, 6),
+    new THREE.MeshBasicMaterial({ color: '#ffe14d', transparent: true, opacity: 0.95, depthWrite: false }),
+    AIM_DOTS,
   );
+  private readonly dotMatrix = new THREE.Matrix4();
   private readonly raycaster = new THREE.Raycaster();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly userRing = new THREE.Mesh(
@@ -498,20 +506,34 @@ export class MatchView {
 
   private buildAim(): void {
     const mat = this.aimMat;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 32), mat);
-    const barX = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.09), mat);
-    const barZ = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 1.4), mat);
-    // Borde oscuro debajo: la mira resalta sobre la madera clara y bajo los focos.
-    const dark = new THREE.MeshBasicMaterial({ color: '#0b0f18', transparent: true, opacity: 0.8, depthWrite: false, depthTest: false });
-    const ringBack = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.46, 32), dark);
-    const barXBack = new THREE.Mesh(new THREE.PlaneGeometry(1.48, 0.17), dark);
-    const barZBack = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 1.48), dark);
-    for (const b of [ringBack, barXBack, barZBack]) b.renderOrder = 9;
-    this.aimCross.add(ringBack, barXBack, barZBack, ring, barX, barZ);
+    // Mira fina: aro, punto central y cuatro marcas cortas por fuera. Un contorno oscuro delgado la separa del piso
+    // claro sin tapar la cancha.
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.245, 40), mat);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.045, 16), mat);
+    const dark = new THREE.MeshBasicMaterial({ color: '#0b0f18', transparent: true, opacity: 0.45, depthWrite: false, depthTest: false });
+    const ringBack = new THREE.Mesh(new THREE.RingGeometry(0.185, 0.26, 40), dark);
+    const dotBack = new THREE.Mesh(new THREE.CircleGeometry(0.062, 16), dark);
+    const parts: THREE.Mesh[] = [ring, dot];
+    const backs: THREE.Mesh[] = [ringBack, dotBack];
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.04), mat);
+      const tickBack = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.07), dark);
+      for (const t of [tick, tickBack]) {
+        t.position.set(Math.cos(a) * 0.36, Math.sin(a) * 0.36, 0);
+        t.rotation.z = a;
+      }
+      parts.push(tick);
+      backs.push(tickBack);
+    }
+    for (const b of backs) b.renderOrder = 9;
+    this.aimCross.add(...backs, ...parts);
     this.aimCross.rotation.x = -Math.PI / 2;
     this.aimSpread.rotation.x = -Math.PI / 2;
-    for (const k of [ring, barX, barZ]) k.renderOrder = 10;
+    for (const k of parts) k.renderOrder = 10;
     this.aimSpread.renderOrder = 10;
+    this.aimPath.frustumCulled = false;
+    this.aimPath.renderOrder = 8;
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
     this.scene.add(this.aimGroup);
@@ -705,10 +727,10 @@ export class MatchView {
     const inCourt = Math.abs(x) <= COURT.halfLength && Math.abs(z) <= COURT.halfWidth;
     this.aimCross.position.set(x, 0.03, z);
     // En el teléfono la mira es más grande (se ve bien en pantalla chica).
-    this.aimCross.scale.setScalar(IS_TOUCH ? 1.6 : 1);
+    this.aimCross.scale.setScalar(IS_TOUCH ? 1.2 : 1);
     this.aimSpread.position.set(x, 0.025, z);
     (this.aimSpread.material as THREE.MeshBasicMaterial).color.set(inCourt ? '#ffffff' : '#ff5a5a');
-    const pathMat = this.aimPath.material as THREE.LineDashedMaterial;
+    const pathMat = this.aimPath.material as THREE.MeshBasicMaterial;
     if (d.kind === 'block') {
       this.aimMat.color.set('#4dc3ff');
       this.aimSpread.scale.setScalar(TUNING.defense.focusRadius);
@@ -766,13 +788,16 @@ export class MatchView {
     }
     this.aimSpread.scale.setScalar(spread);
     const vy = (endY - from.y + 0.5 * g * T * T) / T;
-    const pos = this.aimPath.geometry.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const t = (i / (pos.count - 1)) * T;
-      pos.setXYZ(i, from.x + ((tx - from.x) * t) / T, from.y + vy * t - 0.5 * g * t * t, from.z + ((tz - from.z) * t) / T);
+    // Puntos que avanzan hacia el destino (una vuelta por segundo); más chicos cerca del final.
+    const flow = (performance.now() / 1000) % 1;
+    for (let i = 0; i < AIM_DOTS; i++) {
+      const k = (i + flow) / AIM_DOTS;
+      const t = k * T;
+      const r = 0.055 * (1.15 - 0.55 * k);
+      this.dotMatrix.makeScale(r, r, r).setPosition(from.x + (tx - from.x) * k, from.y + vy * t - 0.5 * g * t * t, from.z + (tz - from.z) * k);
+      this.aimPath.setMatrixAt(i, this.dotMatrix);
     }
-    pos.needsUpdate = true;
-    this.aimPath.computeLineDistances();
+    this.aimPath.instanceMatrix.needsUpdate = true;
   }
 
   /** Más de ~1 s seguido por debajo de 45 fps: baja la resolución un paso (hasta 0.75). */

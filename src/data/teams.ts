@@ -15,6 +15,9 @@ export interface TeamDef {
   lineup: string[];
   libero: string;
   liberoReplaces: string[];
+  /** Siglas y diseño de escudo (para el marcador y los menús). */
+  short?: string;
+  crest?: number;
 }
 
 export interface TeamSpec {
@@ -126,10 +129,10 @@ export function makeTeam(spec: TeamSpec): TeamDef {
 
 /** Equipos de la primera división masculina de Costa Rica (los colores son aproximados; el resto de la planilla es inventada). */
 export const TEAMS: readonly TeamDef[] = [
-  makeTeam({ id: 'SJ', name: 'San José', province: 'San José', primary: '#c8102e', secondary: '#1d3f8f', style: 'balanced', seed: 101, names: { 0: 'Ignacio', 1: 'Stanley Grant' } }),
-  makeTeam({ id: 'SC', name: 'San Carlos', province: 'Alajuela', primary: '#1e7d32', secondary: '#ffffff', style: 'power', seed: 102 }),
-  makeTeam({ id: 'CA', name: 'Cartago', province: 'Cartago', primary: '#1f4e9c', secondary: '#ffffff', style: 'block', seed: 103 }),
-  makeTeam({ id: 'TU', name: 'Turrialba', province: 'Cartago', primary: '#f28c00', secondary: '#111111', style: 'serve', seed: 104 }),
-  makeTeam({ id: 'UC', name: 'UCR', province: 'San José', primary: '#2a7fd4', secondary: '#f4c430', style: 'defense', seed: 105 }),
-  makeTeam({ id: 'LI', name: 'Limón', province: 'Limón', primary: '#0f7a3d', secondary: '#f2c500', style: 'athletic', seed: 107 }),
+  { ...makeTeam({ id: 'SJ', name: 'San José', province: 'San José', primary: '#c8102e', secondary: '#1d3f8f', style: 'balanced', seed: 101, names: { 0: 'Ignacio', 1: 'Stanley Grant' } }), short: 'SJO', crest: 0 },
+  { ...makeTeam({ id: 'SC', name: 'San Carlos', province: 'Alajuela', primary: '#1e7d32', secondary: '#ffffff', style: 'power', seed: 102 }), short: 'SCA', crest: 2 },
+  { ...makeTeam({ id: 'CA', name: 'Cartago', province: 'Cartago', primary: '#1f4e9c', secondary: '#ffffff', style: 'block', seed: 103 }), short: 'CAR', crest: 1 },
+  { ...makeTeam({ id: 'TU', name: 'Turrialba', province: 'Cartago', primary: '#f28c00', secondary: '#111111', style: 'serve', seed: 104 }), short: 'TUR', crest: 3 },
+  { ...makeTeam({ id: 'UC', name: 'UCR', province: 'San José', primary: '#2a7fd4', secondary: '#f4c430', style: 'defense', seed: 105 }), short: 'UCR', crest: 4 },
+  { ...makeTeam({ id: 'LI', name: 'Limón', province: 'Limón', primary: '#0f7a3d', secondary: '#f2c500', style: 'athletic', seed: 107 }), short: 'LIM', crest: 5 },
 ];

@@ -49,5 +49,7 @@ export function clubTeam(profile: Profile): TeamDef {
     lineup: ids.slice(0, 6),
     libero: ids[6],
     liberoReplaces: [ids[2], ids[5]],
+    short: (c.short.trim() || 'MIC').slice(0, 3).toUpperCase(),
+    crest: c.crest,
   };
 }

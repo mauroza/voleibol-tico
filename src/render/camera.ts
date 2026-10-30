@@ -91,10 +91,16 @@ export class CameraDirector {
     const cer = this.sim.ceremony;
     // Después de elegir lado vuelve el plano general: se ve a los equipos cambiar de cancha.
     if (cer && (cer.step === 'greeting' || (cer.step === 'toss' && cer.sub === 0)) && this.mode !== 'replay') {
-      // Saludo y sorteo: plano más cercano de la red.
+      // Saludo y sorteo: plano más cercano de la red, del lado de tu cancha.
       this.mode = 'broadcast';
-      targetPos.set(0, 4.6, 11.5);
-      targetLook.set(0, 1.1, 0);
+      const own = this.sim.control ? sideSign(this.sim.control) : 0;
+      if (own) {
+        targetPos.set(own * 9, 4.4, 2.5);
+        targetLook.set(0, 1.2, 0);
+      } else {
+        targetPos.set(0, 4.6, 11.5);
+        targetLook.set(0, 1.1, 0);
+      }
       rate = 2;
     } else if (performance.now() < this.markUntil && this.mode !== 'replay') {
       // Como el ojo de halcón: casi desde arriba, un poco del lado de la cámara, con la marca y la línea en el centro.
@@ -145,15 +151,22 @@ export class CameraDirector {
       targetPos.set(own * 14, 11, d.aim.z * 0.2);
       targetLook.set(own * 3.2, 0, d.aim.z * 0.3);
       rate = 4;
-    } else if (d && d.contactTime !== null && this.sim.timeScale < 1) {
-      // Decisión: plano cercano detrás y al costado del jugador del usuario, mirando la pelota.
-      this.mode = 'decision';
-      const u = this.sim.player(d.playerKey).pos;
-      const side = Math.sign(u.x) || -1;
-      targetPos.set(u.x + side * 4.2, 3.1, u.z + 5.5);
-      targetLook.set((u.x + ballPos.x) / 2, Math.max(1.4, ballPos.y * 0.7), (u.z + ballPos.z) / 2);
-      rate = 4;
+    } else if (this.sim.control) {
+      // Juego: siempre desde atrás de la propia cancha, a la espalda de tus jugadores, mirando hacia la red y el
+      // rival. Sigue a la pelota de a poco (a lo ancho y a lo largo), sin girar de golpe. En tu decisión se acerca un poco.
+      this.mode = d && d.contactTime !== null && this.sim.timeScale < 1 ? 'decision' : 'broadcast';
+      const own = sideSign(this.sim.control);
+      const close = this.mode === 'decision' ? 1 : 0;
+      // Pantallas angostas (teléfono en vertical): un poco más alto para ver los dos campos.
+      const narrow = Math.max(1, 1.5 / this.camera.aspect) ** 0.5;
+      const bx = Math.max(-COURT.halfLength - 1, Math.min(COURT.halfLength + 1, ballPos.x));
+      const bz = Math.max(-COURT.halfWidth - 1, Math.min(COURT.halfWidth + 1, ballPos.z));
+      targetPos.set(own * (15.2 - close * 1.6), (7.4 - close * 0.8) * narrow, bz * 0.3);
+      const netLook = -own * 1.2;
+      targetLook.set(netLook + (bx - netLook) * 0.3, 0.7, bz * 0.45);
+      rate = 2.6;
     } else {
+      // Sin equipo propio (IA contra IA): la transmisión lateral de siempre.
       this.mode = 'broadcast';
       const fx = broadcastFocusX(ballPos.x);
       targetPos.set(fx, BROADCAST_POS.y, BROADCAST_POS.z);

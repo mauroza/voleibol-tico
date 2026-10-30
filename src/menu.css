@@ -303,8 +303,8 @@ body:has(.chat) #help { left: calc(56px + env(safe-area-inset-left, 0px)); }
 .touch-zone { position: fixed; z-index: 3; box-sizing: border-box; border-radius: 26px; display: grid; place-items: start center; align-content: start; gap: 2px; padding-top: 12px;
   border: 2px solid #ffffff1f; background: #ffffff06; transition: border-color .2s, background .2s, opacity .2s;
   font-family: var(--am-body); user-select: none; -webkit-user-select: none; }
-.touch-aim { left: max(8px, env(safe-area-inset-left, 0px)); top: 18%; bottom: 8px; width: calc(50% - 14px); pointer-events: none; }
-.touch-hit { right: max(8px, env(safe-area-inset-right, 0px)); top: 18%; bottom: 8px; width: calc(50% - 14px); touch-action: none; }
+.touch-aim { left: max(8px, env(safe-area-inset-left, 0px)); top: 27%; bottom: 8px; width: calc(50% - 14px); pointer-events: none; }
+.touch-hit { right: max(8px, env(safe-area-inset-right, 0px)); top: 27%; bottom: 8px; width: calc(50% - 14px); touch-action: none; }
 .touch-zone-label { font-family: var(--am-display); font-size: clamp(22px, 4.6vw, 34px); letter-spacing: 3px; color: #ffffff38; line-height: 1; }
 .touch-zone-hint { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #ffffff2e; }
 .touch-aim.active { border-color: #4dc3ff55; background: #4dc3ff0a; }

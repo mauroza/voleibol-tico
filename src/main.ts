@@ -1,4 +1,5 @@
 import './style.css';
+import './menu.css';
 import { Sound } from './audio/sound';
 import { TEAMS } from './data/teams';
 import { MatchView } from './render/scene';
@@ -9,7 +10,12 @@ import { AimInput } from './ui/aim';
 import { DecisionPanel } from './ui/decision';
 import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
-import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, type MatchSetup } from './ui/menu';
+import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, teamFor, type MatchSetup } from './ui/menu';
+import { isKey, loadProfile, settings, typingIn, updateProfile } from './data/profile';
+import { clubTeam } from './data/club';
+import { audio } from './audio/music';
+import { Chat } from './ui/chat';
+import { icon } from './ui/crest';
 import { PauseMenu, showResult } from './ui/overlays';
 import { TimeoutPanel } from './ui/timeout';
 import { ChallengePanel } from './ui/challenge';
@@ -25,10 +31,13 @@ showMenu(ui).then(async (setup) => {
   if (!setup.online) return start(setup);
   // Online: sala con código. El anfitrión elige los equipos; el invitado juega con el rival.
   const lobby = showLobby(ui);
+  // Cada uno juega con su club y su apodo.
+  const profile = loadProfile();
+  const me = { club: clubTeam(profile), nick: profile.nickname || 'Invitado' };
   try {
     const match = setup.online.mode === 'host'
-      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin, tempo: PACE_TEMPO[setup.pace] ?? 'fluido' }, (text, code) => lobby.show(text, code))
-      : await joinRoom(setup.online.code, (text) => lobby.show(text, setup.online?.mode === 'join' ? setup.online.code : ''));
+      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin, tempo: PACE_TEMPO[setup.pace] ?? 'fluido' }, me, (text, code) => lobby.show(text, code))
+      : await joinRoom(setup.online.code, me, (text) => lobby.show(text, setup.online?.mode === 'join' ? setup.online.code : ''));
     lobby.close();
     start(setup, match);
   } catch (err) {
@@ -41,8 +50,8 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   const sim = new Simulation({
     seed: deal ? deal.seed : Date.now() % 1_000_000_000,
     setsToWin: deal ? deal.setsToWin : setup.setsToWin,
-    teamA: TEAMS[deal ? deal.teamA : setup.team],
-    teamB: TEAMS[deal ? deal.teamB : setup.rival],
+    teamA: deal ? deal.clubA ?? TEAMS[deal.teamA] : teamFor(setup.team),
+    teamB: deal ? deal.clubB ?? TEAMS[deal.teamB] : TEAMS[setup.rival],
     control: online ? online.local : 'A',
     difficulty: setup.difficulty,
     // Online: los dos juegan con el mismo reloj, casi sin cámara lenta, y las barras se adelantan lo que tarda la red.
@@ -81,6 +90,20 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     saveSetup({ ...setup, online: undefined }, false);
     location.reload();
   };
+  const toPacks = () => {
+    saveSetup({ ...setup, online: undefined }, false, 'packs');
+    location.reload();
+  };
+  // Música suave también en el partido (más baja: mandan el público y los golpes).
+  audio.setMatch(true);
+  audio.play();
+  // Chat del online.
+  if (online) {
+    const me = online.local;
+    const nick = (t: 'A' | 'B') => (t === 'A' ? online.deal.nickA : online.deal.nickB) ?? (t === me ? 'Tú' : 'Rival');
+    const other = me === 'A' ? 'B' : 'A';
+    new Chat(ui, online.net, nick(me), nick(other), sim.teams[me].primary, sim.teams[other].primary);
+  }
   const pause = new PauseMenu(ui, { resume: () => setPaused(false), restart: online ? toMenu : restart, menu: toMenu });
   const setPaused = (p: boolean) => {
     // Online la pausa es de los dos: se pide entre puntos (cualquiera) y la levanta cualquiera.
@@ -113,8 +136,18 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
 
   sim.bus.on((e) => {
     if (e.type !== 'matchEnd') return;
+    // Premio: cada victoria da un sobre.
+    const won = e.winner === (sim.control ?? 'A');
+    updateProfile((p) => {
+      p.played += 1;
+      if (won) {
+        p.wins += 1;
+        p.packs += 1;
+      }
+    });
+    const reward = won ? `¡Ganaste un sobre! Tienes ${loadProfile().packs} por abrir.` : '';
     // Deja ver la celebración antes del resultado.
-    setTimeout(() => showResult(ui, sim.teams, e.winner, sim.match.sets, stats, true, { rematch: online ? toMenu : restart, menu: toMenu }, sim.control ?? 'A'), 2200);
+    setTimeout(() => showResult(ui, sim.teams, e.winner, sim.match.sets, stats, true, { rematch: online ? toMenu : restart, menu: toMenu, packs: toPacks }, sim.control ?? 'A', reward), 2200);
   });
 
   // Solo en desarrollo: permite avanzar y renderizar a mano desde la consola o las pruebas visuales.
@@ -124,19 +157,22 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   let smoothRate = 1;
   const fastBadge = document.createElement('div');
   fastBadge.className = 'fast-badge';
-  fastBadge.textContent = '⏩ x4 (Shift+F para volver)';
+  fastBadge.innerHTML = `${icon('fast', 16)} x4 (Shift+F para volver)`;
   ui.append(fastBadge);
   window.addEventListener('keydown', (e) => {
     sound?.unlock();
+    audio.unlock();
+    if (typingIn(e)) return;
     const k = e.key.toLowerCase();
-    if (k === 'escape' || k === 'p') setPaused(!pause.open);
-    if (k === 'm') sound?.toggleMute();
+    if (isKey(e, 'pause') || k === 'p') setPaused(!pause.open);
+    if (isKey(e, 'mute')) sound?.toggleMute();
     // x4 solo con Shift+F (la F sola está pegada a la D de apuntar y se tocaba sin querer).
     if (k === 'f' && e.shiftKey && !e.repeat && !online) speed = speed === 1 ? 4 : 1;
     if (e.code === 'Space' && view.replaying) view.skipReplay();
   });
   window.addEventListener('pointerdown', () => {
     sound?.unlock();
+    audio.unlock();
     view.skipReplay();
   });
 
@@ -144,6 +180,12 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   let waitingFor = 0;
   let last = performance.now();
   function frame(now: number): void {
+    // Límite de FPS de los ajustes: se saltan cuadros hasta que toca (con 1 ms de margen por el redondeo del reloj).
+    const cap = settings().fps;
+    if (cap && now - last < 1000 / cap - 1) {
+      requestAnimationFrame(frame);
+      return;
+    }
     const dtReal = Math.min(0.1, (now - last) / 1000);
     last = now;
     gamepad.update();
@@ -163,7 +205,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
       frameRate = pace * sim.timeScale;
       // Avisos que dicen de quién es el problema.
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      netStatus.textContent = lockstep.desync ? '⚠ Las dos partidas se desincronizaron: creen una sala nueva'
+      netStatus.textContent = lockstep.desync ? 'Las dos partidas se desincronizaron: creen una sala nueva'
         : offline ? 'Tu computadora se quedó sin internet'
         : lockstep.remoteAway ? 'Tu rival salió de la ventana del juego: tiene que volver para seguir'
         : lockstep.silence > 4 ? `No llegan datos de tu rival hace ${Math.round(lockstep.silence)} s: puede ser su internet`

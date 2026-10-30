@@ -130,34 +130,34 @@ function backMaterial(name: string, n: number, ink: string): THREE.MeshToonMater
 
 // ---------- geometrías compartidas (redondeadas, sin detalles) ----------
 
-const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 3, 8);
+const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 2, 8);
 const shared = {
-  head: new THREE.SphereGeometry(0.145, 16, 12),
+  head: new THREE.SphereGeometry(0.145, 14, 10),
   torso: limb(0.14, 0.4),
-  pelvis: new THREE.SphereGeometry(0.13, 10, 8),
+  pelvis: new THREE.SphereGeometry(0.13, 8, 6),
   upperArm: limb(0.058, DIMS.upperArm - 0.06),
   forearm: limb(0.055, DIMS.forearm - 0.02),
   thigh: limb(0.078, DIMS.thigh - 0.06),
   shin: limb(0.07, DIMS.shin - 0.04),
   foot: limb(0.06, 0.12),
-  neck: new THREE.CylinderGeometry(0.048, 0.055, 0.12, 10),
+  neck: new THREE.CylinderGeometry(0.048, 0.055, 0.12, 8, 1, true),
   /** Manga corta de la camisa y pierna de la pantaloneta. */
   sleeve: limb(0.075, 0.13),
   /** Hombro de la camisa: cubre la unión del brazo con el tronco en cualquier ángulo. */
-  shoulderCap: new THREE.SphereGeometry(0.085, 12, 10),
-  shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 12),
+  shoulderCap: new THREE.SphereGeometry(0.085, 8, 6),
+  shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 10),
   /** Rodillera: una banda acolchada que envuelve la rodilla. */
-  kneePad: new THREE.CylinderGeometry(0.094, 0.088, 0.14, 14),
+  kneePad: new THREE.CylinderGeometry(0.094, 0.088, 0.14, 10),
   /** Mangas de compresión (un poco más gruesas que la piel que cubren). */
   armSleeveUpper: limb(0.064, DIMS.upperArm - 0.12),
   armSleeveLower: limb(0.061, DIMS.forearm - 0.12),
   legSleeveUpper: limb(0.085, DIMS.thigh - 0.3),
   legSleeveLower: limb(0.077, DIMS.shin - 0.16),
   /** Pelo: casquete sobre la cabeza. */
-  hair: new THREE.SphereGeometry(0.153, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45),
-  eye: new THREE.SphereGeometry(0.021, 8, 6),
-  mouth: new THREE.CapsuleGeometry(0.008, 0.04, 2, 6),
-  brow: new THREE.CapsuleGeometry(0.0055, 0.035, 2, 4),
+  hair: new THREE.SphereGeometry(0.153, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.45),
+  eye: new THREE.SphereGeometry(0.021, 6, 4),
+  mouth: new THREE.CapsuleGeometry(0.008, 0.04, 1, 4),
+  brow: new THREE.CapsuleGeometry(0.0055, 0.035, 1, 3),
 };
 
 /** Número del pecho (en el plano frontal del tronco) y espalda con nombre y número. */
@@ -205,9 +205,11 @@ function skinCharacter(root: THREE.Object3D): void {
   root.updateMatrixWorld(true);
   mesh.bind(skeleton);
   outline.bind(skeleton, mesh.bindMatrix);
-  // Los huesos mueven la malla (saltos, planchas): no se recorta con la caja de la pose inicial.
-  mesh.frustumCulled = false;
-  outline.frustumCulled = false;
+  // Los huesos mueven la malla (saltos, planchas): una esfera holgada alrededor del cuerpo en vez de la de la pose
+  // inicial. Así los que quedan fuera de cámara (banca, el otro campo al apuntar) no se dibujan.
+  const bounds = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 2.4);
+  mesh.boundingSphere = bounds;
+  outline.boundingSphere = bounds;
 }
 
 /**

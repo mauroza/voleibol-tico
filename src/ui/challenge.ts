@@ -1,3 +1,4 @@
+import { isKey } from '../data/profile';
 import type { TeamId } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 import { TUNING } from '../sim/tuning';
@@ -25,7 +26,7 @@ export class ChallengePanel {
     this.verdict.className = 'challenge-verdict';
     root.append(this.button, this.verdict);
     window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'c' && !e.repeat) this.request();
+      if (isKey(e, 'challenge') && !e.repeat) this.request();
     });
     sim.bus.on((e) => {
       const name = (t: TeamId) => sim.teams[t].name;
@@ -33,7 +34,7 @@ export class ChallengePanel {
         const who = e.team === team ? 'Tu challenge' : `Challenge de ${name(e.team)}`;
         const cm = Math.max(1, Math.round(e.margin * 100));
         const detail = e.kind === 'touch' ? '¡Hubo roce del bloqueo!' : e.inside ? `Dentro por ${cm} cm` : `Fuera por ${cm} cm`;
-        this.show(`${who}: ${detail}`, e.overturned ? '✔ Se cambia la decisión' : '✘ Se mantiene lo que cantó el árbitro');
+        this.show(`${who}: ${detail}`, e.overturned ? 'Se cambia la decisión' : 'Se mantiene lo que cantó el árbitro');
       } else if (e.type === 'point' && e.reason === 'blockOut' && performance.now() > this.verdictUntil) {
         // Detección de roces: si la pelota tocó el bloqueo antes de salir, se avisa.
         this.show('Roce del bloqueo', `Punto para ${name(e.winner)}`);

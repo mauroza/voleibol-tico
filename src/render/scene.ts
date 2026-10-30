@@ -1,3 +1,4 @@
+import { settings } from '../data/profile';
 import * as THREE from 'three';
 import { landingTime, positionAt } from '../sim/ball';
 import { COURT } from '../sim/court';
@@ -122,7 +123,7 @@ const SERVE_TOSS = 0.55;
  */
 export class MatchView {
   // En el teléfono sin antialias (con la densidad de píxeles del aparato ya se ve nítido y va mucho más fluido).
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' });
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH && settings().quality !== 'baja', powerPreference: 'high-performance' });
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
   private readonly animators: Animator[] = [];
@@ -181,7 +182,7 @@ export class MatchView {
   private lastCapture = -Infinity;
   private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
-  private pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+  private pixelRatio = Math.min(window.devicePixelRatio, { alta: 1.5, media: 1, baja: 0.75 }[settings().quality]);
   private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {
@@ -191,7 +192,7 @@ export class MatchView {
     this.scene.background = new THREE.Color('#0b1018');
     this.scene.fog = new THREE.Fog('#0b1018', 26, 58);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.88;
+    this.renderer.toneMappingExposure = 0.78;
     this.camera.position.set(0, 11, 19);
     this.camera.lookAt(0, 0.5, 0);
     // Desarrollo: ?cam=x,y,z,lx,ly,lz fija la cámara (para revisar de cerca).
@@ -204,8 +205,8 @@ export class MatchView {
     this.director = new CameraDirector(this.camera, sim, !!fixed);
     // Luz de estadio: cielo blanco frío desde los focos, rebote cálido del piso de madera; principal casi cenital
     // (sin sombras duras de costado) y un relleno cálido desde el lado opuesto para que nadie quede plano.
-    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.75));
-    const key = new THREE.DirectionalLight('#f4f7ff', 1.9);
+    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.62));
+    const key = new THREE.DirectionalLight('#f4f7ff', 1.65);
     key.position.set(3, 20, 7);
     this.scene.add(key);
     const fill = new THREE.DirectionalLight('#ffe2bd', 0.75);

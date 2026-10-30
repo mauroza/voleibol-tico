@@ -259,6 +259,28 @@ class AudioEngine {
     this.blip(300, 0.5, 0.12, 'sawtooth', 3);
   }
 
+  /** Cortina de la repetición: un barrido de aire que sube y baja. */
+  whoosh(): void {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.4;
+    f.frequency.setValueAtTime(500, t);
+    f.frequency.exponentialRampToValueAtTime(3800, t + 0.32);
+    f.frequency.exponentialRampToValueAtTime(900, t + 0.7);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    n.connect(f).connect(g).connect(this.uiBus);
+    n.start(t);
+    n.stop(t + 0.8);
+  }
+
   /** Revelar una carta: más brillante cuanto más rara. */
   reveal(level: number): void {
     const notes = [[72], [72, 76], [72, 76, 79], [72, 76, 79, 84]][Math.max(0, Math.min(3, level))];

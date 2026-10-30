@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { sideSign } from '../sim/court';
+import { COURT, sideSign } from '../sim/court';
 import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
 
@@ -15,7 +15,7 @@ export function shakeOffset(t: number, start: number, duration: number, amplitud
   return amplitude * (1 - k) * Math.sin((t - start) * 70);
 }
 
-export type CameraMode = 'broadcast' | 'decision' | 'aim' | 'replay';
+export type CameraMode = 'broadcast' | 'decision' | 'aim' | 'replay' | 'mark';
 
 const BROADCAST_POS = new THREE.Vector3(0, 11, 19);
 
@@ -31,6 +31,9 @@ export class CameraDirector {
   private replayFocus = new THREE.Vector3();
   private replayLand = new THREE.Vector3();
   private replayAngle = 0;
+  /** Challenge de línea: plano cerrado sobre la marca del pique hasta este instante (ms). */
+  private markUntil = 0;
+  private readonly mark = new THREE.Vector3();
 
   constructor(private readonly camera: THREE.PerspectiveCamera, private readonly sim: Simulation, private readonly fixed: boolean) {}
 
@@ -54,6 +57,12 @@ export class CameraDirector {
 
   endReplay(): void {
     this.mode = 'broadcast';
+  }
+
+  /** Challenge: la cámara baja sobre la marca del pique (con la línea) durante `seconds`. */
+  focusMark(at: THREE.Vector3, seconds: number): void {
+    this.mark.copy(at);
+    this.markUntil = performance.now() + seconds * 1000;
   }
 
   /** Plano de la repetición para la pelota en `ball`: costado del pabellón, alto, siguiéndola a medias. */
@@ -87,6 +96,15 @@ export class CameraDirector {
       targetPos.set(0, 4.6, 11.5);
       targetLook.set(0, 1.1, 0);
       rate = 2;
+    } else if (performance.now() < this.markUntil && this.mode !== 'replay') {
+      // Como el ojo de halcón: casi desde arriba, un poco del lado de la cámara, con la marca y la línea en el centro.
+      this.mode = 'mark';
+      // Casi cenital y del lado de afuera de la línea más cercana: ningún jugador se mete entre la cámara y la marca.
+      const side = COURT.halfWidth - Math.abs(this.mark.z) < COURT.halfLength - Math.abs(this.mark.x);
+      const out = side ? [0, Math.sign(this.mark.z) || 1] : [Math.sign(this.mark.x) || 1, 0];
+      targetPos.set(this.mark.x + out[0] * 1.1, 4.6, this.mark.z + out[1] * 1.1 + 0.01);
+      targetLook.set(this.mark.x, 0, this.mark.z);
+      rate = 3.5;
     } else if (this.mode === 'replay') {
       this.replayAngle += dtReal;
       const [pos, look] = this.replayShot(ballPos);

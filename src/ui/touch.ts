@@ -28,11 +28,13 @@ export function enterMobileMode(): void {
 }
 
 /**
- * Controles táctiles: botón grande de acción (el ESPACIO), pausa y sonido. La mira se mueve arrastrando el dedo
- * sobre la cancha (ver AimInput). En vertical se sugiere girar el teléfono.
+ * Controles táctiles en dos zonas grandes y transparentes (no tapan el juego): la mitad izquierda apunta (arrastrar,
+ * ver AimInput) y la derecha golpea (recibir, colocar, rematar, sacar, saltar). Además pausa y sonido.
+ * En vertical se sugiere girar el teléfono.
  */
 export class TouchControls {
-  private readonly action = document.createElement('button');
+  private readonly action = document.createElement('div');
+  private readonly aimZone = document.createElement('div');
   private readonly label = document.createElement('span');
   private readonly ring = document.createElement('span');
   private readonly rotate = document.createElement('div');
@@ -46,9 +48,13 @@ export class TouchControls {
     actions: { pause: (() => void) | null; mute: () => boolean; skipReplay: () => void },
   ) {
     document.body.classList.add('touch');
-    this.action.className = 'touch-action';
-    this.ring.className = 'touch-ring';
-    this.action.append(this.ring, this.label);
+    this.action.className = 'touch-zone touch-hit';
+    this.ring.className = 'touch-zone-hint';
+    this.ring.textContent = 'TOCA AQUÍ';
+    this.label.className = 'touch-zone-label';
+    this.action.append(this.label, this.ring);
+    this.aimZone.className = 'touch-zone touch-aim';
+    this.aimZone.innerHTML = '<span class="touch-zone-label">APUNTA</span><span class="touch-zone-hint">ARRASTRA EL DEDO</span>';
     // pointerdown (no click): el golpe cuenta en el instante en que el dedo toca, sin la demora del clic.
     this.action.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -76,7 +82,7 @@ export class TouchControls {
     ok.textContent = 'Jugar así';
     ok.addEventListener('click', () => this.rotate.remove());
     this.rotate.append(icon, msg, ok);
-    root.append(this.action, bar, this.rotate);
+    root.append(this.aimZone, this.action, bar, this.rotate);
   }
 
   private small(html: string, title: string, run: () => void): HTMLButtonElement {
@@ -98,10 +104,14 @@ export class TouchControls {
     const ready = !!d && d.pressedAt === null && (d.chosen !== null || d.kind === 'block');
     const text = d ? ACTION_LABELS[d.kind] : '';
     if (text !== this.shownLabel) {
-      this.label.textContent = text || '●';
+      this.label.textContent = text;
       this.shownLabel = text;
     }
     this.action.classList.toggle('ready', ready);
     this.action.classList.toggle('idle', !d);
+    // La zona de apuntar solo se marca cuando hay mira que mover.
+    const aiming = !!d?.aim && d.pressedAt === null && !this.paused();
+    this.aimZone.classList.toggle('active', aiming);
+    this.aimZone.classList.toggle('idle', !aiming);
   }
 }

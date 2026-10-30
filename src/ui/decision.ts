@@ -99,6 +99,14 @@ export class DecisionPanel {
         this.feedback.dataset.timing = e.label?.includes('ACE') ? 'ace' : e.power ? `power-${e.power}` : e.timing;
         this.feedbackUntil = performance.now() + 1000;
       }
+      // Calidad de la recepción: decide qué tempos podrá jugar el colocador.
+      if (e.type === 'contact' && e.kind === 'reception' && e.team === sim.control && !e.warmup) {
+        const doble = e.quality >= TUNING.set.minPassForCombination;
+        const pos = e.quality >= TUNING.set.minPassForSemi;
+        this.feedback.textContent = doble ? 'Recepción doble positiva · ¡rápidas!' : pos ? 'Recepción positiva · alta o media' : 'Recepción complicada · solo alta';
+        this.feedback.dataset.timing = doble ? 'perfect' : pos ? 'good' : 'bad';
+        this.feedbackUntil = performance.now() + 1300;
+      }
     });
   }
 

@@ -1887,6 +1887,10 @@ export class Simulation {
     // Salvada en plancha: la pelota sigue viva, pero el pase sale peor.
     if (this.diving) q *= TUNING.dive.quality;
     q = this.boosted(q, ctl?.timing);
+    // Recepción del usuario (sin plancha): perfecta es siempre doble positiva (se puede jugar rápida) y buena, al
+    // menos positiva (media). Antes la calidad mezclaba atributos y azar y la perfecta casi nunca daba para rápidas.
+    if (kind === 'reception' && !this.diving && ctl?.timing === 'perfect') q = Math.max(q, TUNING.set.minPassForCombination + 0.04 + this.rng.range(0, 0.1));
+    else if (kind === 'reception' && !this.diving && ctl?.timing === 'good') q = Math.max(q, TUNING.set.minPassForSemi + 0.05);
     this.registerTouch(p, kind, q);
     this.intent = null;
     if (this.reflexing && !this.bodyHit) {

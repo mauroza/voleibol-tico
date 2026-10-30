@@ -10,6 +10,7 @@ import { createRng } from '../sim/rng';
 import { audio } from '../audio/music';
 import { CREST_COUNT, CREST_NAMES, crestSvg, icon, initials, type IconName } from './crest';
 import { cardEl, esc, playerChip, rarityLevel, ROLE_SHORT } from './cards-ui';
+import { LEADERBOARD_AVAILABLE, topClubs, type ClubRow } from '../net/leaderboard';
 
 export type Pace = 'calm' | 'normal' | 'real';
 
@@ -95,7 +96,7 @@ function takeScreen(): Screen | null {
 
 const DEFAULT: MatchSetup = { team: CLUB, rival: 0, setsToWin: 1, difficulty: 'normal', pace: 'normal' };
 
-type Screen = 'welcome' | 'home' | 'solo' | 'online' | 'club' | 'packs' | 'settings' | 'help';
+type Screen = 'welcome' | 'home' | 'solo' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
 
 const ONLINE_AVAILABLE = import.meta.env.MODE !== 'artifact';
 
@@ -186,6 +187,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       packs: packsScreen,
       settings: settingsScreen,
       help: helpScreen,
+      ranking: rankingScreen,
     }[screen]();
     view.classList.add('am-enter');
     main.append(view);
@@ -256,6 +258,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     if (!ONLINE_AVAILABLE) on.classList.add('soon');
     item('club', 'Mi club', 'Nombre, escudo, colores y plantilla', () => go('club'));
     item('pack', 'Sobres', p.packs ? `Tienes ${p.packs} por abrir` : 'Gana partidos para conseguir sobres', () => go('packs'), p.packs ? `<span class="am-badge">${p.packs}</span>` : '');
+    item('trophy', 'Tabla de clubes', LEADERBOARD_AVAILABLE ? 'Los clubes de todos los jugadores y sus victorias' : 'Solo en el sitio del juego (mauroza.github.io)', () => go('ranking'));
     item('settings', 'Ajustes', 'Sonido, controles, sensibilidad, FPS', () => go('settings'));
     item('help', 'Cómo jugar', 'Saque, pase, colocación, remate y bloqueo', () => go('help'));
     // Teclado: flechas para moverse por el menú.
@@ -656,6 +659,45 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     audio.click();
     render();
   }, true);
+
+  // ---------- tabla de clubes ----------
+  const rankingScreen = (): HTMLElement => {
+    const p = loadProfile();
+    const el = h('section', 'am-ranking');
+    el.append(heading('Tabla de clubes', 'Todos los clubes creados por los jugadores. Cuentan los partidos con tu club, contra la IA u online.'));
+    const box = h('div', 'am-panel am-ranking-box');
+    el.append(box);
+    if (!LEADERBOARD_AVAILABLE) {
+      box.innerHTML = '<h3>Disponible en el sitio del juego</h3><p>Desde aquí la página no puede conectarse a internet. La tabla está en <b>mauroza.github.io/voleibol-tico</b>.</p>';
+      return el;
+    }
+    const status = h('p', 'am-muted', 'Cargando la tabla…');
+    box.append(status);
+    const draw = (rows: ClubRow[]) => {
+      box.replaceChildren();
+      const head = h('div', 'am-rank-row am-rank-head', '<span>#</span><span>Club</span><span title="Partidos jugados">PJ</span><span title="Partidos ganados">PG</span><span title="Porcentaje de victorias">%</span><span title="Ganados online">Online</span>');
+      box.append(head);
+      if (!rows.length) box.append(h('p', 'am-muted', 'Todavía no hay clubes. ¡Juega un partido con tu club y sé el primero!'));
+      let mineShown = false;
+      rows.forEach((r, i) => {
+        const mine = r.id === p.cloudId;
+        mineShown ||= mine;
+        const pct = r.played ? Math.round((r.wins / r.played) * 100) : 0;
+        const row = h('div', `am-rank-row${mine ? ' mine' : ''}${i < 3 ? ` top${i + 1}` : ''}`);
+        row.innerHTML = `<span class="am-rank-pos">${i + 1}</span>
+          <span class="am-rank-club">${crestSvg({ short: r.short, primary: r.primary_color, secondary: r.secondary_color, crest: r.crest }, 34)}<span><b>${esc(r.name)}</b><small>DT ${esc(r.nickname)}${mine ? ' · tú' : ''}</small></span></span>
+          <span>${r.played}</span><span class="am-rank-wins">${r.wins}</span><span>${pct}%</span><span>${r.online_wins}</span>`;
+        box.append(row);
+      });
+      if (!mineShown) box.append(h('p', 'am-note', p.played ? 'Tu club aparece cuando entra entre los 100 primeros.' : 'Juega un partido con tu club para aparecer en la tabla.'));
+      box.append(button('am-ghost am-rank-refresh', 'Actualizar', () => render()));
+    };
+    topClubs().then(draw).catch(() => {
+      status.textContent = 'No se pudo cargar la tabla. Revisa tu conexión a internet.';
+      box.append(button('am-ghost', 'Reintentar', () => render()));
+    });
+    return el;
+  };
 
   // ---------- cómo jugar ----------
   const helpScreen = (): HTMLElement => {

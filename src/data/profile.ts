@@ -73,6 +73,9 @@ export interface Profile {
   club: ClubIdentity;
   /** Semilla de los jugadores básicos del club (fija: cambiar el nombre del club no cambia la plantilla). */
   seed: number;
+  /** Identidad del club en la tabla global: id público y clave que solo tiene este navegador. */
+  cloudId: string;
+  cloudSecret: string;
   /** Nombres que el usuario puso a sus jugadores básicos: 'base:<n>' → nombre. */
   names: Record<string, string>;
   /** Qué jugador ocupa cada puesto: id de carta ('card:<id>') o del básico ('base:<n>'). */
@@ -103,12 +106,27 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'voleibol-tico:profile';
 
+function newId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  const h = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+function newSecret(): string {
+  const bytes = new Uint8Array(24);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function defaultProfile(): Profile {
   return {
     version: 1,
     nickname: '',
     club: { name: 'Mi Club', short: 'MIC', primary: '#d6263b', secondary: '#f2f2f2', crest: 0 },
     seed: 1 + Math.floor(Math.random() * 1_000_000),
+    cloudId: newId(),
+    cloudSecret: newSecret(),
     names: {},
     squad: Array.from({ length: SQUAD_SIZE }, (_, i) => `base:${i}`),
     cards: {},
@@ -139,8 +157,12 @@ export function loadProfile(): Profile {
         squad: Array.isArray(p.squad) && p.squad.length === SQUAD_SIZE ? p.squad : base.squad,
         cards: p.cards ?? {},
         names: p.names ?? {},
+        cloudId: p.cloudId || base.cloudId,
+        cloudSecret: p.cloudSecret || base.cloudSecret,
         settings: { ...base.settings, ...p.settings, keys: { ...DEFAULT_KEYS, ...p.settings?.keys } },
       };
+      // Perfiles de antes de la tabla global: la identidad nueva se guarda ya (si no, cambiaría en cada carga).
+      if (!p.cloudId || !p.cloudSecret) localStorage.setItem(KEY, JSON.stringify(cached));
       return cached;
     }
   } catch {

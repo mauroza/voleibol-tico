@@ -15,6 +15,7 @@ import { isKey, loadProfile, settings, typingIn, updateProfile } from './data/pr
 import { clubTeam } from './data/club';
 import { audio } from './audio/music';
 import { Chat } from './ui/chat';
+import { recordMatch, startClubSync } from './net/leaderboard';
 import { icon } from './ui/crest';
 import { PauseMenu, showResult } from './ui/overlays';
 import { TimeoutPanel } from './ui/timeout';
@@ -27,6 +28,7 @@ import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
 
 const ui = document.getElementById('hud')!;
+startClubSync();
 showMenu(ui).then(async (setup) => {
   if (!setup.online) return start(setup);
   // Online: sala con código. El anfitrión elige los equipos; el invitado juega con el rival.
@@ -145,6 +147,8 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
         p.packs += 1;
       }
     });
+    // Tabla global: cuentan los partidos jugados con tu club (contra la IA u online).
+    if (setup.team === -1 || online) void recordMatch(won, !!online);
     const reward = won ? `¡Ganaste un sobre! Tienes ${loadProfile().packs} por abrir.` : '';
     // Deja ver la celebración antes del resultado.
     setTimeout(() => showResult(ui, sim.teams, e.winner, sim.match.sets, stats, true, { rematch: online ? toMenu : restart, menu: toMenu, packs: toPacks }, sim.control ?? 'A', reward), 2200);

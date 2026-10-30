@@ -1,3 +1,4 @@
+import { isKey, typingIn } from '../data/profile';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
 import { meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
@@ -119,8 +120,8 @@ export class DecisionPanel {
 
   private onKey(e: KeyboardEvent): void {
     const d = this.sim.decision;
-    if (!d || this.paused) return;
-    if (e.code === 'Space') {
+    if (!d || this.paused || typingIn(e)) return;
+    if (isKey(e, 'hit')) {
       e.preventDefault();
       // Tecla mantenida: el teclado repite solo; esas repeticiones no son golpes.
       if (e.repeat) return;

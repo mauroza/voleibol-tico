@@ -1,3 +1,4 @@
+import type { TeamDef } from '../data/teams';
 import type { TeamId } from '../sim/court';
 import type { TempoProfile } from '../sim/rally';
 import { delayForPing } from './lockstep';
@@ -12,6 +13,18 @@ export interface MatchDeal {
   delay: number;
   /** Ritmo que eligió el anfitrión (cámara lenta para pensar y golpear, igual para los dos). */
   tempo?: TempoProfile;
+  /** Clubes de cada uno (plantilla completa: las dos computadoras simulan con los mismos jugadores). */
+  clubA?: TeamDef;
+  clubB?: TeamDef;
+  /** Apodos de los DT. */
+  nickA?: string;
+  nickB?: string;
+}
+
+/** Lo que cada uno aporta: su club y su apodo. */
+export interface Entrant {
+  club: TeamDef;
+  nick: string;
 }
 
 export interface OnlineMatch {
@@ -29,6 +42,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export async function hostRoom(
   choice: { team: number; rival: number; setsToWin: 1 | 2; tempo: TempoProfile },
+  me: Entrant,
   onStatus: (text: string, code: string) => void,
 ): Promise<OnlineMatch> {
   const code = roomCode();
@@ -46,8 +60,9 @@ export async function hostRoom(
     }
     return null;
   };
-  await take('join');
-  onStatus('¡Rival conectado! Midiendo la conexión…', code);
+  const join = await take('join');
+  const guest = join?.entrant as Entrant | undefined;
+  onStatus(guest ? `¡${guest.nick} se conectó con ${guest.club.name}! Midiendo la conexión…` : '¡Rival conectado! Midiendo la conexión…', code);
   const rtts: number[] = [];
   for (let n = 0; n < 5; n++) {
     const sent = performance.now();
@@ -64,6 +79,10 @@ export async function hostRoom(
     setsToWin: choice.setsToWin,
     delay: delayForPing(rtt),
     tempo: choice.tempo,
+    clubA: me.club,
+    nickA: me.nick,
+    clubB: guest?.club,
+    nickB: guest?.nick,
   };
   // Reenvía el acuerdo hasta que el invitado confirma.
   for (let tries = 0; tries < 50; tries++) {
@@ -75,7 +94,7 @@ export async function hostRoom(
 }
 
 /** Invitado: entra a la sala con el código, contesta el ping y recibe el acuerdo. */
-export async function joinRoom(code: string, onStatus: (text: string) => void): Promise<OnlineMatch> {
+export async function joinRoom(code: string, me: Entrant, onStatus: (text: string) => void): Promise<OnlineMatch> {
   const clean = code.trim().toUpperCase();
   onStatus(`Conectando a la sala ${clean}…`);
   const net = await openTransport(clean);
@@ -90,7 +109,7 @@ export async function joinRoom(code: string, onStatus: (text: string) => void): 
     }
   });
   for (let tries = 0; !deal; tries++) {
-    if (!heard) net.send({ t: 'join' });
+    if (!heard) net.send({ t: 'join', entrant: me });
     if (tries === 40 && !heard) onStatus(`Nadie responde en la sala ${clean}. ¿El código está bien?`);
     await wait(250);
   }

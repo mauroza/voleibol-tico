@@ -1,13 +1,10 @@
+import { isKey, settings, type Action } from '../data/profile';
 import type { MatchView } from '../render/scene';
 import { sideSign } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 
-const KEYS: Record<string, [number, number]> = {
-  ArrowUp: [1, 0], KeyW: [1, 0],
-  ArrowDown: [-1, 0], KeyS: [-1, 0],
-  ArrowLeft: [0, -1], KeyA: [0, -1],
-  ArrowRight: [0, 1], KeyD: [0, 1],
-};
+/** Dirección de cada acción de mira: [adelante, derecha]. Las teclas salen de los ajustes (más las flechas). */
+const MOVES: [Action, number, number][] = [['up', 1, 0], ['down', -1, 0], ['left', 0, -1], ['right', 0, 1]];
 /** Velocidad de la mira con teclado o palanca (m por segundo real). */
 const AIM_SPEED = 6;
 /**
@@ -25,7 +22,8 @@ const TOUCH_FINE = 0.55;
  * Táctil: arrastrar el dedo en la mitad izquierda mueve la mira como un trackpad (sin golpear); el golpe es el botón de acción.
  */
 export class AimInput {
-  private readonly held = new Set<string>();
+  /** Acciones de mira mantenidas, por código de tecla. */
+  private readonly held = new Map<string, Action>();
   private padActive = false;
   /** Dedo apoyado: último punto de la cancha bajo el dedo (para mover la mira por diferencia). */
   private drag: { id: number; x: number; y: number } | null = null;
@@ -41,6 +39,12 @@ export class AimInput {
     canvas.addEventListener('pointermove', (e) => {
       if (!this.aiming()) return;
       if (!finger(e)) {
+        // Mouse relativo: se mueve como un trackpad (con la sensibilidad); directo: la mira bajo el cursor.
+        if (settings().mouseMode === 'relativo') {
+          const perPx = (5 / Math.min(window.innerWidth, window.innerHeight)) * settings().mouseSens;
+          this.nudge(-e.movementY * perPx, e.movementX * perPx);
+          return;
+        }
         const p = this.view.pickGround(e.clientX, e.clientY);
         if (p) this.sim.setAim(p.x, p.z);
         return;
@@ -53,7 +57,7 @@ export class AimInput {
       this.drag.x = e.clientX;
       this.drag.y = e.clientY;
       const px = Math.hypot(dx, dy);
-      const perPx = TOUCH_METERS / Math.min(window.innerWidth, window.innerHeight);
+      const perPx = (TOUCH_METERS / Math.min(window.innerWidth, window.innerHeight)) * settings().touchSens;
       // Aceleración suave: el pulgar lento apunta fino; el rápido cruza la cancha.
       const gain = perPx * (TOUCH_FINE + (1 - TOUCH_FINE) * Math.min(1, px / 14));
       this.nudge(-dy * gain, dx * gain);
@@ -65,8 +69,10 @@ export class AimInput {
         return;
       }
       if (!this.aiming()) return;
-      const p = this.view.pickGround(e.clientX, e.clientY);
-      if (p) this.sim.setAim(p.x, p.z);
+      if (settings().mouseMode !== 'relativo') {
+        const p = this.view.pickGround(e.clientX, e.clientY);
+        if (p) this.sim.setAim(p.x, p.z);
+      }
       this.sim.press(this.clock(e.timeStamp));
     });
     const lift = (e: PointerEvent) => {
@@ -75,9 +81,10 @@ export class AimInput {
     canvas.addEventListener('pointerup', lift);
     canvas.addEventListener('pointercancel', lift);
     window.addEventListener('keydown', (e) => {
-      if (KEYS[e.code] && this.aiming()) {
+      const move = MOVES.find(([a]) => isKey(e, a));
+      if (move && this.aiming()) {
         e.preventDefault();
-        this.held.add(e.code);
+        this.held.set(e.code, move[0]);
       }
     });
     window.addEventListener('keyup', (e) => this.held.delete(e.code));
@@ -92,9 +99,10 @@ export class AimInput {
     }
     let fwd = 0;
     let side = 0;
-    for (const code of this.held) {
-      fwd += KEYS[code][0];
-      side += KEYS[code][1];
+    for (const action of this.held.values()) {
+      const [, f, s] = MOVES.find(([a]) => a === action)!;
+      fwd += f;
+      side += s;
     }
     // La palanca solo cuenta después de tocar un botón (evita el "drift" de controles conectados sin usar).
     const pad = navigator.getGamepads?.().find((g) => g && g.connected);
@@ -104,7 +112,8 @@ export class AimInput {
       if (Math.abs(pad.axes[1]) > 0.25) fwd -= pad.axes[1];
     }
     if (!fwd && !side) return;
-    this.nudge(fwd * AIM_SPEED * dtReal, side * AIM_SPEED * dtReal);
+    const speed = AIM_SPEED * settings().keySens * dtReal;
+    this.nudge(fwd * speed, side * speed);
   }
 
   /** Mueve la mira desde la vista del rematador: "adelante" es hacia el fondo rival y "derecha" su derecha (m). */

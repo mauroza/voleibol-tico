@@ -1,3 +1,4 @@
+import { settings } from '../data/profile';
 import * as THREE from 'three';
 import { landingTime, positionAt } from '../sim/ball';
 import { COURT } from '../sim/court';
@@ -122,7 +123,7 @@ const SERVE_TOSS = 0.55;
  */
 export class MatchView {
   // En el teléfono sin antialias (con la densidad de píxeles del aparato ya se ve nítido y va mucho más fluido).
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' });
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH && settings().quality !== 'baja', powerPreference: 'high-performance' });
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
   private readonly animators: Animator[] = [];
@@ -181,7 +182,7 @@ export class MatchView {
   private lastCapture = -Infinity;
   private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
-  private pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+  private pixelRatio = Math.min(window.devicePixelRatio, { alta: 1.5, media: 1, baja: 0.75 }[settings().quality]);
   private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {

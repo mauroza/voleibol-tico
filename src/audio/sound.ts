@@ -1,5 +1,7 @@
 import type { ContactKind, PointReason } from '../sim/events';
 import type { Simulation } from '../sim/rally';
+import { settings } from '../data/profile';
+import { audio } from './music';
 
 /**
  * Sonido procedural con WebAudio (sin archivos): golpes, silbato, ambiente del público, ovación,
@@ -16,7 +18,7 @@ export class Sound {
   constructor(private readonly sim: Simulation) {
     this.ctx = new AudioContext();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.7;
+    this.master.gain.value = 0.7 * settings().sfx;
     this.master.connect(this.ctx.destination);
     this.noise = this.makeNoise();
     this.crowdGain = this.ctx.createGain();
@@ -33,7 +35,8 @@ export class Sound {
 
   toggleMute(): boolean {
     this.muted = !this.muted;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.7, this.ctx.currentTime, 0.05);
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.7 * settings().sfx, this.ctx.currentTime, 0.05);
+    audio.setMuted(this.muted);
     return this.muted;
   }
 

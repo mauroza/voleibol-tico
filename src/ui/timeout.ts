@@ -1,3 +1,4 @@
+import { isKey } from '../data/profile';
 import type { TeamId } from '../sim/court';
 import { SPECIALTY_LABELS } from '../sim/players';
 import type { Simulation } from '../sim/rally';
@@ -39,7 +40,7 @@ export class TimeoutPanel {
     this.toast.className = 'timeout-toast';
     root.append(this.el, this.button, this.toast);
     window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 't' && !this.open) this.request();
+      if (isKey(e, 'timeout') && !this.open) this.request();
     });
     sim.bus.on((e) => {
       const name = (t: TeamId) => sim.teams[t].name;

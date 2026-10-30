@@ -1,3 +1,4 @@
+import { icon as svgIcon } from './crest';
 import type { DecisionKind } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 
@@ -61,8 +62,8 @@ export class TouchControls {
 
     const bar = document.createElement('div');
     bar.className = 'touch-bar';
-    if (actions.pause) bar.append(this.small('⏸', 'Pausa', actions.pause));
-    const mute = this.small('🔊', 'Sonido', () => { mute.textContent = actions.mute() ? '🔇' : '🔊'; });
+    if (actions.pause) bar.append(this.small(svgIcon('pause', 18), 'Pausa', actions.pause));
+    const mute = this.small(svgIcon('sound', 18), 'Sonido', () => { mute.innerHTML = svgIcon(actions.mute() ? 'mute' : 'sound', 18); });
     bar.append(mute);
 
     this.rotate.className = 'rotate-hint';
@@ -70,7 +71,7 @@ export class TouchControls {
     msg.textContent = 'Gira el teléfono: el juego se ve y se juega mucho mejor en horizontal.';
     const icon = document.createElement('div');
     icon.className = 'rotate-icon';
-    icon.textContent = '📱';
+    icon.innerHTML = '<svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/></svg>';
     const ok = document.createElement('button');
     ok.textContent = 'Jugar así';
     ok.addEventListener('click', () => this.rotate.remove());
@@ -78,10 +79,10 @@ export class TouchControls {
     root.append(this.action, bar, this.rotate);
   }
 
-  private small(text: string, title: string, run: () => void): HTMLButtonElement {
+  private small(html: string, title: string, run: () => void): HTMLButtonElement {
     const b = document.createElement('button');
     b.className = 'touch-small';
-    b.textContent = text;
+    b.innerHTML = html;
     b.title = title;
     b.setAttribute('aria-label', title);
     b.addEventListener('pointerdown', (e) => e.stopPropagation());

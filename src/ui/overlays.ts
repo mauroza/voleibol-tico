@@ -63,14 +63,17 @@ export function showResult(
   sets: Record<TeamId, number>,
   stats: MatchStats,
   hasUser: boolean,
-  actions: { rematch: () => void; menu: () => void },
+  actions: { rematch: () => void; menu: () => void; packs?: () => void },
   userTeam: TeamId = 'A',
+  reward = '',
 ): void {
   const won = winner === userTeam;
-  const p = panel('result', won ? '¡Ganaste, mae!' : 'Derrota… ¡a la próxima!', [
-    { label: 'Revancha', run: actions.rematch, primary: true },
+  const buttons = [
+    ...(reward && actions.packs ? [{ label: 'Abrir sobre', run: actions.packs, primary: true }] : []),
+    { label: 'Revancha', run: actions.rematch, primary: !reward },
     { label: 'Menú principal', run: actions.menu },
-  ]);
+  ];
+  const p = panel('result', won ? '¡Ganaste, mae!' : 'Derrota… ¡a la próxima!', buttons);
   const score = document.createElement('div');
   score.className = 'result-score';
   score.innerHTML = `<span style="--c:${teams.A.primary}"></span><b></b><em>${sets.A} – ${sets.B}</em><b></b><span style="--c:${teams.B.primary}"></span>`;
@@ -86,6 +89,12 @@ export function showResult(
   table.innerHTML = rows.map(([label, k]) => `<tr><td>${stats.teams.A[k]}</td><th>${label}</th><td>${stats.teams.B[k]}</td></tr>`).join('');
 
   p.body.append(score, table);
+  if (reward) {
+    const r = document.createElement('p');
+    r.className = 'result-reward';
+    r.textContent = reward;
+    p.body.append(r);
+  }
   if (hasUser) {
     const u = stats.user;
     const timed = u.perfect + u.good + u.bad;

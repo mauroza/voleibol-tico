@@ -1,3 +1,4 @@
+import { typingIn } from '../data/profile';
 import { sideSign, type TeamId } from '../sim/court';
 import { WARM_STAGE_LABELS, type Simulation } from '../sim/rally';
 import { IS_TOUCH } from './touch';
@@ -62,7 +63,8 @@ export class PregamePanel {
     root.append(this.banner, this.toss);
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && sim.skipKey(team)) sim.skip(team, false);
+      // Online ENTER es del chat: ahí se salta con el botón.
+      if (e.key === 'Enter' && !online && !typingIn(e) && sim.skipKey(team)) sim.skip(team, false);
     });
     sim.bus.on((e) => {
       const name = (t: TeamId) => sim.teams[t].name;

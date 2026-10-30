@@ -83,7 +83,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     h1.innerHTML = 'Voleibol <span>Tico</span>';
     const sub = document.createElement('p');
     sub.className = 'menu-sub';
-    sub.textContent = 'Liga de provincias · Partido rápido';
+    sub.textContent = 'Primera división · Partido rápido';
     el.append(h1, sub);
 
     el.append(section('Tu equipo', teamGrid(setup.team, (i) => {

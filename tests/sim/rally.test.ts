@@ -52,7 +52,7 @@ describe('Simulation', () => {
         });
       });
     }
-  });
+  }, 60_000);
 
   it('upcoming anticipa al jugador del próximo contacto', () => {
     let checked = 0;

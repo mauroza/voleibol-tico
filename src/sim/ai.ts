@@ -1,4 +1,4 @@
-import type { AttackShot, ServeType, SetChoice, SetOption, Zone } from './actions';
+import { SET_TEMPO, type AttackShot, type ServeType, type SetChoice, type SetOption, type Zone } from './actions';
 import type { PlayerDef } from './players';
 import type { Rng } from './rng';
 
@@ -38,7 +38,7 @@ export function chooseShot(rng: Rng): AttackShot {
  * fuera de sistema), tres. `_rng` se mantiene por compatibilidad de la firma.
  */
 export function chooseBlockScheme(_rng: Rng, option: SetOption, outOfSystem: boolean): number {
-  if (outOfSystem || option === 'zone4') return 3;
-  if (option === 'quick' || option === 'zone4fast') return 1;
-  return 2;
+  // Según el tempo de la colocación: rápida, bloqueo de 1; media, de 2; alta (o fuera de sistema), de 3.
+  if (outOfSystem) return 3;
+  return [3, 2, 1][SET_TEMPO[option]];
 }

@@ -10,17 +10,24 @@ const KEYS: Record<string, [number, number]> = {
 };
 /** Velocidad de la mira con teclado o palanca (m por segundo real). */
 const AIM_SPEED = 6;
-/** Con el dedo, la mira queda un poco arriba del dedo para que no la tape (px de pantalla). */
-const FINGER_OFFSET = 56;
+/**
+ * Con el dedo la mira funciona como un trackpad: se arrastra en cualquier parte de la pantalla y la mira se mueve desde
+ * donde está (el dedo nunca la tapa ni la hace saltar). `TOUCH_GAIN` amplifica el arrastre para cruzar la cancha con
+ * un movimiento corto del pulgar; `TOUCH_STEP` limita cada movimiento (cerca del horizonte la proyección se dispara).
+ */
+const TOUCH_GAIN = 1.7;
+const TOUCH_STEP = 1.2;
 
 /**
  * Mira del remate apuntado: el mouse sobre la cancha la mueve, el clic remata ahí (cuenta como el timing);
  * flechas o WASD la mueven desde la vista del rematador (arriba = hacia el fondo rival).
- * Táctil: arrastrar el dedo por la cancha mueve la mira (sin golpear); el golpe es el botón de acción.
+ * Táctil: arrastrar el dedo mueve la mira como un trackpad (sin golpear); el golpe es el botón de acción.
  */
 export class AimInput {
   private readonly held = new Set<string>();
   private padActive = false;
+  /** Dedo apoyado: último punto de la cancha bajo el dedo (para mover la mira por diferencia). */
+  private drag: { id: number; at: { x: number; z: number } } | null = null;
 
   constructor(
     private readonly sim: Simulation,
@@ -30,20 +37,38 @@ export class AimInput {
     private readonly paused: () => boolean,
   ) {
     const finger = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
-    const aimAt = (e: PointerEvent) => {
-      const p = this.view.pickGround(e.clientX, e.clientY - (finger(e) ? FINGER_OFFSET : 0));
-      if (p) this.sim.setAim(p.x, p.z);
-    };
     canvas.addEventListener('pointermove', (e) => {
-      // Con el dedo solo cuenta mientras está apoyado (no hay "hover").
-      if (!this.aiming() || (finger(e) && !e.buttons && e.pressure === 0)) return;
-      aimAt(e);
+      if (!this.aiming()) return;
+      if (!finger(e)) {
+        const p = this.view.pickGround(e.clientX, e.clientY);
+        if (p) this.sim.setAim(p.x, p.z);
+        return;
+      }
+      // Dedo: la mira se mueve lo que se movió el dedo sobre la cancha (amplificado).
+      const d = this.sim.decision;
+      const g = this.view.pickGround(e.clientX, e.clientY);
+      if (!d?.aim || !g || !this.drag || this.drag.id !== e.pointerId) return;
+      const step = (v: number) => Math.max(-TOUCH_STEP, Math.min(TOUCH_STEP, v * TOUCH_GAIN));
+      const from = this.sim.localAim ?? d.aim;
+      this.sim.setAim(from.x + step(g.x - this.drag.at.x), from.z + step(g.z - this.drag.at.z));
+      this.drag.at = { x: g.x, z: g.z };
     });
     canvas.addEventListener('pointerdown', (e) => {
+      if (finger(e)) {
+        const g = this.view.pickGround(e.clientX, e.clientY);
+        this.drag = g ? { id: e.pointerId, at: { x: g.x, z: g.z } } : null;
+        return;
+      }
       if (!this.aiming()) return;
-      aimAt(e);
-      if (!finger(e)) this.sim.press(this.clock(e.timeStamp));
+      const p = this.view.pickGround(e.clientX, e.clientY);
+      if (p) this.sim.setAim(p.x, p.z);
+      this.sim.press(this.clock(e.timeStamp));
     });
+    const lift = (e: PointerEvent) => {
+      if (this.drag?.id === e.pointerId) this.drag = null;
+    };
+    canvas.addEventListener('pointerup', lift);
+    canvas.addEventListener('pointercancel', lift);
     window.addEventListener('keydown', (e) => {
       if (KEYS[e.code] && this.aiming()) {
         e.preventDefault();

@@ -3,10 +3,10 @@ import { TEAMS, makeTeam } from '../../src/data/teams';
 import { attackContactHeight, moveSpeed } from '../../src/sim/players';
 
 describe('teams', () => {
-  it('hay 7 equipos de provincia con 12 jugadores cada uno', () => {
-    expect(TEAMS).toHaveLength(7);
-    expect(new Set(TEAMS.map((t) => t.province)).size).toBe(7);
+  it('los 6 equipos de primera división, con 12 jugadores cada uno y los nombres conocidos', () => {
+    expect(TEAMS.map((t) => t.name)).toEqual(['San José', 'San Carlos', 'Cartago', 'Turrialba', 'UCR', 'Limón']);
     for (const t of TEAMS) expect(t.roster).toHaveLength(12);
+    expect(TEAMS[0].roster.map((p) => p.name)).toContain('Stanley Grant');
   });
 
   it('el lineup inicial es un 5-1 y el líbero reemplaza a los centrales', () => {

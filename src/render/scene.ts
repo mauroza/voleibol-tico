@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { landingTime, positionAt } from '../sim/ball';
 import { COURT } from '../sim/court';
+import { IS_TOUCH } from '../ui/touch';
 import { AVG_HEIGHT, isTall, shirtName } from '../sim/players';
 import type { Simulation } from '../sim/rally';
 import { SpeedLines } from '../ui/speedlines';
@@ -21,6 +22,9 @@ import { toon } from './toon';
 /**
  * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
  */
+/** Radio con que se dibuja la pelota (más grande que la real para que se vea bien de lejos). */
+const BALL_DRAW_RADIUS = COURT.ballRadius * 1.6;
+
 function ballTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
@@ -117,7 +121,8 @@ const SERVE_TOSS = 0.55;
  * Solo lee la simulación; durante una repetición `replaying` es true y el bucle no debe avanzar la simulación.
  */
 export class MatchView {
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: true });
+  // En el teléfono sin antialias (con la densidad de píxeles del aparato ya se ve nítido y va mucho más fluido).
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' });
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
   private readonly animators: Animator[] = [];
@@ -174,14 +179,17 @@ export class MatchView {
   private lastCapture = -Infinity;
   private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
-  private pixelRatio = Math.min(window.devicePixelRatio, window.matchMedia?.('(pointer: coarse)').matches ? 1.25 : 1.5);
+  private pixelRatio = Math.min(window.devicePixelRatio, 1.5);
   private slowFrames = 0;
 
   constructor(container: HTMLElement, private readonly sim: Simulation, uiRoot: HTMLElement) {
     this.renderer.setPixelRatio(this.pixelRatio);
     container.appendChild(this.renderer.domElement);
-    this.scene.background = new THREE.Color('#141a26');
-    this.scene.fog = new THREE.Fog('#141a26', 30, 60);
+    // Pabellón de noche con la cancha iluminada como en la transmisión: tribunas en penumbra, cancha brillante.
+    this.scene.background = new THREE.Color('#0b1018');
+    this.scene.fog = new THREE.Fog('#0b1018', 26, 58);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     this.camera.position.set(0, 11, 19);
     this.camera.lookAt(0, 0.5, 0);
     // Desarrollo: ?cam=x,y,z,lx,ly,lz fija la cámara (para revisar de cerca).
@@ -192,16 +200,25 @@ export class MatchView {
       this.camera.lookAt(cam[3], cam[4], cam[5]);
     }
     this.director = new CameraDirector(this.camera, sim, !!fixed);
-    this.scene.add(new THREE.HemisphereLight('#ffffff', '#445566', 0.7));
-    const sun = new THREE.DirectionalLight('#ffffff', 2.2);
-    sun.position.set(5, 15, 8);
-    this.scene.add(sun);
+    // Luz de estadio: cielo blanco frío desde los focos, rebote cálido del piso de madera; principal casi cenital
+    // (sin sombras duras de costado) y un relleno cálido desde el lado opuesto para que nadie quede plano.
+    this.scene.add(new THREE.HemisphereLight('#e6eeff', '#4a3a2a', 0.95));
+    const key = new THREE.DirectionalLight('#f4f7ff', 2.4);
+    key.position.set(3, 20, 7);
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight('#ffe2bd', 0.75);
+    fill.position.set(-8, 9, -12);
+    this.scene.add(fill);
+    const rim = new THREE.DirectionalLight('#cfe0ff', 0.5);
+    rim.position.set(0, 6, -20);
+    this.scene.add(rim);
+    this.scene.add(this.courtGlow());
 
     this.arena = new Arena(sim.teams);
     this.scene.add(this.arena.group);
     this.buildCourt();
     this.buildPlayers();
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(COURT.ballRadius * 1.6, 32, 20), toon('#ffffff', ballTexture()));
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_DRAW_RADIUS, 32, 20), toon('#ffffff', ballTexture()));
     this.ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.18, 20),
       new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 }),
@@ -294,8 +311,9 @@ export class MatchView {
       const u = this.byKey.get(deciding)!.rig.root.position;
       this.userRing.position.set(u.x, 0.02, u.z);
     }
-    // La pelota nunca se hunde en el piso (en ningún caso: online, repetición, rebotes).
-    ballPos.y = Math.max(ballPos.y, COURT.ballRadius);
+    // La pelota nunca se hunde en el piso (en ningún caso: online, repetición, rebotes). Se dibuja más grande que la de
+    // la simulación (para verla bien), así que se apoya con su radio visible: si no, quedaba medio enterrada y "plana".
+    ballPos.y = Math.max(ballPos.y, BALL_DRAW_RADIUS);
     this.ball.position.copy(ballPos);
     this.spinBall();
     this.updateAim();
@@ -305,7 +323,7 @@ export class MatchView {
     const warm = this.replay ? null : this.sim.warmupBallsAt(this.renderAhead());
     this.ball2.visible = this.ball2Shadow.visible = !!warm;
     if (warm) {
-      this.ball2.position.set(warm.B.x, warm.B.y, warm.B.z);
+      this.ball2.position.set(warm.B.x, Math.max(warm.B.y, BALL_DRAW_RADIUS), warm.B.z);
       this.ball2Shadow.position.set(warm.B.x, 0.012, warm.B.z);
       this.ball2.rotation.x += 0.05;
     }
@@ -564,6 +582,8 @@ export class MatchView {
     const { x, z } = this.sim.localAim ?? d.aim;
     const inCourt = Math.abs(x) <= COURT.halfLength && Math.abs(z) <= COURT.halfWidth;
     this.aimCross.position.set(x, 0.03, z);
+    // En el teléfono la mira es más grande (se ve bien en pantalla chica).
+    this.aimCross.scale.setScalar(IS_TOUCH ? 1.6 : 1);
     this.aimSpread.position.set(x, 0.025, z);
     (this.aimSpread.material as THREE.MeshBasicMaterial).color.set(inCourt ? '#ffffff' : '#ff5a5a');
     const pathMat = this.aimPath.material as THREE.LineDashedMaterial;
@@ -723,6 +743,28 @@ export class MatchView {
     const wide = 1.5;
     this.camera.fov = w / h >= wide ? 45 : Math.min(105, (2 * Math.atan(Math.tan((45 * Math.PI) / 360) * (wide / (w / h))) * 180) / Math.PI);
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Charco de luz sobre la cancha (los focos apuntan ahí): la cancha brilla y el resto queda en penumbra. */
+  private courtGlow(): THREE.Mesh {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d')!;
+    const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255,250,235,0.34)');
+    grad.addColorStop(0.55, 'rgba(255,248,230,0.2)');
+    grad.addColorStop(1, 'rgba(255,248,230,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(c);
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(COURT.halfLength * 2 + 10, COURT.halfWidth * 2 + 8),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.012;
+    glow.renderOrder = 1;
+    return glow;
   }
 
   private buildCourt(): void {

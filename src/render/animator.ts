@@ -10,8 +10,11 @@ import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose,
 /** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
 const MOVING = 0.1;
 const NET_PROBE = new THREE.Vector3();
-/** Mano arriba hacia la red para chocarla con el rival. */
-const HIGH_FIVE: Pose = { shoulderR: [-2.5, 0, -0.3], elbowR: [-0.25, 0, 0], shoulderL: [0, 0, 0.1], elbowL: [-0.2, 0, 0] };
+/** Brazo del lado de la red, abierto hacia el costado y arriba, palma hacia el rival que pasa del otro lado. */
+const HIGH_FIVE: Record<'L' | 'R', Pose> = {
+  L: { shoulderL: [-0.55, 0, 2.15], elbowL: [-0.55, 0, 0] },
+  R: { shoulderR: [-0.55, 0, -2.15], elbowR: [-0.55, 0, 0] },
+};
 const WALK_MAX = 2.2;
 
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -272,7 +275,12 @@ export class Animator {
         if (o.team === p.team) continue;
         if (Math.abs(o.pos.x) < 1.5 && Math.abs(p.pos.x) < 1.5) near = Math.min(near, Math.abs(o.pos.z - p.pos.z));
       }
-      if (near < 1.2) pose = blendPose(pose, HIGH_FIVE, ease(1 - near / 1.2));
+      if (near < 1.2) {
+        // ¿La red le queda a la izquierda o a la derecha? (izquierda del cuerpo = (cos yaw, −sin yaw)).
+        const toNet = -Math.sign(p.pos.x);
+        const side = Math.cos(this.yaw) * toNet > 0 ? 'L' : 'R';
+        pose = blendPose(pose, { ...pose, ...HIGH_FIVE[side] }, ease(1 - near / 1.2));
+      }
     }
 
     // Respiración y peso que se mueve: nadie queda quieto como un robot.

@@ -1,0 +1,117 @@
+/*
+ * Interfaz del partido: un solo esquema para todos los tamaños de pantalla (computadora, tablet y teléfonos chicos).
+ * Arriba: izquierda pausa/sonido, centro el marcador, derecha tiempo y x4. Debajo del marcador los comentarios.
+ * Abajo al centro el panel de la jugada. Nada se encima. Los `#hud` dan prioridad sobre las reglas viejas.
+ */
+:root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --edge: 10px; }
+
+/* ---------- marcador ---------- */
+#hud .scoreboard { position: fixed; z-index: 6; top: calc(var(--edge) + var(--safe-t)); left: 50%; transform: translateX(-50%); display: flex; align-items: stretch;
+  font-family: var(--am-body); color: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px #0009, 0 0 0 1px #ffffff1c; pointer-events: none; user-select: none; }
+#hud .sb-team { display: flex; align-items: center; gap: 7px; padding: 4px 8px; background: linear-gradient(180deg, #121a33f2, #0a1024f2); position: relative; }
+#hud .sb-team::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--c); }
+#hud .sb-team.mine::before { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--c) 30%, transparent)); pointer-events: none; }
+#hud .sb-crest { display: grid; }
+#hud .sb-crest .crest { width: 24px; height: auto; display: block; }
+#hud .sb-name { font-family: var(--am-display); font-size: 20px; letter-spacing: 1.5px; line-height: 1; }
+#hud .sb-sets { min-width: 18px; padding: 2px 5px; border-radius: 5px; background: #ffffff1a; font-weight: 800; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+#hud .sb-serve { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
+#hud .sb-serve.on { background: #ffe14d; box-shadow: 0 0 8px #ffe14d; }
+#hud .sb-points { min-width: 36px; padding: 0 4px; font-family: var(--am-display); font-size: 32px; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; }
+#hud .sb-points.bump { animation: sb-bump .5s cubic-bezier(.2, .8, .2, 1); }
+@keyframes sb-bump { 30% { transform: scale(1.35); color: #ffe14d; } }
+#hud .sb-set { display: grid; place-items: center; padding: 0 8px; background: #e5293e; font-family: var(--am-display); font-size: 13px; letter-spacing: 1.5px; writing-mode: vertical-rl; transform: rotate(180deg); }
+#hud .score-toast { position: fixed; z-index: 6; top: calc(var(--edge) + var(--safe-t) + 50px); left: 50%; transform: translate(-50%, -6px); max-width: calc(100% - 32px);
+  padding: 6px 14px; border-radius: 999px; background: #060a17d9; border: 1px solid #ffffff1f; color: #fff; font: 600 13px var(--am-body); text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; }
+#hud .score-toast.on { opacity: 1; transform: translate(-50%, 0); }
+#hud .hud { display: none; }
+
+/* ---------- esquinas de arriba ---------- */
+#hud .timeout-button { top: calc(var(--edge) + var(--safe-t)); right: calc(var(--edge) + var(--safe-r)); left: auto; z-index: 6; padding: 8px 12px; border-radius: 10px;
+  font: 600 12px var(--am-body); background: #060a17d9; border: 1px solid #ffffff22; }
+#hud .timeout-toast { top: calc(var(--edge) + var(--safe-t) + 44px); right: calc(var(--edge) + var(--safe-r)); left: auto; }
+#hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 44px); right: calc(var(--edge) + var(--safe-r)); border-radius: 999px; }
+#hud .touch-bar { top: calc(var(--edge) + var(--safe-t)); left: calc(var(--edge) + var(--safe-l)); gap: 6px; }
+#hud .touch-small { width: 38px; height: 38px; background: #060a17d9; border-color: #ffffff22; }
+#hud .net-ping { top: auto; bottom: calc(var(--edge) + var(--safe-b)); left: calc(var(--edge) + var(--safe-l)); right: auto; font-size: 11px; }
+#hud .replay-badge { top: calc(var(--edge) + var(--safe-t) + 50px); left: calc(var(--edge) + var(--safe-l)); font-family: var(--am-display); font-weight: 400; font-size: 16px; letter-spacing: 2px; border-radius: 8px; }
+body.touch #hud .replay-badge { top: calc(var(--edge) + var(--safe-t) + 50px); }
+#hud .challenge-verdict { top: 24%; }
+#hud .pregame-banner, #hud .warmup-banner { top: calc(var(--edge) + var(--safe-t) + 52px); }
+
+/* ---------- panel de la jugada ---------- */
+#hud .decision { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--edge) + var(--safe-b)); width: min(540px, calc(100% - 24px - var(--safe-l) - var(--safe-r)));
+  box-sizing: border-box; padding: 9px 12px; border-radius: 14px; background: #060a17e0; border: 1px solid #ffffff1f; box-shadow: 0 10px 30px #0008; font-family: var(--am-body); }
+#hud .decision-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; letter-spacing: 1.2px; margin-bottom: 6px; }
+#hud .meter { margin-top: 4px; border-radius: 999px; }
+#hud .decision-hint { font-size: 11px; line-height: 1.35; color: #aab4d0; }
+
+/* ---------- pantallas bajas: teléfono en horizontal ---------- */
+@media (max-height: 480px) {
+  :root { --edge: 6px; }
+  #hud .sb-team { padding: 3px 6px; gap: 5px; }
+  #hud .sb-crest .crest { width: 20px; }
+  #hud .sb-name { font-size: 16px; }
+  #hud .sb-points { font-size: 26px; min-width: 30px; }
+  #hud .sb-sets { font-size: 11px; }
+  #hud .sb-set { font-size: 11px; padding: 0 5px; }
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 40px); font-size: 12px; padding: 4px 12px; }
+  #hud .timeout-button { padding: 6px 9px; font-size: 11px; }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 36px); }
+  #hud .touch-small { width: 34px; height: 34px; }
+  #hud .replay-badge { top: calc(var(--edge) + var(--safe-t) + 42px); font-size: 13px; padding: 4px 10px; }
+  #hud .pregame-banner, #hud .warmup-banner { top: calc(var(--edge) + var(--safe-t) + 42px); }
+  #hud .decision { padding: 6px 10px; width: min(500px, calc(100% - 16px - var(--safe-l) - var(--safe-r))); }
+  #hud .decision-title { font-size: 11px; margin-bottom: 3px; }
+  #hud .decision-hint { display: none; }
+  #hud .meter { height: 16px; }
+  #hud .meter.power { height: 18px; }
+  #hud .feedback { font-size: 28px; }
+  #hud .feedback[data-timing="power-strong"], #hud .feedback[data-timing="ace"] { font-size: 34px; }
+}
+/* Muy bajas (iPhone SE en horizontal, 320 px de alto). */
+@media (max-height: 340px) {
+  #hud .sb-name { display: none; }
+  #hud .sb-points { font-size: 22px; }
+  #hud .score-toast { display: none; }
+  #hud .timeout-button { font-size: 10px; padding: 5px 7px; }
+  #hud .decision-title { display: none; }
+}
+/* Angostas (teléfono en vertical o pantallas de menos de 600 px): el marcador baja debajo de los botones. */
+@media (max-width: 600px) {
+  #hud .scoreboard { top: calc(var(--edge) + var(--safe-t) + 46px); }
+  #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 92px); }
+  #hud .sb-name { font-size: 15px; }
+  #hud .sb-points { font-size: 24px; min-width: 28px; }
+  #hud .replay-badge { top: calc(var(--edge) + var(--safe-t) + 92px); }
+}
+
+/* ---------- ventanas (pausa, resultado, tiempo, alineación): siempre caben, con desplazamiento si hace falta ---------- */
+#hud .overlay { padding: max(10px, var(--safe-t)) max(10px, var(--safe-r)) max(10px, var(--safe-b)) max(10px, var(--safe-l)); box-sizing: border-box; }
+#hud .overlay-box { max-height: 100%; overflow-y: auto; box-sizing: border-box; overscroll-behavior: contain; }
+@media (max-height: 480px) {
+  #hud .overlay-box { padding: 12px 14px; }
+  #hud .overlay-box h2 { font-size: 28px; margin-bottom: 6px; }
+  #hud .overlay-actions { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 8px; }
+  #hud .overlay-actions button { padding: 9px; }
+  #hud .result-stats { font-size: 12px; }
+}
+
+/* Ayuda de teclas: está en "Cómo jugar"; en el partido se encimaba con el panel de la jugada. */
+body:has(#hud .scoreboard) #help { display: none; }
+#hud .score-toast { max-width: min(62%, 520px); }
+/* Medianas (tablet vertical, ventanas angostas): Tiempo y x4 bajan a la segunda fila, a la derecha. */
+@media (max-width: 900px) {
+  #hud .timeout-button { top: calc(var(--edge) + var(--safe-t) + 52px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 92px); }
+}
+@media (max-width: 900px) and (max-height: 480px) {
+  #hud .timeout-button { top: calc(var(--edge) + var(--safe-t) + 42px); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 76px); }
+  #hud .score-toast { max-width: 50%; }
+}
+@media (max-width: 600px) {
+  #hud .timeout-button { top: calc(var(--edge) + var(--safe-t)); }
+  #hud .timeout-toast, #hud .fast-badge { top: calc(var(--edge) + var(--safe-t) + 40px); }
+}

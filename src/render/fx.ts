@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
-const TRAIL = 18;
+/** Puntos de la cinta de la estela (los últimos cuadros de la pelota). */
+const TRAIL = 26;
 const SPARKS = 36;
 const SPARK_LIFE = 0.55;
 
@@ -9,8 +10,17 @@ const SPARK_LIFE = 0.55;
  */
 export class Effects {
   readonly group = new THREE.Group();
-  private readonly history: THREE.Vector3[] = [];
-  private readonly trail: THREE.InstancedMesh;
+  private readonly history: THREE.Vector3[] = Array.from({ length: TRAIL }, () => new THREE.Vector3());
+  private filled = 0;
+  /** Estela: cinta que mira a la cámara, ancha y brillante junto a la pelota y fina y transparente al final. */
+  private readonly trail: THREE.Mesh;
+  private readonly trailPos = new Float32Array(TRAIL * 2 * 3);
+  private readonly trailCol = new Float32Array(TRAIL * 2 * 3);
+  /** 0..1: la estela aparece y se va suave (no de golpe al cambiar la velocidad). */
+  private trailAlpha = 0;
+  private readonly tmpA = new THREE.Vector3();
+  private readonly tmpB = new THREE.Vector3();
+  private readonly color = new THREE.Color();
   private readonly bursts: { mesh: THREE.Mesh; born: number; size: number }[] = [];
   private readonly m = new THREE.Matrix4();
   private fireUntil = 0;
@@ -20,12 +30,19 @@ export class Effects {
   private lastUpdate = 0;
 
   constructor(private readonly camera: THREE.Camera) {
-    this.trail = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(0.16, 10, 8),
-      new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0.45, depthWrite: false }),
-      TRAIL,
-    );
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.trailPos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.trailCol, 3));
+    const index: number[] = [];
+    for (let i = 0; i < TRAIL - 1; i++) {
+      const a = i * 2;
+      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    geo.setIndex(index);
+    // Suma de luz (aditiva): el negro es transparente, así el color por vértice hace de transparencia.
+    this.trail = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     this.trail.frustumCulled = false;
+    this.trail.renderOrder = 5;
     this.group.add(this.trail);
     this.sparks = new THREE.InstancedMesh(
       new THREE.TetrahedronGeometry(0.06),
@@ -85,19 +102,41 @@ export class Effects {
 
   /** `now` en segundos reales: los efectos de pantalla no se ralentizan con la cámara lenta. */
   update(ball: THREE.Vector3, ballSpeed: number, now: number): void {
-    this.history.unshift(ball.clone());
-    if (this.history.length > TRAIL) this.history.pop();
-    const show = ballSpeed > 11;
+    // Historia sin crear objetos: el último punto pasa a ser el primero.
+    const last = this.history.pop()!;
+    this.history.unshift(last.copy(ball));
+    this.filled = Math.min(TRAIL, this.filled + 1);
+    // Un salto grande (la pelota vuelve a la mano del sacador, o empieza una repetición) borra la estela.
+    if (this.history[1].distanceToSquared(ball) > 9) this.filled = 1;
     const fire = now < this.fireUntil;
-    (this.trail.material as THREE.MeshBasicMaterial).color.set(fire ? '#ff4a2a' : '#fff3b0');
-    (this.trail.material as THREE.MeshBasicMaterial).opacity = fire ? 0.7 : 0.45;
+    const target = ballSpeed > 10 ? Math.min(1, (ballSpeed - 10) / 8) : 0;
+    this.trailAlpha += (target - this.trailAlpha) * 0.25;
+    this.color.set(fire ? '#ff5a2a' : '#ffe9a8');
+    const width = (fire ? 0.2 : 0.13) * (0.6 + this.trailAlpha * 0.4);
+    const cam = this.camera.position;
     for (let i = 0; i < TRAIL; i++) {
-      const p = this.history[i] ?? ball;
-      const s = show ? (1 - i / TRAIL) * (fire ? 1.5 : 0.9) : 0;
-      this.m.makeScale(s, s, s).setPosition(p);
-      this.trail.setMatrixAt(i, this.m);
+      const p = this.history[Math.min(i, this.filled - 1)];
+      const q = this.history[Math.min(i + 1, this.filled - 1)];
+      // Ancho perpendicular a la dirección de la estela y a la cámara: siempre se ve de frente.
+      this.tmpA.subVectors(p, q);
+      if (this.tmpA.lengthSq() < 1e-8) this.tmpA.set(1, 0, 0);
+      this.tmpB.subVectors(cam, p).cross(this.tmpA).normalize();
+      const k = i / (TRAIL - 1);
+      const w = width * (1 - k) ** 1.3;
+      const glow = this.trailAlpha * (1 - k) ** 1.6 * (i < this.filled ? 1 : 0);
+      for (const side of [0, 1]) {
+        const s = side ? -w : w;
+        const o = (i * 2 + side) * 3;
+        this.trailPos[o] = p.x + this.tmpB.x * s;
+        this.trailPos[o + 1] = p.y + this.tmpB.y * s;
+        this.trailPos[o + 2] = p.z + this.tmpB.z * s;
+        this.trailCol[o] = this.color.r * glow;
+        this.trailCol[o + 1] = this.color.g * glow;
+        this.trailCol[o + 2] = this.color.b * glow;
+      }
     }
-    this.trail.instanceMatrix.needsUpdate = true;
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.color.needsUpdate = true;
 
     const dt = Math.min(0.05, Math.max(0, now - this.lastUpdate));
     this.lastUpdate = now;

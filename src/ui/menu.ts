@@ -10,6 +10,7 @@ import { createRng } from '../sim/rng';
 import { audio } from '../audio/music';
 import { CREST_COUNT, CREST_NAMES, crestSvg, icon, initials, type IconName } from './crest';
 import { cardEl, esc, playerChip, rarityLevel, ROLE_SHORT } from './cards-ui';
+import { teamBadge } from './hud';
 import { LEADERBOARD_AVAILABLE, topClubs, type ClubRow } from '../net/leaderboard';
 
 export type Pace = 'calm' | 'normal' | 'real';
@@ -300,7 +301,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       const list = h('div', 'am-teams');
       const opts: { i: number; name: string; sub: string; crest: string; color: string }[] = [];
       if (withClub) opts.push({ i: CLUB, name: p.club.name, sub: `Tu club · media ${teamOverall(clubTeam(p))}`, crest: crestSvg(p.club, 38), color: p.club.primary });
-      TEAMS.forEach((t, i) => opts.push({ i, name: t.name, sub: `${t.province} · ${STYLE_LABELS[t.style]} · media ${teamOverall(t)}`, crest: crestSvg({ short: initials(t.name), primary: t.primary, secondary: t.secondary, crest: i % CREST_COUNT }, 38), color: t.primary }));
+      TEAMS.forEach((t, i) => opts.push({ i, name: t.name, sub: `${t.province} · ${STYLE_LABELS[t.style]} · media ${teamOverall(t)}`, crest: teamBadge(t, 38), color: t.primary }));
       for (const o of opts) {
         const b = button('am-team', `${o.crest}<span><b>${esc(o.name)}</b><small>${o.sub}</small></span>`, () => { choose(o.i); render(); });
         b.style.setProperty('--c1', o.color);

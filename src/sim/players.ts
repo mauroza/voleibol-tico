@@ -59,8 +59,8 @@ export interface PlayerState {
   stamina: number;
   /** Fuera del juego (ceremonias, cambios de cancha) caminan o trotan: fracción de su velocidad máxima. */
   pace?: number;
-  /** Punto de paso antes del destino (para rodear el poste de la red al cambiar de cancha). */
-  via?: Vec3 | null;
+  /** Puntos de paso antes del destino, en orden (para rodear el poste de la red al cambiar de cancha). */
+  via?: Vec3[] | null;
 }
 
 /** m/s */

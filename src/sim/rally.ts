@@ -117,6 +117,25 @@ const TEAM_IDS: readonly TeamId[] = ['A', 'B'];
 /** La IA difícil acierta más el saque morado. */
 const DIFFICULTY_ACE: Record<Difficulty, number> = { easy: 0.4, normal: 1, hard: 1.6 };
 
+/** Banca: tablón entre |x| 2.2 y 9.6, en z -6.83…-6.41. Por delante se camina en z `BENCH_FRONT`. */
+const BENCH_FRONT = -5.75;
+const behindBench = (z: number) => z < -6.25;
+const alongBench = (x: number) => Math.abs(x) > 1.9 && Math.abs(x) < 9.9;
+
+/**
+ * Nadie atraviesa la banca: para sentarse se llega por delante y se entra derecho; para irse, primero se sale hacia
+ * adelante. Viniendo de detrás de la silla del árbitro (cambio de cancha), se rodea por la punta de la banca.
+ */
+function benchDetour(pos: Vec3, goal: Vec3): Vec3 {
+  if (Math.abs(goal.x - pos.x) < 0.5) return goal;
+  if (behindBench(pos.z) && alongBench(pos.x)) return v3(pos.x, 0, BENCH_FRONT);
+  if (behindBench(goal.z) && alongBench(goal.x)) {
+    if (behindBench(pos.z)) return v3(Math.sign(goal.x) * 1.7, 0, BENCH_FRONT);
+    return v3(goal.x, 0, BENCH_FRONT);
+  }
+  return goal;
+}
+
 /** Una fila de calentamiento: su balón, en qué parte de la jugada va y quién remata. */
 interface WarmLane {
   /** Remate: idle → set → attack → fly. Saque: idle → walk → serveWait → serveHit → fly. */
@@ -1105,8 +1124,10 @@ export class Simulation {
         p.pace = 0.55;
         // Al cambiar de cancha rodean la red por afuera de los postes (cada equipo por su lado, A por el de la cámara y
         // B por el de los árbitros), cada uno por su propio carril para que no se amontonen.
+        // Primero hasta el carril por su propio lado, después cruzan por fuera del poste: nunca caminan por la red.
         const lane = team === 'A' ? COURT.halfWidth + 1.9 + i * 0.25 : -(COURT.halfWidth + 2.5 + i * 0.25);
-        p.via = walkAround && Math.sign(p.pos.x) !== Math.sign(p.target.x) ? v3(0, 0, lane) : null;
+        const from = Math.sign(p.pos.x) || 1;
+        p.via = walkAround && from !== Math.sign(p.target.x) ? [v3(from * 0.9, 0, lane), v3(-from * 0.9, 0, lane)] : null;
       });
     }
   }
@@ -1368,8 +1389,10 @@ export class Simulation {
       p.target = plan.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
     }
     for (const p of this.players.values()) {
-      if (p.via && len2(p.via.x - p.pos.x, p.via.z - p.pos.z) < 0.6) p.via = null;
-      const goal = p.via ?? p.target;
+      const next = p.via?.[0];
+      if (next && len2(next.x - p.pos.x, next.z - p.pos.z) < 0.6) p.via!.shift();
+      if (p.via && p.via.length === 0) p.via = null;
+      const goal = benchDetour(p.pos, p.via?.[0] ?? p.target);
       const dx = goal.x - p.pos.x;
       const dz = goal.z - p.pos.z;
       const d = len2(dx, dz);
@@ -1379,8 +1402,9 @@ export class Simulation {
       p.pos.z += (dz / d) * len;
     }
     this.separatePlayers();
-    // Nadie cruza la línea central (el cuerpo se queda en su campo).
-    for (const team of TEAM_IDS) {
+    // Nadie cruza la línea central (el cuerpo se queda en su campo). En las ceremonias (cambio de cancha incluido)
+    // no: ahí caminan por fuera de los postes hacia el otro lado y este límite los arrastraba de golpe hasta la red.
+    if (this.phase !== 'ceremony' && this.phase !== 'warmup') for (const team of TEAM_IDS) {
       const s = sideSign(team);
       for (const k of this.court(team)) {
         const p = this.player(k).pos;

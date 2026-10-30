@@ -39,15 +39,15 @@ export class CameraDirector {
   }
 
   /**
-   * Repetición como en la tele: un plano abierto y casi fijo que encuadra toda la jugada, desde el atacante hasta
-   * donde picó la pelota. Corte directo, sin barrido de cámara.
+   * Repetición (y challenge) como en la tele: plano abierto desde el costado, lejos y alto, que sigue a la pelota con
+   * suavidad. Se ve la jugada completa (los dos campos) y la pelota siempre en cuadro, sin acercarse de más.
    */
   startReplay(focus: THREE.Vector3, land: THREE.Vector3 = focus): void {
     this.mode = 'replay';
     this.replayFocus.copy(focus);
     this.replayLand.copy(land);
     this.replayAngle = 0;
-    const [pos, look] = this.replayShot(0);
+    const [pos, look] = this.replayShot(focus);
     this.pos.copy(pos);
     this.look.copy(look);
   }
@@ -56,23 +56,22 @@ export class CameraDirector {
     this.mode = 'broadcast';
   }
 
-  /** Plano de la repetición: del lado de la tribuna, elevado, mirando al medio entre el remate y el pique. */
-  private replayShot(t: number): [THREE.Vector3, THREE.Vector3] {
-    const a = this.replayFocus;
-    const b = this.replayLand;
-    const mid = new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
-    const span = Math.hypot(a.x - b.x, a.z - b.z);
-    // Siempre dentro del pabellón, antes de la tribuna (sin público tapando): para encuadrar la jugada entera se sube
-    // en vez de alejarse. Más alto cuanto más larga la jugada y en pantallas angostas.
+  /** Plano de la repetición para la pelota en `ball`: costado del pabellón, alto, siguiéndola a medias. */
+  private replayShot(ball: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
+    // En pantallas angostas (teléfono vertical) se sube un poco más para que entren los dos campos.
     const narrow = Math.max(1, 1.5 / this.camera.aspect) ** 0.5;
-    const drift = Math.sin(t * 0.35) * 1;
-    const z = Math.min(TUNING.hall.standZ - 0.8, mid.z + 7.5);
-    const y = (4.6 + span * 0.32) * narrow;
-    const pos = new THREE.Vector3(mid.x * 0.5 + drift, Math.min(y, TUNING.hall.ceiling - 1.5), z);
-    const look = new THREE.Vector3(mid.x, 1, mid.z);
+    const pos = new THREE.Vector3(
+      Math.max(-6, Math.min(6, ball.x * 0.4)),
+      Math.min(7.8 * narrow, TUNING.hall.ceiling - 1.5),
+      TUNING.hall.standZ - 0.8,
+    );
+    const look = new THREE.Vector3(
+      Math.max(-7, Math.min(7, ball.x * 0.75)),
+      Math.max(0.6, Math.min(3, ball.y * 0.45)),
+      Math.max(-3, Math.min(3, ball.z * 0.45)),
+    );
     return [pos, look];
   }
-
 
   update(dtReal: number, ballPos: THREE.Vector3): void {
     if (this.fixed) return;
@@ -90,10 +89,10 @@ export class CameraDirector {
       rate = 2;
     } else if (this.mode === 'replay') {
       this.replayAngle += dtReal;
-      const [pos, look] = this.replayShot(this.replayAngle);
+      const [pos, look] = this.replayShot(ballPos);
       targetPos.copy(pos);
       targetLook.copy(look);
-      rate = 6;
+      rate = 2.5;
     } else if (d?.aim && d.kind !== 'block') {
       // Saque, pase o remate apuntado: tercera persona, detrás y arriba del jugador, mirando hacia la mira.
       // La cámara no sigue a la mira (miraba hacia ella y el mouse o el dedo, quietos, la seguían corriendo): enfoca el
@@ -106,15 +105,19 @@ export class CameraDirector {
       if (d.kind === 'set') {
         // Colocación: plano fijo desde atrás y arriba del propio campo (no sigue al colocador, que se mueve), con la red
         // entera y todos los atacantes a la vista: punta, central, opuesto y zagueros.
-        targetPos.set(-toward * 10.5, 7.4, 0);
-        targetLook.set(-toward * 1.4, 0.4, 0);
+        // Si coloca otro (pase malo: el líbero o un zaguero desde atrás), la cámara se aleja y sube lo necesario para
+        // que el que coloca quede siempre en cuadro, y se corre hacia su lado.
+        const depth = Math.max(0, -toward * u.x);
+        targetPos.set(-toward * Math.max(10.5, depth + 5), 7.4 + Math.max(0, depth - 3) * 0.7, u.z * 0.35);
+        targetLook.set(-toward * Math.max(1.4, depth * 0.45), 0.4, u.z * 0.3);
       } else if (d.kind === 'serve') {
         // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
         targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6);
         targetLook.set(u.x + (rival - u.x) * 0.78, 0, u.z * 0.22);
       } else {
-        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.7);
-        targetLook.set(u.x + (rival - u.x) * 0.6, 0.2, u.z * 0.4);
+        // Remate (y pase): detrás del que golpea, que queda siempre abajo en el centro del cuadro.
+        targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.85);
+        targetLook.set(u.x + (rival - u.x) * 0.5, 0.2, u.z * 0.6);
       }
       rate = 5;
     } else if (d?.kind === 'block' && d.aim) {

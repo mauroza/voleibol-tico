@@ -303,7 +303,10 @@ export class Lockstep {
     // Con una jugada abierta, ~25 mensajes por segundo; con solo cosas lentas posibles, ~8 (sobra margen); si no, ~5.
     const deciding = fastOpen(this.sim, this.local) || this.tick - this.lastOpen[this.local] <= this.delay + 1;
     const slow = slowOpen(this.sim, this.local);
-    if (this.sendClock > (deciding ? 0.04 : slow ? 0.12 : 0.2)) {
+    // Conexión directa: sin límite del servidor, se manda en cada cuadro de juego (menos espera para el rival).
+    const direct = (this.net as { state?: string }).state === 'direct';
+    const every = direct ? (deciding ? 0.012 : slow ? 0.05 : 0.1) : deciding ? 0.04 : slow ? 0.12 : 0.2;
+    if (this.sendClock > every) {
       this.sendClock = 0;
       this.flush();
     }

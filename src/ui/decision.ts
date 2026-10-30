@@ -1,6 +1,6 @@
 import { SET_TEMPO } from '../sim/actions';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
-import { meterOf, type Decision, type DecisionKind, type Power } from '../sim/decision';
+import { meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
@@ -178,8 +178,13 @@ export class DecisionPanel {
     this.meter.style.setProperty('--strong', `${(maxTempo >= 2 ? TUNING.power.strong : 1) * 100}%`);
     for (const [i, span] of [...this.tempo.children].entries()) (span as HTMLElement).style.display = i <= maxTempo ? 'flex' : 'none';
     this.perfectZone.style.display = this.goodZone.style.display = power ? 'none' : 'block';
-    this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
-    this.goodZone.style.width = `${((TUNING.decision.goodWindow / TUNING.decision.slowWindow) * 100).toFixed(1)}%`;
+    // Zonas de timing: en la recepción se corren según el punto ideal de esta jugada.
+    const w = meterWindow(d);
+    const right = `${(((d.shift ?? 0) / w) * 100).toFixed(1)}%`;
+    this.perfectZone.style.width = `${((TUNING.decision.perfectWindow / w) * 100).toFixed(1)}%`;
+    this.goodZone.style.width = `${((TUNING.decision.goodWindow / w) * 100).toFixed(1)}%`;
+    this.perfectZone.style.right = right;
+    this.goodZone.style.right = right;
     // Con mira no hay botones (se apunta en la cancha), salvo el bloqueo: esquema + marca de defensa.
     // La colocación apuntada se elige solo moviendo la mira (sin botones numerados).
     this.buttons.style.display = d.aim || d.kind === 'block' ? 'none' : 'grid';

@@ -1,3 +1,4 @@
+import { meterWindow } from '../src/sim/decision';
 /**
  * Rival online sin pantalla: se une a una sala por código y juega con el equipo B usando la misma simulación.
  * Uso: npx tsx scripts/bot-rival.ts CODIGO   (lee la clave pública de Supabase de .env.local)
@@ -79,8 +80,9 @@ function play(): void {
     return;
   }
   if (d.contactTime === null) return;
-  const window = d.kind === 'set' ? TUNING.decision.setWindow : TUNING.decision.slowWindow;
-  const left = d.contactTime - (d.lead ?? 0) - sim.time;
+  const window = meterWindow(d);
+  // Recepción: el punto ideal puede estar antes del contacto (la zona verde corrida).
+  const left = d.contactTime - (d.lead ?? 0) - (d.kind === 'pass' ? d.shift ?? 0 : 0) - sim.time;
   if (left <= (1 - target.meter) * window) sim.press(sim.time);
 }
 

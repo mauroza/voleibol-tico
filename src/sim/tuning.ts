@@ -174,6 +174,12 @@ export const TUNING = {
     /** Segundos de simulación antes del contacto en que corre el medidor de timing. */
     slowWindow: 0.4,
     /**
+     * Recepción: barra más larga y el punto ideal en un lugar distinto cada vez (hasta `passShiftMax` s antes del
+     * contacto): el verde puede caer a la derecha, en el medio o a la izquierda.
+     */
+    passWindow: 0.75,
+    passShiftMax: 0.5,
+    /**
      * Una tecla en el primer instante de una jugada nueva (s de simulación) es el golpe tardío de la anterior:
      * no se aplica (si no, la colocación o el remate se "marcan solos").
      */

@@ -3,7 +3,7 @@ import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type Serve
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, setSidesFlipped, sideOfX, sideSign, toWorld, type TeamId } from './court';
-import { judgeTiming, meterOf, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
+import { judgeTiming, meterOf, meterWindow, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isDecidingSet, isFrontIndex, type MatchState, type TeamSetup } from './match';
@@ -512,7 +512,7 @@ export class Simulation {
     const cfg = TUNING.decision;
     const p = cfg.profiles[this.tempo];
     if (d.chosen === null) return p.think;
-    const near = d.contactTime - this.time <= (d.kind === 'set' ? cfg.setWindow : cfg.slowWindow);
+    const near = d.contactTime - this.time <= meterWindow(d);
     if (d.aim && d.kind !== 'block') return near ? p.aimSlow : p.aimApproach;
     return near ? p.slow : p.approach;
   }
@@ -1593,6 +1593,9 @@ export class Simulation {
         // Pase dirigido: la mira empieza donde está el colocador (si recibe el colocador, donde coloca el líbero).
         const s = spot(plan.team, this.player(plan.key).def.role === 'S' ? LIBERO_SET_SPOT : SETTER_SPOT);
         this.aimDecision(opened, { x: s.x, z: s.z }, plan.team, 'timing');
+        // El punto ideal cambia cada vez (sin pasarse del tiempo que queda): la zona verde no está siempre a la derecha.
+        const room = Math.max(0, plan.time - (opened.lead ?? 0) - this.time - TUNING.decision.goodWindow - 0.1);
+        opened.shift = this.rng.range(0, Math.min(TUNING.decision.passShiftMax, room));
       }
     }
     // El equipo que defiende (si es de una persona) decide el bloqueo y la marca de defensa.
@@ -1666,7 +1669,7 @@ export class Simulation {
       return { option: d.options[index].option, timing, aim: null };
     }
     const option = d.chosen === null ? null : d.options[d.chosen].option;
-    let timing: Timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time - (d.lead ?? 0));
+    let timing: Timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time - (d.lead ?? 0) - (d.shift ?? 0));
     let power: Power | undefined;
     if (d.meter === 'power') {
       power = d.pressedAt === null ? 'medium' : powerZone(meterOf(d, this.time));

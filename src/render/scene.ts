@@ -12,7 +12,7 @@ import { DIMS, buildCharacter, lookFor, type Rig } from './character';
 import { PlayerStatus } from './status';
 import { Officials } from './officials';
 import { Effects } from './fx';
-import { JOINTS } from './pose';
+import { JOINTS, resetPosePool } from './pose';
 import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
 import { SET_TEMPO, TEMPO_LABELS } from '../sim/actions';
@@ -249,6 +249,7 @@ export class MatchView {
     this.listen();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    this.prewarm();
     // Compilar los shaders ahora (también los de efectos aún invisibles) para evitar tirones la primera vez que aparecen.
     this.renderer.compile(this.scene, this.camera);
   }
@@ -283,6 +284,7 @@ export class MatchView {
       if (this.buffer.sample(this.replay.playhead, this.mixed, (a, b, k, out) => this.mixFrames(a, b, k, out))) this.applyFrame(this.mixed, ballPos);
       if (this.replay.playhead >= this.replay.to) this.endReplay();
     } else {
+      resetPosePool();
       for (const a of this.animators) a.update();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
@@ -517,6 +519,35 @@ export class MatchView {
       });
     }
     for (let i = used; i < this.setMarkers.length; i++) this.setMarkers[i].group.visible = false;
+  }
+
+  /**
+   * Precarga en la GPU todo lo que se puede llegar a dibujar (público, gradas, árbitros, efectos, aros de colocación,
+   * mira...). Si no, la primera vez que un cambio de cámara lo mete en cuadro la GPU lo sube y compila en ese momento:
+   * eran los tirones al pasar a apuntar, colocar o a la repetición.
+   */
+  private prewarm(): void {
+    this.setMarker(6);
+    const changed: { o: THREE.Object3D; visible: boolean; culled: boolean }[] = [];
+    this.scene.traverse((o) => {
+      changed.push({ o, visible: o.visible, culled: o.frustumCulled });
+      o.visible = true;
+      o.frustumCulled = false;
+    });
+    try {
+      // Programas de sombreado para la pantalla y subida de geometrías y texturas (a un destino chiquito, invisible).
+      this.renderer.compile(this.scene, this.camera);
+      const target = new THREE.WebGLRenderTarget(32, 32);
+      this.renderer.setRenderTarget(target);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setRenderTarget(null);
+      target.dispose();
+    } finally {
+      for (const c of changed) {
+        c.o.visible = c.visible;
+        c.o.frustumCulled = c.culled;
+      }
+    }
   }
 
   private setMarker(i: number): SetMarker {

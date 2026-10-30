@@ -18,15 +18,60 @@ export type Pose = Partial<Record<JointName, Euler3>>;
 const ZERO: Euler3 = [0, 0, 0];
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-export function blendPose(a: Pose, b: Pose, t: number): Pose {
-  const out: Pose = {};
+/**
+ * Memoria reutilizable para las poses del cuadro: mezclar poses de 30 personajes creaba cientos de miles de objetos por
+ * segundo y el recolector de basura frenaba el juego cada tanto (los "tirones"). Se reinicia al empezar cada cuadro
+ * (`resetPosePool`); una pose mezclada vale solo durante ese cuadro.
+ */
+const vecPool: number[][] = [];
+let vecUsed = 0;
+const posePool: Record<string, Euler3 | undefined>[] = [];
+let poseUsed = 0;
+
+export function resetPosePool(): void {
+  vecUsed = 0;
+  poseUsed = 0;
+}
+
+function vec(x: number, y: number, z: number): Euler3 {
+  let a = vecPool[vecUsed];
+  if (!a) vecPool[vecUsed] = a = [0, 0, 0];
+  vecUsed++;
+  a[0] = x;
+  a[1] = y;
+  a[2] = z;
+  return a as unknown as Euler3;
+}
+
+function freshPose(): Record<string, Euler3 | undefined> {
+  let o = posePool[poseUsed];
+  if (!o) posePool[poseUsed] = o = {};
+  else for (const j of JOINTS) o[j] = undefined;
+  poseUsed++;
+  return o;
+}
+
+/** Pose del cuadro (de la memoria reutilizable) con los valores de `p` y lo de `over` encima. */
+export function framePose(p: Pose, over?: Pose): Pose {
+  const o = freshPose();
   for (const j of JOINTS) {
-    if (!a[j] && !b[j]) continue;
-    const pa = a[j] ?? ZERO;
-    const pb = b[j] ?? ZERO;
-    out[j] = [lerp(pa[0], pb[0], t), lerp(pa[1], pb[1], t), lerp(pa[2], pb[2], t)];
+    const e = over?.[j] ?? p[j];
+    if (e) o[j] = e;
   }
-  return out;
+  return o as Pose;
+}
+
+export function blendPose(a: Pose, b: Pose, t: number): Pose {
+  const out = freshPose();
+  for (const j of JOINTS) {
+    const pa = a[j];
+    const pb = b[j];
+    if (!pa && !pb) continue;
+    const x = pa ?? ZERO;
+    const y = pb ?? ZERO;
+    out[j] = vec(lerp(x[0], y[0], t), lerp(x[1], y[1], t), lerp(x[2], y[2], t));
+  }
+  return out as Pose;
 }
 
 /** Suaviza la entrada a una pose: 0 → 1 con aceleración y frenado. */
@@ -89,53 +134,53 @@ export function runPose(phase: number, k: number, dir: 1 | -1 = 1): Pose {
   const c = Math.cos(phase);
   const swingL = -0.85 * s * k;
   const swingR = 0.85 * s * k;
-  return {
-    spine: [(dir === 1 ? 0.3 : 0.05) * k + 0.05, 0.08 * s * k, 0],
-    neck: [-0.25 * k, 0, 0],
-    hipL: [swingL, 0, 0.04],
-    kneeL: [0.25 + Math.max(0, c) * 1.25 * k, 0, 0],
-    hipR: [swingR, 0, -0.04],
-    kneeR: [0.25 + Math.max(0, -c) * 1.25 * k, 0, 0],
-    shoulderL: [0.75 * s * k - 0.1, 0, 0.1],
-    elbowL: [-1.5, 0, 0],
-    shoulderR: [-0.75 * s * k - 0.1, 0, -0.1],
-    elbowR: [-1.5, 0, 0],
-  };
+  const o = freshPose();
+  o.spine = vec((dir === 1 ? 0.3 : 0.05) * k + 0.05, 0.08 * s * k, 0);
+  o.neck = vec(-0.25 * k, 0, 0);
+  o.hipL = vec(swingL, 0, 0.04);
+  o.kneeL = vec(0.25 + Math.max(0, c) * 1.25 * k, 0, 0);
+  o.hipR = vec(swingR, 0, -0.04);
+  o.kneeR = vec(0.25 + Math.max(0, -c) * 1.25 * k, 0, 0);
+  o.shoulderL = vec(0.75 * s * k - 0.1, 0, 0.1);
+  o.elbowL = vec(-1.5, 0, 0);
+  o.shoulderR = vec(-0.75 * s * k - 0.1, 0, -0.1);
+  o.elbowR = vec(-1.5, 0, 0);
+  return o as Pose;
 }
 
 /** Caminata: pasos cortos, brazos colgando que se balancean, cuerpo erguido. `dir` -1 = hacia atrás. */
 export function walkPose(phase: number, k: number, dir: 1 | -1 = 1): Pose {
   const s = Math.sin(phase) * dir;
   const c = Math.cos(phase);
-  return {
-    spine: [0.04, 0.05 * s * k, 0],
-    neck: [-0.04, 0, 0],
-    hipL: [-0.45 * s * k, 0, 0.03],
-    kneeL: [0.08 + Math.max(0, c) * 0.55 * k, 0, 0],
-    hipR: [0.45 * s * k, 0, -0.03],
-    kneeR: [0.08 + Math.max(0, -c) * 0.55 * k, 0, 0],
-    shoulderL: [0.35 * s * k, 0, 0.08],
-    elbowL: [-0.25, 0, 0],
-    shoulderR: [-0.35 * s * k, 0, -0.08],
-    elbowR: [-0.25, 0, 0],
-  };
+  const o = freshPose();
+  o.spine = vec(0.04, 0.05 * s * k, 0);
+  o.neck = vec(-0.04, 0, 0);
+  o.hipL = vec(-0.45 * s * k, 0, 0.03);
+  o.kneeL = vec(0.08 + Math.max(0, c) * 0.55 * k, 0, 0);
+  o.hipR = vec(0.45 * s * k, 0, -0.03);
+  o.kneeR = vec(0.08 + Math.max(0, -c) * 0.55 * k, 0, 0);
+  o.shoulderL = vec(0.35 * s * k, 0, 0.08);
+  o.elbowL = vec(-0.25, 0, 0);
+  o.shoulderR = vec(-0.35 * s * k, 0, -0.08);
+  o.elbowR = vec(-0.25, 0, 0);
+  return o as Pose;
 }
 
 /** Desplazamiento lateral de defensa: piernas que se abren y cierran, rodillas flexionadas, sin cruzar los pies. */
 export function shufflePose(phase: number, k: number): Pose {
   const open = (0.5 + 0.5 * Math.sin(phase)) * 0.35 * k;
-  return {
-    spine: [0.3, 0, 0],
-    neck: [-0.3, 0, 0],
-    hipL: [-0.5, 0, 0.1 + open],
-    kneeL: [0.9, 0, 0],
-    hipR: [-0.5, 0, -0.1 - open],
-    kneeR: [0.9, 0, 0],
-    shoulderL: [-0.6, 0, 0.2],
-    elbowL: [-0.7, 0, 0],
-    shoulderR: [-0.6, 0, -0.2],
-    elbowR: [-0.7, 0, 0],
-  };
+  const o = freshPose();
+  o.spine = vec(0.3, 0, 0);
+  o.neck = vec(-0.3, 0, 0);
+  o.hipL = vec(-0.5, 0, 0.1 + open);
+  o.kneeL = vec(0.9, 0, 0);
+  o.hipR = vec(-0.5, 0, -0.1 - open);
+  o.kneeR = vec(0.9, 0, 0);
+  o.shoulderL = vec(-0.6, 0, 0.2);
+  o.elbowL = vec(-0.7, 0, 0);
+  o.shoulderR = vec(-0.6, 0, -0.2);
+  o.elbowR = vec(-0.7, 0, 0);
+  return o as Pose;
 }
 
 export const POSES = {

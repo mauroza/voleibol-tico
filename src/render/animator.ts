@@ -5,11 +5,13 @@ import { attackContactHeight, blockReach } from '../sim/players';
 import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
 import { DIMS, type Rig } from './character';
-import { JOINTS, POSES, TRACKS, blendPose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, walkPose, type Key, type Pose } from './pose';
+import { JOINTS, POSES, TRACKS, blendPose, framePose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, walkPose, type Euler3, type Key, type Pose } from './pose';
 
 /** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
 const MOVING = 0.1;
 const NET_PROBE = new THREE.Vector3();
+/** Respiración del cuadro (se reutiliza). */
+const BREATH: { spine: Euler3 } = { spine: [0, 0, 0] };
 /** Brazo del lado de la red, abierto hacia el costado y arriba, palma hacia el rival que pasa del otro lado. */
 const HIGH_FIVE: Record<'L' | 'R', Pose> = {
   L: { shoulderL: [-0.55, 0, 2.15], elbowL: [-0.55, 0, 0] },
@@ -279,14 +281,15 @@ export class Animator {
         // ¿La red le queda a la izquierda o a la derecha? (izquierda del cuerpo = (cos yaw, −sin yaw)).
         const toNet = -Math.sign(p.pos.x);
         const side = Math.cos(this.yaw) * toNet > 0 ? 'L' : 'R';
-        pose = blendPose(pose, { ...pose, ...HIGH_FIVE[side] }, ease(1 - near / 1.2));
+        pose = blendPose(pose, framePose(pose, HIGH_FIVE[side]), ease(1 - near / 1.2));
       }
     }
 
     // Respiración y peso que se mueve: nadie queda quieto como un robot.
     const breathe = Math.sin(performance.now() / 1000 * 1.6 + this.key.length * 1.7);
     const sp = pose.spine ?? [0, 0, 0];
-    pose = { ...pose, spine: [sp[0] + breathe * 0.025, sp[1] + Math.sin(performance.now() / 2300 + this.key.charCodeAt(2)) * 0.06, sp[2] + breathe * 0.02] };
+    BREATH.spine = [sp[0] + breathe * 0.025, sp[1] + Math.sin(performance.now() / 2300 + this.key.charCodeAt(2)) * 0.06, sp[2] + breathe * 0.02];
+    pose = framePose(pose, BREATH);
     this.applyPose(pose);
 
     // ---- Salto ----

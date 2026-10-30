@@ -67,6 +67,8 @@ export class DecisionPanel {
   paused = false;
   /** Online: tiempo de simulación entre el último paso y este cuadro (la barra avanza suave, sin saltos). */
   ahead: () => number = () => 0;
+  /** Ancho de la barra en px (se mide al armar el panel y al cambiar el tamaño de la ventana). */
+  private meterWidth = 0;
 
   /** `clock(eventTimeStamp)` traduce el instante real de un evento al tiempo de simulación (entre cuadros). */
   constructor(root: HTMLElement, private readonly sim: Simulation, private readonly clock: (stamp: number) => number = () => sim.time) {
@@ -89,6 +91,7 @@ export class DecisionPanel {
     root.append(this.el, this.feedback);
 
     window.addEventListener('keydown', (e) => this.onKey(e));
+    window.addEventListener('resize', () => { this.meterWidth = 0; });
     sim.bus.on((e) => {
       if (e.type === 'decisionResolved' && e.team === sim.control) {
         this.feedback.textContent = e.label ?? (e.power ? POWER_FEEDBACK[e.power] : FEEDBACK[e.timing]);
@@ -109,7 +112,9 @@ export class DecisionPanel {
     this.el.style.display = 'block';
     const preview = this.sim.setPreview;
     if (d !== this.shown || d.chosen !== this.shownChosen || preview !== this.shownPreview || (d.pressedAt !== null) !== this.shownPressed) this.rebuild(d);
-    this.marker.style.left = `${(this.meterValue(d) * 100).toFixed(1)}%`;
+    // Se desplaza con transform (lo mueve la GPU, sin recalcular la página): la línea corre suave, sin trabarse.
+    if (!this.meterWidth) this.meterWidth = this.meter.clientWidth;
+    this.marker.style.transform = `translate3d(${(this.meterValue(d) * this.meterWidth).toFixed(1)}px, 0, 0)`;
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -172,6 +177,7 @@ export class DecisionPanel {
     this.buttons.style.display = d.aim || d.kind === 'block' ? 'none' : 'grid';
     this.buttons.classList.toggle('compact', d.kind === 'set' && !!d.aim);
     this.hint.textContent = (IS_TOUCH ? TOUCH_HINTS : HINTS)[d.kind](d);
+    this.meterWidth = 0;
     // Online la barra termina un poco antes que la pelota (lo que tarda tu tecla en llegar): guiarse por la barra.
     if ((d.lead ?? 0) > 0 && d.kind !== 'serve') this.hint.textContent += ' · Online: guíate por la barra, termina un poco antes que la pelota';
   }

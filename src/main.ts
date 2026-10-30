@@ -17,6 +17,7 @@ import { clubTeam } from './data/club';
 import { audio } from './audio/music';
 import { Chat } from './ui/chat';
 import { StrategyPanel } from './ui/strategy';
+import { withDirectLink } from './net/p2p';
 import { recordMatch, startClubSync } from './net/leaderboard';
 import { icon } from './ui/crest';
 import { PauseMenu, showResult } from './ui/overlays';
@@ -65,7 +66,9 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     pregame: true,
     ...(online ? { humans: ['A', 'B'] as const, inputLead: leadForDelay(online.deal.delay) } : {}),
   });
-  const lockstep = online ? new Lockstep(sim, online.net, online.local, online.deal.delay) : null;
+  // Online: conexión directa entre los dos (menos ping); si no se puede, por el servidor de la sala.
+  const net = online ? withDirectLink(online.net, online.local === 'A') : null;
+  const lockstep = online && net ? new Lockstep(sim, net, online.local, online.deal.delay) : null;
   const netStatus = document.createElement('div');
   netStatus.className = 'net-status';
   // Ping arriba: verde fluido, amarillo aceptable, rojo con retraso.
@@ -73,6 +76,9 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
   pingEl.className = 'net-ping';
   ui.append(netStatus);
   if (online) ui.append(pingEl);
+  const gone = document.createElement('div');
+  gone.className = 'overlay net-gone';
+  gone.innerHTML = '<div class="overlay-box"><h2>Tu rival se desconectó</h2><p>Hace más de 15 segundos que no llega nada de su lado. Si vuelve, el partido sigue solo.</p><div class="overlay-actions"><button class="primary">Volver al menú</button></div></div>';
   const stats = attachStats(sim.bus, sim.control);
   const view = new MatchView(document.getElementById('app')!, sim, ui);
   if (lockstep) view.renderAhead = () => lockstep.pendingTime;
@@ -94,6 +100,10 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     saveSetup({ ...setup, online: undefined }, false);
     location.reload();
   };
+  gone.querySelector('button')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toMenu();
+  });
   const toPacks = () => {
     saveSetup({ ...setup, online: undefined }, false, 'packs');
     location.reload();
@@ -106,7 +116,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     const me = online.local;
     const nick = (t: 'A' | 'B') => (t === 'A' ? online.deal.nickA : online.deal.nickB) ?? (t === me ? 'Tú' : 'Rival');
     const other = me === 'A' ? 'B' : 'A';
-    new Chat(ui, online.net, nick(me), nick(other), sim.teams[me].primary, sim.teams[other].primary);
+    new Chat(ui, net!, nick(me), nick(other), sim.teams[me].primary, sim.teams[other].primary);
   }
   const pause = new PauseMenu(ui, { resume: () => setPaused(false), restart: online ? toMenu : restart, menu: toMenu });
   const setPaused = (p: boolean) => {
@@ -215,18 +225,31 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
       const waiting = !view.replaying && lockstep.advance(dtReal, pace);
       waitingFor = waiting ? waitingFor + dtReal : 0;
       frameRate = pace * sim.timeScale;
-      // Avisos que dicen de quién es el problema.
+      // Avisos discretos (una píldora abajo, no un cartel en medio): solo si algo dura más que un parpadeo.
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      netStatus.textContent = lockstep.desync ? 'Las dos partidas se desincronizaron: creen una sala nueva'
-        : offline ? 'Tu computadora se quedó sin internet'
-        : lockstep.remoteAway ? 'Tu rival salió de la ventana del juego: tiene que volver para seguir'
-        : lockstep.silence > 4 ? `No llegan datos de tu rival hace ${Math.round(lockstep.silence)} s: puede ser su internet`
-        : waitingFor > 0.4 ? 'Esperando la jugada de tu rival…' : '';
-      netStatus.style.opacity = netStatus.textContent ? '1' : '0';
-      // Ping de cada uno al servidor: así se ve de quién es la conexión lenta.
-      const level = (ms: number | null) => (ms === null ? '' : ms < 120 ? 'good' : ms < 220 ? 'ok' : 'bad');
-      const fmt = (ms: number | null) => (ms === null ? '…' : `${Math.round(ms)} ms`);
-      pingEl.innerHTML = `<span data-level="${level(lockstep.myNet)}">Tú ${fmt(lockstep.myNet)}</span> · <span data-level="${level(lockstep.remoteNet)}">Rival ${fmt(lockstep.remoteNet)}</span>`;
+      const status = lockstep.desync ? 'Las dos partidas se desincronizaron: creen una sala nueva'
+        : offline ? 'Sin internet en este dispositivo'
+        : lockstep.remoteAway ? 'Tu rival salió de la ventana del juego'
+        : lockstep.silence > 3 ? 'Conexión inestable con tu rival…'
+        : waitingFor > 0.9 ? 'Sincronizando con tu rival…' : '';
+      if (netStatus.dataset.text !== status) {
+        netStatus.dataset.text = status;
+        netStatus.innerHTML = status ? `<span class="net-spin"></span>${status}` : '';
+        netStatus.classList.toggle('on', !!status);
+        netStatus.classList.toggle('bad', !!lockstep.desync);
+      }
+      // Rival desconectado del todo: aviso con salida al menú.
+      if (lockstep.silence > 15 && !gone.parentElement) ui.append(gone);
+      if (lockstep.silence < 1 && gone.parentElement) gone.remove();
+      // Ping con el rival (ida y vuelta) y cómo van los mensajes: directo o por el servidor.
+      const ms = lockstep.ping;
+      const level = ms === null ? '' : ms < 90 ? 'good' : ms < 170 ? 'ok' : 'bad';
+      const link = net!.state === 'direct' ? 'Directo' : net!.state === 'connecting' ? 'Conectando' : 'Servidor';
+      const pingText = `<span class="net-dot" data-level="${level}"></span>${link} · ${ms === null ? '…' : `${Math.round(ms)} ms`}`;
+      if (pingEl.dataset.text !== pingText) {
+        pingEl.dataset.text = pingText;
+        pingEl.innerHTML = pingText;
+      }
     } else if (!view.replaying && !stopped) {
       // Con una jugada tuya abierta nunca va acelerado (ni el saque ni el remate).
       const target = sim.timeScale < 1 ? sim.timeScale : sim.decision ? 1 : speed;

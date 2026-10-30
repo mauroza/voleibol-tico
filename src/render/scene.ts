@@ -24,6 +24,8 @@ import { toon } from './toon';
  * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
  */
 /** Radio con que se dibuja la pelota (más grande que la real para que se vea bien de lejos). */
+/** Distancia mínima entre dos jugadores (centro a centro, m): el ancho de hombros con un poco de aire. */
+const BODY_GAP = 0.52;
 /** Puntos de la trayectoria prevista. */
 const AIM_DOTS = 22;
 const BALL_DRAW_RADIUS = COURT.ballRadius * 1.6;
@@ -301,6 +303,7 @@ export class MatchView {
     } else {
       resetPosePool();
       for (const a of this.animators) a.update();
+      this.separateBodies();
       const b = this.sim.ballPos;
       ballPos.set(b.x, b.y, b.z);
       // Online la simulación avanza en pasos fijos: la pelota se dibuja en el instante exacto del cuadro
@@ -436,6 +439,50 @@ export class MatchView {
         }
       }
     });
+  }
+
+  /**
+   * Ningún jugador atraviesa a otro (de los dos equipos, en cancha, en la banca, en el calentamiento y en las
+   * ceremonias): si dos cuerpos quedan más cerca que su ancho, se separan lo justo. El que está golpeando o en plancha
+   * no se mueve (su mano o su cuerpo tienen que llegar a la pelota): se corre el otro. Solo el dibujo; la simulación
+   * no cambia.
+   */
+  private separateBodies(): void {
+    const list = this.animators;
+    const min = BODY_GAP;
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false;
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        const pa = a.rig.root.position;
+        for (let j = i + 1; j < list.length; j++) {
+          const b = list[j];
+          const pb = b.rig.root.position;
+          let dx = pb.x - pa.x;
+          let dz = pb.z - pa.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= min * min) continue;
+          // Uno en el aire bien por encima del otro (bloqueo contra remate cruzando la red): no chocan.
+          if (Math.abs(a.rig.body.position.y - b.rig.body.position.y) > 0.9) continue;
+          let d = Math.sqrt(d2);
+          if (d < 1e-4) {
+            dx = 0.6;
+            dz = 0.8;
+            d = 1;
+          }
+          const overlap = min - d;
+          const fa = a.pinned ? (b.pinned ? 0.5 : 0) : b.pinned ? 1 : 0.5;
+          const fb = 1 - fa;
+          if (a.pinned && b.pinned) continue;
+          pa.x -= (dx / d) * overlap * fa;
+          pa.z -= (dz / d) * overlap * fa;
+          pb.x += (dx / d) * overlap * fb;
+          pb.z += (dz / d) * overlap * fb;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
   }
 
   /** Marca el pique si la pelota está en el piso (no en una red, un bloqueo o una mano). */

@@ -173,3 +173,20 @@ body:has(#hud .scoreboard) #help { display: none; }
   #hud .hud-actions { top: calc(var(--edge) + var(--safe-t) + 42px); }
   #hud .score-toast { top: calc(var(--edge) + var(--safe-t) + 80px); }
 }
+
+/* Online: ping y avisos discretos. */
+#hud .net-ping { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #060a17d9; border: 1px solid #ffffff1c;
+  color: #cfd6ea; font: 600 11px var(--am-body); }
+#hud .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #8892a6; }
+#hud .net-dot[data-level="good"] { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+#hud .net-dot[data-level="ok"] { background: #ffd23f; }
+#hud .net-dot[data-level="bad"] { background: #ff4a5a; }
+#hud .net-status { top: auto; bottom: calc(var(--edge) + var(--safe-b) + 34px); left: calc(var(--edge) + var(--safe-l)); transform: translateY(6px); display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px; background: #060a17e6; border: 1px solid #ffffff22; font: 600 12px var(--am-body); color: #e7ecf7; opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; z-index: 7; max-width: calc(100% - 24px); }
+#hud .net-status.on { opacity: 1; transform: none; }
+#hud .net-status.bad { color: #ffb4bb; border-color: #ff4a5a88; }
+#hud .net-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #ffffff33; border-top-color: #4dc3ff; animation: net-spin .8s linear infinite; flex: none; }
+@keyframes net-spin { to { transform: rotate(1turn); } }
+#hud .net-gone .overlay-box { text-align: center; }
+#hud .net-gone p { color: var(--am-muted); }

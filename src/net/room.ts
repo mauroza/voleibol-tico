@@ -50,7 +50,11 @@ export async function hostRoom(
   const net = await openTransport(code);
   onStatus('Comparte el código. Esperando al rival…', code);
   const inbox: NetMessage[] = [];
-  net.onMessage((m) => inbox.push(m));
+  // Solo se guardan los mensajes de la sala hasta empezar (después los maneja el partido).
+  let started = false;
+  net.onMessage((m) => {
+    if (!started) inbox.push(m);
+  });
   const take = async (t: string, timeoutMs = Infinity): Promise<NetMessage | null> => {
     const end = performance.now() + timeoutMs;
     while (performance.now() < end) {
@@ -89,6 +93,8 @@ export async function hostRoom(
     net.send({ t: 'start', deal });
     if (await take('ready', 300)) break;
   }
+  started = true;
+  inbox.length = 0;
   onStatus(`¡A jugar! Ping ${Math.round(rtt * 1000)} ms`, code);
   return { code, net, local: 'A', deal };
 }

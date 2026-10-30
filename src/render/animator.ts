@@ -361,6 +361,12 @@ export class Animator {
    * Remate y saque: en los ~0.2 s alrededor del golpe, el cuerpo se corre (y sube o baja apenas) lo que falte para
    * que la mano derecha quede justo en la pelota en el instante del contacto. Suave antes y después.
    */
+  /** En pleno golpe con la mano (o plancha): el cuerpo no se mueve para separarlo de otros (la mano tiene que llegar). */
+  get pinned(): boolean {
+    const now = this.sim.time;
+    return (!!this.strike && Math.abs(now - this.strike.at) < 0.25) || !!this.dive;
+  }
+
   private reachStrike(now: number): void {
     const s = this.strike;
     if (!s) return;

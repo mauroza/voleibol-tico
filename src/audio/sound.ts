@@ -2,6 +2,7 @@ import type { ContactKind, PointReason } from '../sim/events';
 import type { Simulation } from '../sim/rally';
 import { settings } from '../data/profile';
 import { audio } from './music';
+import { SAMPLES } from './samples';
 
 /**
  * Sonido procedural con WebAudio (sin archivos): golpes, silbato, ambiente del público, ovación,
@@ -14,6 +15,10 @@ export class Sound {
   private readonly noise: AudioBuffer;
   private excitement = 0.2;
   private muted = false;
+  /** Golpes grabados ya decodificados (si no están listos, se usa el sintetizado). */
+  private readonly samples = new Map<string, AudioBuffer>();
+  /** Remate al que ya le sonaron las tenis de la carrera. */
+  private squeakedFor: unknown = null;
 
   constructor(private readonly sim: Simulation) {
     this.ctx = new AudioContext();
@@ -26,6 +31,31 @@ export class Sound {
     this.crowdGain.connect(this.master);
     this.startCrowd();
     this.listen();
+    this.loadSamples();
+  }
+
+  private loadSamples(): void {
+    for (const [name, b64] of Object.entries(SAMPLES)) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      this.ctx.decodeAudioData(bytes.buffer).then((buf) => this.samples.set(name, buf)).catch(() => undefined);
+    }
+  }
+
+  /** Reproduce un golpe grabado; `rate` cambia el tono (y la duración) apenas, para que no suenen todos iguales. */
+  private playSample(name: string, gain: number, rate: number): boolean {
+    const buf = this.samples.get(name);
+    if (!buf) return false;
+    const t = this.ctx.currentTime;
+    const s = this.ctx.createBufferSource();
+    s.buffer = buf;
+    s.playbackRate.value = rate * (0.97 + Math.random() * 0.06);
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    s.connect(g).connect(this.master);
+    s.start(t);
+    return true;
   }
 
   /** Tras una recarga (revancha) no hubo gesto del usuario: el contexto arranca suspendido hasta la primera tecla o clic. */
@@ -42,6 +72,19 @@ export class Sound {
 
   /** Llamar cada cuadro: la emoción del público baja sola y controla el volumen del ambiente. */
   update(dtReal: number): void {
+    // Carrera de remate: las tenis rechinan en los últimos pasos antes del salto.
+    const up = this.sim.upcoming;
+    if (up?.kind === 'attack' && up !== this.squeakedFor && up.time - this.sim.time < 0.75) {
+      this.squeakedFor = up;
+      // Pasos de la carrera (los grabados): cada vez más seguidos y fuertes, el último es el freno antes del salto.
+      const steps = this.sim.timeScale < 0.5 ? 2 : 3;
+      let at = 0;
+      for (let i = 0; i < steps; i++) {
+        const level = i === steps - 1 ? 1 : 0.6 + i * 0.15;
+        if (!this.playStep(at, level)) this.squeak(at, level);
+        at += 0.22 - i * 0.04 + Math.random() * 0.03;
+      }
+    }
     this.excitement = Math.max(0.15, this.excitement - dtReal * 0.3);
     this.crowdGain.gain.setTargetAtTime(0.03 + this.excitement * 0.12, this.ctx.currentTime, 0.2);
   }
@@ -89,8 +132,20 @@ export class Sound {
     gain.gain.exponentialRampToValueAtTime(0.0001, t + attack + release);
   }
 
-  /** Golpe de pelota: "pop" de ruido filtrado más un golpe grave; más fuerte en saques y remates. */
+  /**
+   * Golpe de pelota con los sonidos grabados: el remate con el golpe seco (más fuerte cuanto mejor el remate), el resto
+   * con el de contacto (el saque fuerte; pase y colocación más suaves y un poco más agudos). Si aún no cargaron, el
+   * sintetizado.
+   */
   private hit(kind: ContactKind, quality: number): void {
+    const played = kind === 'attack'
+      ? this.playSample('spike', 0.75 + quality * 0.35, 1)
+      : kind === 'serve'
+        ? this.playSample('contact', 0.9, 1) && this.playSample('spike', 0.35, 1.05)
+        : kind === 'block'
+          ? this.playSample('spike', 0.7, 0.92)
+          : this.playSample('contact', kind === 'set' ? 0.45 : 0.6, kind === 'set' ? 1.12 : 1.04);
+    if (played) return;
     const t = this.ctx.currentTime;
     const strong = kind === 'attack' || kind === 'serve';
     const n = this.noiseSource();
@@ -113,6 +168,66 @@ export class Sound {
     o.connect(og).connect(this.master);
     o.start(t);
     o.stop(t + 0.16);
+  }
+
+  /** Pisada grabada (una de cuatro al azar) dentro de `delay` s; false si todavía no cargaron. */
+  private playStep(delay: number, level: number): boolean {
+    const name = `step${1 + Math.floor(Math.random() * 4)}`;
+    const buf = this.samples.get(name);
+    if (!buf) return false;
+    const s = this.ctx.createBufferSource();
+    s.buffer = buf;
+    s.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.55 * level;
+    s.connect(g).connect(this.master);
+    s.start(this.ctx.currentTime + delay);
+    return true;
+  }
+
+  /**
+   * Rechinido de tenis en el piso de madera: un chirrido agudo que sube y baja rápido, con algo de fricción.
+   * `delay` en segundos reales; `level` 0..1.
+   */
+  private squeak(delay: number, level: number): void {
+    const t = this.ctx.currentTime + delay;
+    const len = 0.07 + Math.random() * 0.06;
+    const f0 = 1700 + Math.random() * 900;
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.linearRampToValueAtTime(f0 * (1.15 + Math.random() * 0.2), t + len * 0.4);
+    o.frequency.linearRampToValueAtTime(f0 * 0.85, t + len);
+    // Vibrato rápido: el "tartamudeo" de la suela al frenar.
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 55 + Math.random() * 30;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = f0 * 0.05;
+    lfo.connect(lfoGain).connect(o.frequency);
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f0 * 1.1;
+    bp.Q.value = 6;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.11 * level, t + 0.012);
+    g.gain.setValueAtTime(0.11 * level, t + len * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(bp).connect(g).connect(this.master);
+    // Fricción: un poco de ruido agudo junto con el chirrido.
+    const n = this.noiseSource();
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 3500;
+    const ng = this.ctx.createGain();
+    this.envelope(ng, t, 0.03 * level, 0.005, len);
+    n.connect(hp).connect(ng).connect(this.master);
+    for (const x of [o, lfo]) {
+      x.start(t);
+      x.stop(t + len + 0.02);
+    }
+    n.start(t, Math.random());
+    n.stop(t + len + 0.02);
   }
 
   /** Silbato del árbitro: dos tonos agudos con vibrato. `blasts` pitazos. */

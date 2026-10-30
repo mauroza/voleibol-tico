@@ -134,6 +134,10 @@ export class MatchView {
   private readonly ballShadow: THREE.Mesh;
   /** Mira del remate apuntado: cruz, círculo de dispersión (dónde puede caer) y trayectoria punteada. */
   private readonly aimGroup = new THREE.Group();
+  /** Marca blanca donde picó la pelota (se ve hasta el próximo saque; el challenge la usa). */
+  private readonly landMark = new THREE.Group();
+  private landPulse = 0;
+  private markHold = 0;
   /** Sombra del bloqueo rival sobre la cancha mientras se apunta el remate. */
   private blockShade!: THREE.Mesh;
   private readonly aimSpread = new THREE.Mesh(
@@ -306,7 +310,8 @@ export class MatchView {
       }
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
-      if (this.pendingReplay && this.sim.time >= this.pendingReplay.at) this.startReplay();
+      // Tras un challenge, la repetición espera a que termine el plano de la marca.
+      if (this.pendingReplay && this.sim.time >= this.pendingReplay.at && now >= this.markHold) this.startReplay();
     }
 
     // Anillo bajo el jugador que está decidiendo.
@@ -342,6 +347,9 @@ export class MatchView {
     this.status?.update(this.camera, now, !!this.replay);
     this.officials?.update();
     this.speedLines.update(dtReal, !this.replay && this.sim.timeScale <= TUNING.decision.slowScale && this.sim.decision?.chosen != null ? 0.25 : 0);
+    // Challenge: la marca late un momento para que se vea bien junto a la línea.
+    const pulse = now - this.landPulse;
+    this.landMark.scale.setScalar(pulse >= 0 && pulse < 3 ? 1 + 0.25 * Math.max(0, Math.sin(pulse * 6)) : 1);
     this.director.update(dtReal, ballPos);
     this.badge.style.opacity = this.replay ? '1' : '0';
     this.renderer.render(this.scene, this.camera);
@@ -369,6 +377,7 @@ export class MatchView {
           this.speedLines.flash(1);
         }
         if (!e.warmup && e.kind === 'serve') {
+          this.landMark.visible = false;
           this.rallyServe = e.time;
           this.rallySet = -Infinity;
         }
@@ -392,7 +401,17 @@ export class MatchView {
         }
       } else if (e.type === 'decisionResolved') {
         this.lastPower = e.power ?? null;
+      } else if (e.type === 'call') {
+        // Jugada cerrada: la marca queda donde picó para revisarla.
+        this.placeMark();
+      } else if (e.type === 'challenge' && e.kind === 'line' && this.landMark.visible) {
+        // El challenge manda: corta cualquier repetición y baja sobre la marca.
+        if (this.replay) this.endReplay();
+        this.director.focusMark(this.landMark.position, 3.2);
+        this.landPulse = now;
+        this.markHold = now + 3.2;
       } else if (e.type === 'point') {
+        if (!this.landMark.visible) this.placeMark();
         for (const a of this.animators) a.onPoint(this.sim.player(a.key).team === e.winner, this.sim.time);
         const big = e.reason === 'ace' || e.reason === 'kill' || e.reason === 'blockKill';
         this.arena.cheer(e.winner, big);
@@ -409,6 +428,15 @@ export class MatchView {
         }
       }
     });
+  }
+
+  /** Marca el pique si la pelota está en el piso (no en una red, un bloqueo o una mano). */
+  private placeMark(): void {
+    const b = this.sim.ballPos;
+    if (b.y > 0.35) return;
+    this.landMark.position.set(b.x, 0.014, b.z);
+    this.landMark.scale.setScalar(1);
+    this.landMark.visible = true;
   }
 
   /**
@@ -487,6 +515,16 @@ export class MatchView {
     this.aimGroup.add(this.aimCross, this.aimSpread, this.aimPath);
     this.aimGroup.visible = false;
     this.scene.add(this.aimGroup);
+    // Marca del pique: círculo blanco pintado del tamaño de la huella de la pelota, con un borde oscuro fino.
+    const markFill = new THREE.Mesh(new THREE.CircleGeometry(COURT.ballRadius, 28), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false }));
+    const markRim = new THREE.Mesh(new THREE.RingGeometry(COURT.ballRadius, COURT.ballRadius + 0.018, 28), new THREE.MeshBasicMaterial({ color: '#0b0f18', transparent: true, opacity: 0.55, depthWrite: false }));
+    for (const m of [markFill, markRim]) {
+      m.rotation.x = -Math.PI / 2;
+      m.renderOrder = 7;
+    }
+    this.landMark.add(markFill, markRim);
+    this.landMark.visible = false;
+    this.scene.add(this.landMark);
     // Sombra del bloqueo: hasta 3 cuñas (una por bloqueador) desde el rematador, a través de las manos, hasta el fondo.
     const shadow = new THREE.BufferGeometry();
     shadow.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 6 * 3), 3));

@@ -1,4 +1,6 @@
 import type { TeamDef } from '../data/teams';
+import { settings, updateProfile, type Settings } from '../data/profile';
+import { IS_TOUCH } from './touch';
 import type { TeamId } from '../sim/court';
 import type { MatchStats } from '../sim/stats';
 
@@ -33,6 +35,32 @@ function panel(className: string, title: string, actions: Action[]): { el: HTMLD
   return { el, body };
 }
 
+/** Control deslizante de sensibilidad (0.3× a 3×), guardado en el perfil al soltarlo. */
+function sensSlider(label: string, key: keyof Settings): HTMLElement {
+  const row = document.createElement('label');
+  row.className = 'pause-slider';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const out = document.createElement('output');
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = '0.3';
+  input.max = '3';
+  input.step = '0.05';
+  input.value = String(settings()[key]);
+  const paint = () => {
+    out.textContent = `${Number(input.value).toFixed(2)}×`;
+    input.style.setProperty('--fill', `${((Number(input.value) - 0.3) / 2.7) * 100}%`);
+  };
+  paint();
+  input.addEventListener('input', () => {
+    paint();
+    updateProfile((p) => { (p.settings[key] as number) = Number(input.value); });
+  });
+  row.append(name, input, out);
+  return row;
+}
+
 /** Menú de pausa (Esc, P o Start). */
 export class PauseMenu {
   private readonly el: HTMLDivElement;
@@ -45,6 +73,18 @@ export class PauseMenu {
       { label: 'Menú principal', run: actions.menu },
     ]);
     this.el = p.el;
+    // Ajustes rápidos sin salir del partido: sensibilidad de la mira (se guarda para los próximos partidos).
+    const box = document.createElement('div');
+    box.className = 'pause-settings';
+    const title = document.createElement('h3');
+    title.textContent = 'Sensibilidad de la mira';
+    box.append(title);
+    const rows: [string, keyof Settings][] = IS_TOUCH
+      ? [['Dedo', 'touchSens']]
+      : [['Mouse (modo relativo)', 'mouseSens'], ['Teclado / control', 'keySens'], ['Dedo (táctil)', 'touchSens']];
+    for (const [label, key] of rows) box.append(sensSlider(label, key));
+    p.body.append(box);
+    for (const ev of ['pointerdown', 'click'] as const) box.addEventListener(ev, (e) => e.stopPropagation());
     this.el.style.display = 'none';
     root.append(this.el);
   }

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 
-/** Rampa de 3 tonos (sombra, medio, luz) con filtro nearest: bandas duras de cel-shading. */
+/** Rampa de tonos (sombra, medios, luz) con filtro nearest: bandas de cel-shading. */
 let gradient: THREE.DataTexture | null = null;
 function gradientMap(): THREE.DataTexture {
   if (gradient) return gradient;
-  const data = new Uint8Array([95, 95, 95, 255, 180, 180, 180, 255, 255, 255, 255, 255]);
-  gradient = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  // Cuatro tonos con saltos más suaves: sigue siendo anime, pero las sombras no se ven tan "planas" ni tan negras.
+  const data = new Uint8Array([120, 120, 120, 255, 175, 175, 175, 255, 220, 220, 220, 255, 255, 255, 255, 255]);
+  gradient = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
   gradient.minFilter = THREE.NearestFilter;
   gradient.magFilter = THREE.NearestFilter;
   gradient.generateMipmaps = false;

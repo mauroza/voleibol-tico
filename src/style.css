@@ -260,3 +260,6 @@ body.touch .timeout-toast { right: auto; left: max(10px, env(safe-area-inset-lef
 @media (orientation: portrait) and (max-width: 820px) { body.touch .pregame-banner { top: calc(130px + env(safe-area-inset-top, 0px)); } }
 .fast-badge { position: fixed; top: calc(96px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); display: none; padding: 5px 10px;
               border-radius: 8px; background: #ff8a1d; color: #111; font-weight: 900; font-size: 13px; pointer-events: none; }
+/* Teléfono: panel de decisión de una línea de título, sin textos largos (la mira y el botón explican solos). */
+body.touch .decision-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-height: 520px) { body.touch .decision-hint { display: none; } body.touch .decision { padding: 6px 8px; } }

@@ -1,4 +1,3 @@
-import { SET_TEMPO } from '../sim/actions';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
 import { meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
@@ -28,19 +27,19 @@ const HINTS: Record<DecisionKind, (d: Decision) => string> = {
   serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente · la puntita morada: ¡ace!)`,
   pass: () => `${MOVE} dónde dejar la pelota · clic o ESPACIO justo cuando llegue (zona verde)`,
   set: (d) => (d.aim
-    ? 'Apunta al atacante (aros en la cancha) · la barra es el tempo: verde alta · amarillo media · rojo rápida · clic o ESPACIO coloca · más allá de la red = segunda'
+    ? 'Apunta al atacante (aros en la cancha): pegado a la red o despegado (abre el ángulo); detrás de la línea de 3 m, zagueros · la barra es el tempo: verde alta (3) · amarillo media (2) · rojo rápida (1) · clic o ESPACIO coloca · más allá de la red = segunda'
     : `Tiempo detenido: elige con 1–${d.options.length} o clic`),
-  attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red: verde = finta, amarillo/rojo = remate en picada`,
+  attack: (d) => d.options[0].option.id === 'free' ? `${MOVE} dónde mandarla · clic o ESPACIO justo cuando llegue (zona verde)` : `${MOVE} · la sombra roja es el bloqueo: apunta fuera de ella · clic o ESPACIO: cuanto más tarde, más fuerte (verde suave · amarillo · rojo potente) · cerca de la red: verde = finta, amarillo/rojo = remate en picada`,
   block: (d) => `${d.options[0].label} (según la colocación) · ESPACIO para saltar: atina el momento, un poco antes del golpe del rematador · mouse: marca de defensa (azul)`,
 };
 
 /** En teléfono: sin teclas ni mouse, todo con el dedo y el botón de acción. */
-const DRAG = 'Arrastra el dedo en la cancha para apuntar';
+const DRAG = 'Arrastra el dedo en la mitad izquierda para apuntar';
 const TOUCH_HINTS: Record<DecisionKind, (d: Decision) => string> = {
   serve: () => `${DRAG} · SACAR: la barra es la fuerza (verde seguro · rojo potente · morado: ¡ace!)`,
   pass: () => `${DRAG} · RECIBIR justo cuando llegue (verde)`,
-  set: (d) => (d.aim ? 'Apunta al aro del atacante · COLOCAR: verde alta · amarillo media · rojo rápida' : 'Toca una opción'),
-  attack: (d) => d.options[0].option.id === 'free' ? `${DRAG} · REMATAR cuando llegue (verde)` : `${DRAG} · REMATAR: más tarde, más fuerte · cerca de la red verde = finta`,
+  set: (d) => (d.aim ? 'Apunta al atacante, pegado o despegado de la red · COLOCAR: verde alta (3) · amarillo media (2) · rojo rápida (1)' : 'Toca una opción'),
+  attack: (d) => d.options[0].option.id === 'free' ? `${DRAG} · REMATAR cuando llegue (verde)` : `${DRAG} (lado izquierdo) · evita la sombra roja del bloqueo · REMATAR: más tarde, más fuerte`,
   block: (d) => `${d.options[0].label} · SALTAR un poco antes del golpe · dedo: marca de defensa (azul)`,
 };
 
@@ -81,7 +80,7 @@ export class DecisionPanel {
     this.hint.className = 'decision-hint';
     this.feedback.className = 'feedback';
     this.tempo.className = 'meter-tempo';
-    for (const t of ['ALTA', 'MEDIA', 'RÁPIDA']) {
+    for (const t of ['ALTA · 3', 'MEDIA · 2', 'RÁPIDA · 1']) {
       const span = document.createElement('span');
       span.textContent = t;
       this.tempo.append(span);
@@ -198,7 +197,7 @@ export class DecisionPanel {
   /** Tempo más rápido que se puede colocar con esta recepción (0 alta, 1 media, 2 rápida). */
   private maxTempo(d: Decision): number {
     let max = 0;
-    for (const o of d.options) if (o.option.id === 'set') max = Math.max(max, SET_TEMPO[o.option.choice.option]);
+    for (const o of d.options) if (o.option.id === 'set') max = Math.max(max, o.option.choice.tempo);
     return max;
   }
 

@@ -99,8 +99,8 @@ describe('colocación en abanico', () => {
       while (sim.phase !== 'matchOver' && label === null) {
         const d = sim.decision;
         if (d?.kind === 'set' && d.aim && d.pressedAt === null) {
-          const quick = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'quick');
-          const semi = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'semi');
+          const quick = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'zone3' && o.option.choice.tempo === 2);
+          const semi = d.options.findIndex((o) => o.option.id === 'set' && o.option.choice.option === 'zone3' && o.option.choice.tempo === 1);
           if (quick >= 0 && semi >= 0) {
             target = true;
             const at = sim.setOptionPoint(d, quick);
@@ -118,8 +118,8 @@ describe('colocación en abanico', () => {
   }
 
   it('la mira elige al atacante y la barra el tempo: tarde (rojo) rápida, temprano (verde) semi', () => {
-    expect(setToMiddle(0.03)).toBe('Rápida al central');
-    expect(setToMiddle(0.38)).toBe('Semi-rápida al centro');
+    expect(setToMiddle(0.03)).toBe('Central (zona 3) · rápida (tiempo 1)');
+    expect(setToMiddle(0.38)).toBe('Central (zona 3) · media (tiempo 2)');
   }, 60_000);
 });
 

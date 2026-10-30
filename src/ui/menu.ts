@@ -120,7 +120,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     how.innerHTML = `<summary>Cómo jugar</summary>
       <ul>
         <li>Cuando la pelota viene a tu jugador, el tiempo casi se detiene hasta que eliges: piensa con calma.</li>
-        <li><b>Colocación en abanico:</b> apunta la mira al aro del atacante y presiona cuando la barra marque el tempo: <span style="color:#5dff8f">verde alta</span>, <span style="color:#ffd23f">amarillo media</span>, <span style="color:#ff3b3b">rojo rápida</span>. Mira más allá de la red = segunda. Las teclas 1–N eligen directo.</li>
+        <li><b>Colocación en abanico:</b> apunta la mira al aro del atacante (pegada a la red o despegada para abrir el ángulo; detrás de la línea de 3 m, los zagueros) y presiona cuando la barra marque el tempo: <span style="color:#5dff8f">verde alta (tiempo 3)</span>, <span style="color:#ffd23f">amarillo media (tiempo 2)</span>, <span style="color:#ff3b3b">rojo rápida (tiempo 1)</span>. El rival bloquea de 3 a la alta, de 2 a la media y de 1 a la rápida. Mira más allá de la red = segunda.</li>
         <li><b>Bloqueo:</b> los bloqueadores van solos según la colocación (rápida: 1, media: 2, alta: 3). Salta con <b>ESPACIO</b> (o el botón <b>SALTAR</b> en el teléfono) justo antes del golpe del rematador. Mueve la <b style="color:#4dc3ff">marca de defensa</b> con el mouse o el dedo.</li>
         <li><b>En teléfono o tablet:</b> arrastra el dedo por la cancha para apuntar y toca el botón grande de la derecha para golpear (sacar, recibir, colocar, rematar, saltar). Mejor en horizontal.</li>
         <li><b>Challenge:</b> si en una jugada cerrada te cantan en contra, toca <b>Challenge</b> (o <b>C</b>) para revisar si picó dentro o si hubo roce del bloqueo (2 por set).</li>

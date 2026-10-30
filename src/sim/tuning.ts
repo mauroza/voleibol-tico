@@ -67,7 +67,26 @@ export const TUNING = {
     minPassForSemi: 0.5,
     outOfSystemPass: 0.3,
     rescueFlightTime: 1.5,
-    flightTime: { zone4: 1.25, zone4fast: 0.75, quick: 0.55, semi: 0.75, zone2: 1.0, pipe: 0.85, back1: 0.9 },
+    /** Tiempo de vuelo de la colocación por carril y tempo: [alta, media, rápida]. */
+    flightTime: {
+      zone4: [1.25, 0.95, 0.72],
+      zone3: [1.05, 0.75, 0.55],
+      zone2: [1.15, 0.88, 0.66],
+      pipe: [1.15, 0.88, 0.7],
+      back1: [1.2, 0.92, 0.74],
+    },
+    /**
+     * Distancia de la colocación a la red (la mira la elige): delanteros entre `frontDepth`, zagueros detrás de la
+     * línea de 3 m entre `backDepth`. Pegada a la red, el bloqueo tapa más; despegada abre el ángulo, pero el remate
+     * pierde algo de fuerza y precisión.
+     */
+    frontDepth: [0.4, 2.8],
+    backDepth: [3.2, 5.0],
+    /** Tapa: por cada metro más pegada que lo normal (1 m), tanto más; despegada, tanto menos. */
+    tightStuff: 0.38,
+    /** Pérdida de velocidad y más dispersión del remate por metro despegado de la red (sobre 1 m). */
+    offNetSpeed: 0.04,
+    offNetNoise: 0.18,
     /**
      * Finta del central: el central rival a veces "se la come" y salta con él (más si bloquea peor);
      * entonces ese bloqueador no llega al remate.

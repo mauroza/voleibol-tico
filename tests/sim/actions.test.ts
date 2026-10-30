@@ -12,19 +12,29 @@ const players = new Map<string, PlayerState>(
 );
 const court = team.lineup.map((id) => `A:${id}`); // [S, OH, MB, OP, OH, MB]
 const options = (setter: string, pass: number, specialist: boolean) =>
-  availableSetOptions(court, setter, pass, specialist, players).map((c) => `${c.option}@${court.indexOf(c.attackerKey)}`).sort();
+  availableSetOptions(court, setter, pass, specialist, players).map((c) => `${c.option}@${court.indexOf(c.attackerKey)}/${c.tempo}`).sort();
 
 describe('availableSetOptions', () => {
-  it('pase bueno con colocador en zaga: todas las opciones', () => {
-    expect(options(court[0], 0.8, true)).toEqual(['pipe@4', 'quick@2', 'semi@2', 'zone2@3', 'zone4@1', 'zone4fast@1']);
+  it('recepción doble positiva: cada atacante con alta, media y rápida (tiempos 3, 2 y 1), también el pipe', () => {
+    expect(options(court[0], 0.8, true)).toEqual([
+      'pipe@4/0', 'pipe@4/1', 'pipe@4/2',
+      'zone2@3/0', 'zone2@3/1', 'zone2@3/2',
+      'zone3@2/0', 'zone3@2/1', 'zone3@2/2',
+      'zone4@1/0', 'zone4@1/1', 'zone4@1/2',
+    ]);
   });
 
-  it('pase malo: solo pelotas altas a los extremos', () => {
-    expect(options(court[0], 0.3, true)).toEqual(['zone2@3', 'zone4@1']);
+  it('recepción positiva: alta y media; sin rápidas', () => {
+    expect(options(court[0], 0.6, true).filter((o) => o.endsWith('/2'))).toEqual([]);
+    expect(options(court[0], 0.6, true)).toContain('zone2@3/1');
   });
 
-  it('si coloca otro jugador no hay combinaciones', () => {
-    expect(options(court[1], 0.9, false)).toEqual(['zone2@3']);
+  it('recepción complicada: solo pelotas altas, sin zagueros', () => {
+    expect(options(court[0], 0.3, true)).toEqual(['zone2@3/0', 'zone3@2/0', 'zone4@1/0']);
+  });
+
+  it('si coloca otro jugador, solo pelotas altas', () => {
+    expect(options(court[1], 0.9, false)).toEqual(['zone2@3/0', 'zone3@2/0']);
   });
 });
 

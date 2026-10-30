@@ -1,5 +1,5 @@
 import type { TeamDef } from '../data/teams';
-import { SET_LABELS, SET_TEMPO, availableSetOptions, type AttackShot, type ServeType, type SetOption, type Zone } from './actions';
+import { availableSetOptions, setLabel, type AttackShot, type ServeType, type SetChoice, type SetOption, type SetTempo, type Zone } from './actions';
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, setSidesFlipped, sideOfX, sideSign, toWorld, type TeamId } from './court';
@@ -98,6 +98,8 @@ export interface BlockSetup {
   attackTime: number;
   /** Lateral (z mundo) del punto de remate. */
   z: number;
+  /** Multiplicador de tapa según la distancia de la colocación a la red (pegada, más; despegada, menos). */
+  tight: number;
   /** Marca de defensa del usuario y el defensor que la cubre. */
   focus?: { x: number; z: number } | null;
   focusKey?: string | null;
@@ -174,7 +176,7 @@ export class Simulation {
   private touches = 0;
   /** Dificultad de la pelota entrante para quien la recibe (0..1). */
   private threat = 0;
-  private intent: { key: string; option: SetOption; outOfSystem: boolean } | null = null;
+  private intent: { key: string; option: SetOption; tempo: SetTempo; depth: number; outOfSystem: boolean } | null = null;
   /** Central delantero que corre y salta la rápida como finta mientras la pelota va a otro atacante. */
   private decoyRun: { key: string; time: number } | null = null;
   /** Saque en curso: lanzamiento y carrera hasta el golpe en `at`. */
@@ -828,7 +830,7 @@ export class Simulation {
       const hitter = w.queues[team][0];
       const role = this.player(hitter).def.role;
       lane.hitter = hitter;
-      lane.option = role === 'MB' ? 'quick' : w.stage === 'spike2' ? 'zone2' : 'zone4';
+      lane.option = role === 'MB' ? 'zone3' : w.stage === 'spike2' ? 'zone2' : 'zone4';
       const libero = this.match.libero[team];
       const setter = this.court(team).find((k) => this.player(k).def.role === 'S') ?? this.court(team)[0];
       const from = libero ? this.player(libero).pos : this.warmSpot(team, 5.2, 1.7);
@@ -837,7 +839,7 @@ export class Simulation {
       lane.plan = { key: setter, team, time: this.time + tune.toss, point: setPoint, kind: 'set', low: false };
       // El rematador se va a su punto de carrera.
       // Cada equipo calienta en su mitad de la red: puntas por la orilla, centrales cerca del colocador.
-      this.player(hitter).target = lane.option === 'quick' ? this.warmSpot(team, 2.2, 0.6) : this.warmSpot(team, 3.3, 3.6);
+      this.player(hitter).target = lane.option === 'zone3' ? this.warmSpot(team, 2.2, 0.6) : this.warmSpot(team, 3.3, 3.6);
       lane.stage = 'set';
       this.warmFormation();
       return;
@@ -848,9 +850,10 @@ export class Simulation {
       const at = pos();
       this.bus.emit({ type: 'contact', time: this.time, playerKey: plan.key, team, kind: 'set', quality: 0.9, warmup: true, at });
       const attacker = this.player(lane.hitter);
-      const quick = lane.option === 'quick';
+      const quick = lane.option === 'zone3';
       const point = this.warmSpot(team, quick ? 0.7 : 1.0, quick ? 0.7 : 3.4, this.attackHeight(attacker, lane.option, false));
-      const flight = TUNING.set.flightTime[lane.option];
+      // El central calienta la rápida (tiempo 1); puntas y opuestos, la alta (tiempo 3).
+      const flight = TUNING.set.flightTime[lane.option][quick ? 2 : 0];
       lane.ball = launch(at, point, flight, this.time);
       lane.plan = { key: attacker.key, team, time: this.time + flight, point, kind: 'attack', low: false };
       attacker.pace = undefined;
@@ -1353,7 +1356,7 @@ export class Simulation {
     else if (decoy) {
       // Carrera de la finta: llega a la zona de la rápida justo para saltar con la colocación.
       const p = this.player(decoy.key);
-      const [depth, right] = ATTACK_POINTS.quick;
+      const [depth, right] = ATTACK_POINTS.zone3;
       const stand = spot(p.team, [depth + TUNING.contactStance.spikeBehind, right]);
       const runTime = distXZ(p.pos, stand) / moveSpeed(p.def) + 0.15;
       p.target = decoy.time - this.time > runTime ? v3(p.pos.x, 0, p.pos.z) : stand;
@@ -1509,41 +1512,46 @@ export class Simulation {
   }
 
   /** Punto de la cancha de una opción de colocación (donde golpeará el atacante; la segunda, sobre la red rival). */
-  setOptionPoint(d: Decision, index: number): Vec3 {
+  setOptionPoint(d: Decision, index: number, depth?: number): Vec3 {
     const opt = d.options[index].option;
     const team = this.player(d.playerKey).team;
-    if (opt.id === 'set') return spot(team, ATTACK_POINTS[opt.choice.option]);
+    if (opt.id === 'set') return spot(team, [depth ?? ATTACK_POINTS[opt.choice.option][0], ATTACK_POINTS[opt.choice.option][1]]);
     const p = this.player(d.playerKey).pos;
     return v3(-sideSign(team) * 1.5, 0, p.z);
   }
 
   /**
-   * Opción de colocación hacia donde apunta la mira: el atacante más cercano a la mira y, de sus colocaciones,
-   * la del tempo más parecido (`tempo` null: la primera). Mira en el campo rival: la segunda, si está disponible.
+   * Opción de colocación hacia donde apunta la mira. La línea de 3 m separa: más cerca de la red, los delanteros
+   * (punta, central, opuesto); más atrás, los zagueros (pipe, zona 1). De ese grupo, el atacante más cercano a lo ancho
+   * y, de sus colocaciones, la del tempo más parecido (`tempo` null: la alta). Mira en el campo rival: la segunda.
    */
   setOptionAt(d: Decision, tempo: number | null): number {
     const team = this.player(d.playerKey).team;
     const aim = d.aim!;
     const dump = d.options.findIndex((o) => o.option.id === 'dump');
-    if (sideSign(team) * aim.x < 0 && dump >= 0) return dump;
-    // Primero el atacante: el de la colocación más cercana a la mira.
+    const depth = sideSign(team) * aim.x;
+    if (depth < 0 && dump >= 0) return dump;
+    const back = (o: SetChoice) => o.option === 'pipe' || o.option === 'back1';
+    const sets = d.options.filter((o) => o.option.id === 'set').map((o) => (o.option as { choice: SetChoice }).choice);
+    const wantBack = depth > 3 && sets.some(back);
+    const pool = sets.some((c) => back(c) === wantBack) ? sets.filter((c) => back(c) === wantBack) : sets;
+    // Primero el atacante: el de la colocación más cercana a la mira a lo ancho de la cancha.
     let attacker: string | null = null;
     let near = Infinity;
-    d.options.forEach((o) => {
-      if (o.option.id !== 'set') return;
-      const at = spot(team, ATTACK_POINTS[o.option.choice.option]);
-      const dist = len2(at.x - aim.x, at.z - aim.z);
+    for (const c of pool) {
+      const at = spot(team, ATTACK_POINTS[c.option]);
+      const dist = Math.abs(at.z - aim.z) + 0.01 * Math.abs(at.x - aim.x);
       if (dist < near) {
         near = dist;
-        attacker = o.option.choice.attackerKey;
+        attacker = c.attackerKey;
       }
-    });
+    }
     // Después, de sus colocaciones, la del tempo más parecido (en empate, la más alta: más segura).
     let best = 0;
     let bestScore = Infinity;
     d.options.forEach((o, i) => {
       if (o.option.id !== 'set' || o.option.choice.attackerKey !== attacker) return;
-      const t = SET_TEMPO[o.option.choice.option];
+      const t = o.option.choice.tempo;
       const score = (tempo === null ? 0 : Math.abs(t - tempo)) + t * 0.01;
       if (score < bestScore) {
         bestScore = score;
@@ -1551,6 +1559,15 @@ export class Simulation {
       }
     });
     return best;
+  }
+
+  /** Distancia a la red de la colocación según la mira: pegada o despegada, dentro de lo que permite el carril. */
+  setDepthAt(d: Decision, index: number): number | undefined {
+    const opt = d.options[index]?.option;
+    if (!d.aim || opt?.id !== 'set') return undefined;
+    const cfg = TUNING.set;
+    const [lo, hi] = opt.choice.option === 'pipe' || opt.choice.option === 'back1' ? cfg.backDepth : cfg.frontDepth;
+    return clamp(sideSign(this.player(d.playerKey).team) * d.aim.x, lo, hi);
   }
 
   /** Colocación que saldría si se presiona ahora (para mostrarla en la cancha). */
@@ -1633,7 +1650,7 @@ export class Simulation {
         const specialist = p.def.role === 'S';
         const court = this.court(p.team);
         const options: DecisionOption[] = availableSetOptions(court, p.key, passQuality, specialist, this.players)
-          .map((choice) => ({ label: SET_LABELS[choice.option], option: { id: 'set', choice } }));
+          .map((choice) => ({ label: setLabel(choice), option: { id: 'set', choice } }));
         if (specialist && isFrontIndex(court.indexOf(p.key)) && passQuality >= 0.5) {
           options.push({ label: 'Segunda (ataque del colocador)', option: { id: 'dump' } });
         }
@@ -1665,8 +1682,10 @@ export class Simulation {
       const power = d.pressedAt === null ? null : powerZone(meterOf(d, this.time));
       const index = d.locked ? d.chosen! : this.setOptionAt(d, power === null ? null : tempoOf(power));
       const timing: Timing = power === null ? 'bad' : powerTiming(power);
+      const chosen = d.options[index].option;
+      const depth = this.setDepthAt(d, index);
       this.closeDecision(plan.team, timing, undefined, d.options[index].label);
-      return { option: d.options[index].option, timing, aim: null };
+      return { option: chosen.id === 'set' ? { id: 'set', choice: { ...chosen.choice, depth } } : chosen, timing, aim: null };
     }
     const option = d.chosen === null ? null : d.options[d.chosen].option;
     let timing: Timing = d.chosen === null ? 'bad' : judgeTiming(d.pressedAt, plan.time - (d.lead ?? 0) - (d.shift ?? 0));
@@ -1918,16 +1937,17 @@ export class Simulation {
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, 'set', q);
     const outOfSystem = low || passQuality < cfg.outOfSystemPass;
-    const [depth, right] = ATTACK_POINTS[choice.option];
-    const point = toWorld(p.team, outOfSystem ? Math.max(depth, 2.0) : depth, right, this.attackHeight(attacker, choice.option, outOfSystem));
+    const [laneDepth, right] = ATTACK_POINTS[choice.option];
+    const depth = outOfSystem ? Math.max(choice.depth ?? laneDepth, 2.0) : choice.depth ?? laneDepth;
+    const point = toWorld(p.team, depth, right, this.attackHeight(attacker, choice.option, outOfSystem));
     const target = this.keepOnSide(p.team, this.noisy(point, cfg.noise * (1 - q)));
-    this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option], t);
-    this.intent = { key: attacker.key, option: choice.option, outOfSystem };
+    this.ball = launch(at, target, outOfSystem ? cfg.rescueFlightTime : cfg.flightTime[choice.option][choice.tempo], t);
+    this.intent = { key: attacker.key, option: choice.option, tempo: outOfSystem ? 0 : choice.tempo, depth, outOfSystem };
     this.threat = 0;
     // El central delantero siempre amaga la rápida si la pelota va a otro lado (punta, opuesto, pipe o zaguero).
     const court = this.court(p.team);
     const mb = court.find((k, i) => isFrontIndex(i) && k !== p.key && k !== attacker.key && this.player(k).def.role === 'MB');
-    this.decoyRun = mb ? { key: mb, time: t + cfg.flightTime.quick } : null;
+    this.decoyRun = mb ? { key: mb, time: t + cfg.flightTime.zone3[2] } : null;
   }
 
   private doAttack(p: PlayerState, at: Vec3, t: number, ctl?: Control): void {
@@ -1953,8 +1973,11 @@ export class Simulation {
     q = this.boosted(q, ctl?.timing);
     this.registerTouch(p, 'attack', q);
     this.lastShot = shot;
+    // Colocación despegada de la red: abre el ángulo, pero el remate pierde algo de fuerza y precisión.
+    const off = this.intent && this.intent.key === p.key ? Math.max(0, this.intent.depth - (this.intent.option === 'pipe' || this.intent.option === 'back1' ? 3.3 : 1)) : 0;
     this.intent = null;
-    const pw = aim ? TUNING.power.spike[ctl?.power ?? 'medium'] : { speed: 1, risk: 1, noise: 1 };
+    const base = aim ? TUNING.power.spike[ctl?.power ?? 'medium'] : { speed: 1, risk: 1, noise: 1 };
+    const pw = { ...base, speed: base.speed * (1 - TUNING.set.offNetSpeed * off), noise: base.noise * (1 + TUNING.set.offNetNoise * off) };
     const isError = this.rng.chance(errorChance(cfg.shots[shot].risk * (aim ? TUNING.decision.aimRiskFactor * pw.risk : 1), q));
     this.lastAimed = !!aim;
     this.lastPower = ctl?.power ?? (q > 0.8 ? 'strong' : 'medium');
@@ -2080,11 +2103,11 @@ export class Simulation {
 
   /** Prepara el bloqueo del equipo que defiende contra el remate ya planificado (esquema de la IA por defecto). */
   private setupBlock(team: TeamId, attack: Plan): void {
-    const scheme = chooseBlockScheme(this.rng, this.intent?.option ?? 'zone4', this.intent?.outOfSystem ?? false);
+    const scheme = chooseBlockScheme(this.rng, this.intent?.tempo ?? 0, this.intent?.outOfSystem ?? false);
     const n = Math.min(scheme, this.frontPlayers(team).length);
     // Lectura imperfecta: el bloqueo se arma un poco hacia adentro y con error (más con colocaciones rápidas).
     const cfg = TUNING.block;
-    const fast = this.intent && ['zone4fast', 'quick', 'pipe', 'back1'].includes(this.intent.option) ? 1.6 : 1;
+    const fast = [1, 1.3, 1.6][this.intent?.tempo ?? 0];
     const side = Math.sign(attack.point.z) || 1;
     const z = clamp(attack.point.z - side * cfg.insideShift + this.rng.range(-1, 1) * cfg.readError * fast, -COURT.halfWidth, COURT.halfWidth);
     let keys = this.pickBlockers(team, n, z);
@@ -2097,7 +2120,10 @@ export class Simulation {
         this.bite = { key: mb, time: this.decoyRun.time };
       }
     }
-    this.blockSetup = { team, scheme: keys.length, keys, attackTime: attack.time, z };
+    const lane = this.intent?.option;
+    const off = (this.intent?.depth ?? 1) - (lane === 'pipe' || lane === 'back1' ? 3.3 : 1);
+    const tight = clamp(1 - TUNING.set.tightStuff * off, 0.45, 1.25);
+    this.blockSetup = { team, scheme: keys.length, keys, attackTime: attack.time, z, tight };
   }
 
   /** Delanteros que pueden bloquear (sin líbero). */
@@ -2243,6 +2269,14 @@ export class Simulation {
   private planBlock(block: BlockSetup, crossTime: number, userTiming: Timing | null): Plan | null {
     const cfg = TUNING.block;
     const at = positionAt(this.ball, crossTime);
+    // Solo bloquean si el remate pasa de verdad por las manos: apuntado lejos del bloqueo, no lo tocan (a lo sumo,
+    // rozando la punta de los dedos si pasa muy cerca).
+    const walls = this.blockWalls(block, crossTime);
+    const side = sideSign(block.team);
+    if (!this.crossesBlock(this.ball, walls, side)) {
+      if (this.crossesBlock(this.ball, walls, side, 0.2) && this.rng.chance(TUNING.calls.fingertip)) this.fingertip = block.team;
+      return null;
+    }
     const available = Math.max(0, crossTime - this.time - cfg.reactionTime);
     const blockers = block.keys
       .map((k) => this.player(k))
@@ -2258,7 +2292,7 @@ export class Simulation {
     // Bloqueo más alto, más tapas.
     const tall = 1 + cfg.heightStuff * (blockers.reduce((s, p) => s + p.def.height, 0) / n - AVG_HEIGHT);
     const userFactor = userTiming ? TUNING.decision.blockTiming[userTiming] : 1;
-    const stuff = clamp01((cfg.stuffBase + cfg.stuffScale * blockAttr * (1 - this.last!.quality)) * cfg.nFactor[n] * userFactor * Math.max(0.5, tall));
+    const stuff = clamp01((cfg.stuffBase + cfg.stuffScale * blockAttr * (1 - this.last!.quality)) * cfg.nFactor[n] * userFactor * Math.max(0.5, tall) * block.tight);
     const r = this.rng.next();
     if (r < stuff) return plan('stuff');
     if (r < stuff + cfg.touchByN[n]) return plan('soft');
@@ -2306,14 +2340,37 @@ export class Simulation {
     return { key, team: block.team, time: crossTime, point: at, kind: 'block', low: false, block: 'soft' };
   }
 
+  /** Dónde estará cada bloqueador en el instante `at` (va hacia su lugar del bloqueo a su velocidad) y hasta qué altura tapa. */
+  private blockWalls(block: BlockSetup, at: number): { z: number; top: number }[] {
+    const spots = this.blockSpots(block);
+    const left = Math.max(0, at - this.time);
+    return block.keys.map((k) => {
+      const p = this.player(k);
+      const step = clamp(spots.get(k)!.z - p.pos.z, -moveSpeed(p.def) * left, moveSpeed(p.def) * left);
+      return { z: p.pos.z + step, top: blockReach(p.def) + 0.05 };
+    });
+  }
+
+  /**
+   * Sombra del bloqueo rival para la mira del remate del usuario: desde dónde golpea y dónde estarán las manos al
+   * cruzar la pelota. Lo que se apunte dentro de la sombra pasa por las manos.
+   */
+  get blockShadow(): { from: Vec3; walls: { z: number; top: number }[]; side: number } | null {
+    const d = this.decision;
+    const block = this.blockSetup;
+    const up = this.plan;
+    if (!d || d.kind !== 'attack' || !block || block.scheme === 0 || !up || up.kind !== 'attack' || up.key !== d.playerKey) return null;
+    return { from: up.point, walls: this.blockWalls(block, block.attackTime + 0.1), side: sideSign(block.team) };
+  }
+
   /** ¿El recorrido toca a algún bloqueador en salto? Revisa planos entre la red y el cuerpo del bloqueador. */
-  private crossesBlock(tr: Trajectory, walls: { z: number; top: number }[], side: number): boolean {
+  private crossesBlock(tr: Trajectory, walls: { z: number; top: number }[], side: number, extra = 0): boolean {
     if (Math.abs(tr.v0.x) < 1e-6) return false;
     for (const d of [0.02, 0.15, 0.3, 0.45, 0.6]) {
       const t = (side * d - tr.p0.x) / tr.v0.x;
       if (t <= 0) continue;
       const p = positionAt(tr, tr.t0 + t);
-      if (walls.some((w) => p.y < w.top && Math.abs(p.z - w.z) < TUNING.block.bodyHalfWidth)) return true;
+      if (walls.some((w) => p.y < w.top && Math.abs(p.z - w.z) < TUNING.block.bodyHalfWidth + extra)) return true;
     }
     return false;
   }
@@ -2323,15 +2380,8 @@ export class Simulation {
    * (mismo tiempo de vuelo, otro punto de caída) por el costado más cercano. Devuelve false si no hay por dónde.
    */
   private clearBlockPath(block: BlockSetup): boolean {
-    // Dónde estará cada bloqueador al cruzar la red: va hacia su lugar del bloqueo a su velocidad.
-    const spots = this.blockSpots(block);
     const net = checkNet(this.ball);
-    const left = net.kind === 'none' ? 0 : Math.max(0, net.time - this.time);
-    const walls = block.keys.map((k) => {
-      const p = this.player(k);
-      const step = clamp(spots.get(k)!.z - p.pos.z, -moveSpeed(p.def) * left, moveSpeed(p.def) * left);
-      return { z: p.pos.z + step, top: blockReach(p.def) + 0.05 };
-    });
+    const walls = this.blockWalls(block, net.kind === 'none' ? this.time : net.time);
     const side = sideSign(block.team);
     const tr = this.ball;
     if (!this.crossesBlock(tr, walls, side)) return true;
@@ -2433,7 +2483,7 @@ export class Simulation {
       return spot(team, zoneSpotFor(p.def.role, false));
     }
     if (p.def.role === 'OH') return spot(team, APPROACH_SPOTS.zone4);
-    if (p.def.role === 'MB') return spot(team, APPROACH_SPOTS.quick);
+    if (p.def.role === 'MB') return spot(team, APPROACH_SPOTS.zone3);
     return spot(team, APPROACH_SPOTS.zone2);
   }
 

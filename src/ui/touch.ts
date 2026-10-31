@@ -20,6 +20,7 @@ const fullscreenElement = (): Element | null =>
   document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement ?? null;
 
 function requestFullscreen(): void {
+  if (!CAN_FULLSCREEN) return;
   const doc = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
   try {
     const p = doc.requestFullscreen?.({ navigationUI: 'hide' }) ?? doc.webkitRequestFullscreen?.();
@@ -31,8 +32,15 @@ function requestFullscreen(): void {
   }
 }
 
-/** ¿El navegador deja poner la página en pantalla completa? (el iPhone no; ahí sirve "Agregar a inicio"). */
-export const CAN_FULLSCREEN = typeof document !== 'undefined'
+/** iPad (iPadOS se presenta como Mac con pantalla táctil) o iPhone. */
+const IS_IOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+/**
+ * ¿Conviene la pantalla completa del navegador? El iPhone no la tiene; el iPad sí, pero Safari la quita con cualquier
+ * deslizamiento hacia abajo (apuntar con el dedo la cerraba). En los dos sirve "Agregar a inicio": como app no hay
+ * barra del navegador ni gesto que la saque.
+ */
+export const CAN_FULLSCREEN = typeof document !== 'undefined' && !IS_IOS
   && !!(document.documentElement.requestFullscreen || (document.documentElement as HTMLElement & { webkitRequestFullscreen?: unknown }).webkitRequestFullscreen);
 
 export function toggleFullscreen(): void {

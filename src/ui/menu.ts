@@ -8,6 +8,7 @@ import { cardById, cardPlayer, levelBonus, openPack, overallOf, VNL_CARDS, type 
 import { SQUAD_ROLES, basePlayers, clubTeam, squadPlayer } from '../data/club';
 import { createRng } from '../sim/rng';
 import { audio } from '../audio/music';
+import { tutorialView } from './tutorial';
 import { CREST_COUNT, CREST_NAMES, crestSvg, icon, initials, type IconName } from './crest';
 import { cardEl, esc, playerChip, rarityLevel, ROLE_SHORT } from './cards-ui';
 import { teamBadge } from './hud';
@@ -97,7 +98,7 @@ function takeScreen(): Screen | null {
 
 const DEFAULT: MatchSetup = { team: CLUB, rival: 0, setsToWin: 1, difficulty: 'normal', pace: 'normal' };
 
-type Screen = 'welcome' | 'home' | 'solo' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
+type Screen = 'welcome' | 'tutorial' | 'home' | 'solo' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
 
 const ONLINE_AVAILABLE = import.meta.env.MODE !== 'artifact';
 
@@ -155,7 +156,8 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     resolveFn(s);
   };
 
-  let screen: Screen = loadProfile().nickname ? takeScreen() ?? 'home' : 'welcome';
+  // La primera vez (o si nunca vio el tutorial) entra al tutorial después de crear el perfil.
+  let screen: Screen = loadProfile().nickname ? takeScreen() ?? (loadProfile().tutorial ? 'home' : 'tutorial') : 'welcome';
   const go = (s: Screen) => {
     screen = s;
     render();
@@ -164,7 +166,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const renderTop = () => {
     const p = loadProfile();
     top.replaceChildren();
-    if (screen === 'welcome') return;
+    if (screen === 'welcome' || screen === 'tutorial') return;
     const brand = button('am-brand', '<b>VOLEIBOL</b><span>TICO</span>', () => go('home'), 'back');
     const club = button('am-clubchip', `${crestSvg(p.club, 30)}<div><b>${esc(p.club.name)}</b><small>${icon('user', 12)} ${esc(p.nickname)}</small></div>`, () => go('club'));
     const packs = button('am-packchip', `${icon('pack', 18)}<b>${p.packs}</b>`, () => go('packs'));
@@ -181,6 +183,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     main.className = `am-main screen-${screen}`;
     const view = {
       welcome: welcomeScreen,
+      tutorial: tutorialScreen,
       home: homeScreen,
       solo: soloScreen,
       online: onlineScreen,
@@ -228,12 +231,25 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
           pp.club.short = initials(c);
         }
       });
-      go('home');
+      go(loadProfile().tutorial ? 'home' : 'tutorial');
     });
     card.append(nick.el, name.el, err, go2);
     el.append(card);
     setTimeout(() => nick.input.focus(), 50);
     return el;
+  };
+
+  // ---------- tutorial ----------
+  const tutorialScreen = (): HTMLElement => {
+    const seen = () => updateProfile((pp) => { pp.tutorial = true; });
+    return tutorialView(() => {
+      seen();
+      go('home');
+    }, () => {
+      seen();
+      // Práctica: tu club contra un equipo de primera, IA fácil, un set.
+      launch({ ...setup, team: CLUB, rival: 0, difficulty: 'easy', setsToWin: 1, online: undefined });
+    });
   };
 
   // ---------- inicio ----------
@@ -261,7 +277,8 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     item('pack', 'Sobres', p.packs ? `Tienes ${p.packs} por abrir` : 'Gana partidos para conseguir sobres', () => go('packs'), p.packs ? `<span class="am-badge">${p.packs}</span>` : '');
     item('trophy', 'Tabla de clubes', LEADERBOARD_AVAILABLE ? 'Los clubes de todos los jugadores y sus victorias' : 'Solo en el sitio del juego (mauroza.github.io)', () => go('ranking'));
     item('settings', 'Ajustes', 'Sonido, controles, sensibilidad, FPS', () => go('settings'));
-    item('help', 'Cómo jugar', 'Saque, pase, colocación, remate y bloqueo', () => go('help'));
+    item('tutorial', 'Tutorial', 'Aprende todas las mecánicas paso a paso', () => go('tutorial'));
+    item('help', 'Cómo jugar', 'Resumen de controles y jugadas', () => go('help'));
     // Teclado: flechas para moverse por el menú.
     list.addEventListener('keydown', (e) => {
       const items = [...list.querySelectorAll('button')];
@@ -705,6 +722,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     const k = (a: Action) => `<kbd>${keyName(loadProfile().settings.keys[a])}</kbd>`;
     const el = h('section', 'am-help');
     el.append(heading('Cómo jugar'));
+    el.append(button('am-cta am-help-tut', `${icon('tutorial', 18)} Ver el tutorial paso a paso`, () => go('tutorial')));
     const box = h('div', 'am-panel am-help-box');
     box.innerHTML = `
       <div class="am-help-grid">

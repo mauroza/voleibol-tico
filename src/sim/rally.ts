@@ -2122,7 +2122,8 @@ export class Simulation {
       this.setFormations();
       return;
     }
-    const here = this.planTouch(sideOfX(this.ball.p0.x));
+    // El saque nunca lo juega el propio equipo: si no pasa la red, es falta (antes un compañero la recibía y seguía el punto).
+    const here = last.kind === 'serve' ? null : this.planTouch(sideOfX(this.ball.p0.x));
     let blockTiming: Timing = 'bad';
     if (here && here.time < crossTime) {
       this.plan = here;
@@ -2696,8 +2697,9 @@ export class Simulation {
     const cfg = TUNING.calls;
     let close: { kind: 'line' | 'touch'; margin: number; inside: boolean } | null = null;
     if (landing) {
-      const dx = COURT.halfLength - Math.abs(landing.x);
-      const dz = COURT.halfWidth - Math.abs(landing.z);
+      // Igual que el fallo del punto (isInCourt): es dentro si la pelota toca la línea (centro a menos de un radio).
+      const dx = COURT.halfLength + COURT.ballRadius - Math.abs(landing.x);
+      const dz = COURT.halfWidth + COURT.ballRadius - Math.abs(landing.z);
       const inside = dx >= 0 && dz >= 0;
       const margin = inside ? Math.min(dx, dz) : Math.max(-Math.min(dx, 0), -Math.min(dz, 0));
       if (margin < cfg.lineMargin) close = { kind: 'line', margin, inside };
@@ -2718,7 +2720,7 @@ export class Simulation {
     const calledWinner = miss ? loser : truthWinner;
     const calledReason: PointReason = !miss ? truthReason : close.kind === 'touch' ? 'attackError' : truthReason === 'attackError' || truthReason === 'serviceError' || truthReason === 'error' ? 'landed' : 'error';
     this.pendingCall = { ...close, truthWinner, truthReason, calledWinner, calledReason, calledIn: miss ? !close.inside : close.inside, until: this.time + cfg.window, aiAt: null };
-    this.bus.emit({ type: 'call', kind: close.kind, calledWinner, calledReason, until: this.pendingCall.until });
+    this.bus.emit({ type: 'call', kind: close.kind, calledWinner, calledReason, calledIn: this.pendingCall.calledIn, until: this.pendingCall.until, at: landing ? { x: landing.x, z: landing.z } : null });
     // La IA perjudicada a veces pide challenge (casi siempre si el árbitro se equivocó).
     const wronged = otherTeam(calledWinner);
     if (!this.humans.has(wronged) && this.challengesLeft[wronged] > 0 && this.rng.chance(miss ? cfg.aiChallengeWrong : cfg.aiChallengeRight)) {

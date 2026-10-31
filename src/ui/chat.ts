@@ -18,6 +18,7 @@ export class Chat {
   private readonly input = document.createElement('input');
   private readonly quick = document.createElement('div');
   private readonly toggle = document.createElement('button');
+  private readonly pops = document.createElement('div');
   private open = false;
 
   constructor(root: HTMLElement, private readonly net: Transport, private readonly me: string, private readonly rival: string, private readonly myColor: string, private readonly rivalColor: string) {
@@ -49,7 +50,8 @@ export class Chat {
       this.setOpen(!this.open);
     });
     this.el.append(this.log, this.form, this.quick);
-    root.append(this.el, this.toggle);
+    this.pops.className = 'chat-pops';
+    root.append(this.el, this.toggle, this.pops);
     this.el.hidden = !settings().chat;
     this.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -71,13 +73,48 @@ export class Chat {
     });
     net.onMessage((m) => {
       if (m.t !== 'chat' || typeof m.text !== 'string') return;
-      this.add(this.rival, m.text.slice(0, MAX), this.rivalColor);
+      const text = m.text.slice(0, MAX);
+      this.add(this.rival, text, this.rivalColor);
+      // Con el chat cerrado, el mensaje salta arriba (bajo el marcador) y el botón queda marcado hasta abrirlo.
+      if (!this.open) {
+        this.popup(text);
+        this.toggle.classList.add('unread');
+      }
       audio.hover();
     });
   }
 
+  /** Burbuja del mensaje del rival: unos segundos y se va (tocarla abre el chat). */
+  private popup(text: string): void {
+    const pop = document.createElement('button');
+    pop.type = 'button';
+    pop.className = 'chat-pop';
+    const name = document.createElement('b');
+    name.textContent = this.rival;
+    name.style.color = this.rivalColor;
+    const msg = document.createElement('span');
+    msg.textContent = text;
+    const ic = document.createElement('i');
+    ic.innerHTML = icon('chat', 16);
+    pop.append(ic, name, msg);
+    pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+    pop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pop.remove();
+      this.setOpen(true);
+    });
+    this.pops.prepend(pop);
+    while (this.pops.children.length > 3) this.pops.lastElementChild!.remove();
+    setTimeout(() => pop.classList.add('out'), 5500);
+    setTimeout(() => pop.remove(), 6000);
+  }
+
   private setOpen(open: boolean): void {
     this.open = open;
+    if (open) {
+      this.toggle.classList.remove('unread');
+      this.pops.replaceChildren();
+    }
     this.el.classList.toggle('open', open);
     if (open) setTimeout(() => this.input.focus(), 0);
     else this.input.blur();

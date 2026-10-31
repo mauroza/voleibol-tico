@@ -87,6 +87,8 @@ export interface Profile {
   opened: number;
   wins: number;
   played: number;
+  /** Ya vio (o saltó) el tutorial de entrada. */
+  tutorial?: boolean;
   settings: Settings;
 }
 

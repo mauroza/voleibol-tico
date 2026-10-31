@@ -3,6 +3,7 @@ import type { TeamId } from '../sim/court';
 import type { Simulation } from '../sim/rally';
 import { TUNING } from '../sim/tuning';
 import { IS_TOUCH } from './touch';
+import { esc } from './cards-ui';
 
 /**
  * Challenge y roces: tras una jugada cerrada (pelota a centímetros de la línea o roce leve del bloqueo) aparece
@@ -31,10 +32,15 @@ export class ChallengePanel {
     sim.bus.on((e) => {
       const name = (t: TeamId) => sim.teams[t].name;
       if (e.type === 'challenge') {
-        const who = e.team === team ? 'Tu challenge' : `Challenge de ${name(e.team)}`;
+        // Quién gana de verdad: si se dio vuelta, el que pidió el challenge; si no, el otro.
+        const winner = e.overturned ? e.team : e.team === 'A' ? 'B' : 'A';
         const cm = Math.max(1, Math.round(e.margin * 100));
-        const detail = e.kind === 'touch' ? '¡Hubo roce del bloqueo!' : e.inside ? `Dentro por ${cm} cm` : `Fuera por ${cm} cm`;
-        this.show(`${who}: ${detail}`, e.overturned ? 'Se cambia la decisión' : 'Se mantiene lo que cantó el árbitro');
+        const title = e.kind === 'touch' ? '¡Hubo roce del bloqueo!' : e.inside ? `DENTRO · por ${cm} cm` : `FUERA · por ${cm} cm`;
+        const who = e.team === team ? 'Tenías razón' : `${name(e.team)} tenía razón`;
+        const sub = e.overturned
+          ? `${who}: se corrige el fallo · punto para ${name(winner)}`
+          : `El árbitro acertó · punto para ${name(winner)}${e.team === team ? ' · gastas un challenge' : ''}`;
+        this.show(title, sub, winner === team ? 'good' : 'bad');
       } else if (e.type === 'point' && e.reason === 'blockOut' && performance.now() > this.verdictUntil) {
         // Detección de roces: si la pelota tocó el bloqueo antes de salir, se avisa.
         this.show('Roce del bloqueo', `Punto para ${name(e.winner)}`);
@@ -42,7 +48,8 @@ export class ChallengePanel {
     });
   }
 
-  private show(title: string, sub: string): void {
+  private show(title: string, sub: string, tone: 'good' | 'bad' | '' = ''): void {
+    this.verdict.dataset.tone = tone;
     this.verdict.replaceChildren(Object.assign(document.createElement('strong'), { textContent: title }), Object.assign(document.createElement('span'), { textContent: sub }));
     this.verdictUntil = performance.now() + 2600;
   }
@@ -56,9 +63,11 @@ export class ChallengePanel {
     const can = !!call && this.sim.canChallenge(this.team);
     this.button.style.display = can ? '' : 'none';
     if (can && call) {
-      const called = call.kind === 'touch' ? 'Cantaron: sin toque del bloqueo' : `Cantaron: ${call.calledIn ? 'DENTRO' : 'FUERA'}`;
+      // Lo que cantó el árbitro y lo que eso significa (punto para quién); el challenge lo revisa con la marca.
+      const called = call.kind === 'touch' ? 'Árbitro: SIN ROCE del bloqueo' : `Árbitro: ${call.calledIn ? 'DENTRO' : 'FUERA'}`;
       const left = Math.max(0, Math.ceil(call.until - this.sim.time));
-      (this.button.firstChild as HTMLElement).textContent = `${called} · ${IS_TOUCH ? '' : 'C · '}Pedir challenge (${left} s · quedan ${this.sim.challengesLeft[this.team]})`;
+      const label = this.button.firstChild as HTMLElement;
+      label.innerHTML = `<b>${called}</b> → punto ${esc(this.sim.teams[call.calledWinner].name)}<small>¿No estás de acuerdo? ${IS_TOUCH ? 'Toca aquí' : 'C'} · pedir challenge · ${left} s · te quedan ${this.sim.challengesLeft[this.team]}</small>`;
       this.bar.style.transform = `scaleX(${Math.max(0, Math.min(1, (call.until - this.sim.time) / TUNING.calls.window))})`;
     }
     this.verdict.style.opacity = performance.now() < this.verdictUntil ? '1' : '0';

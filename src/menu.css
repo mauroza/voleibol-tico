@@ -413,3 +413,60 @@ body.touch { touch-action: none; }
   #hud .sub-ovr { font-size: 20px; }
   #hud .timeout-box h2 { font-size: 22px; }
 }
+
+/* ---------- Tutorial ---------- */
+.am-tutorial { display: grid; gap: 14px; width: min(980px, 100%); margin: 0 auto; padding-block: 12px; }
+.tut-top { display: flex; justify-content: space-between; align-items: center; }
+.tut-tag { font-family: var(--am-display); font-size: 22px; letter-spacing: 2px; color: var(--am-gold); }
+.tut-count { color: var(--am-muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tut-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: center; padding: 20px; }
+.tut-text h2 { margin: 0 0 10px; font-family: var(--am-display); font-weight: 400; font-size: 34px; letter-spacing: 1px; line-height: 1.05; text-wrap: balance; }
+.tut-text p { margin: 0 0 10px; line-height: 1.55; color: #d6ddf2; max-width: 60ch; }
+.tut-text kbd { padding: 1px 7px; border-radius: 6px; background: #ffffff18; border: 1px solid #ffffff30; font: 700 13px var(--am-body); }
+.tut-art { display: grid; gap: 10px; min-width: 0; }
+.tut-svg { width: 100%; height: auto; display: block; }
+.tut-floor { fill: #d98c3f; } .tut-lines { fill: none; stroke: #fff; stroke-width: 1.4; } .tut-lines.thin { stroke-width: .8; opacity: .7; }
+.tut-net { fill: #0b0f18; } .tut-side { font: 800 7px var(--am-body); fill: #ffffffb0; text-anchor: middle; letter-spacing: 2px; }
+.tut-p circle { fill: #e5293e; stroke: #fff; stroke-width: 1.2; } .tut-p.rival circle { fill: #2459d6; }
+.tut-p.me circle { fill: #f6c445; } .tut-p text { font: 900 5px var(--am-body); fill: #111; text-anchor: middle; }
+.tut-p.jump { animation: tut-jump 1.6s ease-in-out infinite; }
+.tut-ball { fill: #fff; stroke: #1d3f8f; stroke-width: 1.2; } .tut-ball.bounce { animation: tut-pulse 1.2s ease-in-out infinite; }
+.tut-ring, .tut-hoop, .tut-defend { fill: none; stroke: #fff; stroke-width: 1.4; stroke-dasharray: 3 2; animation: tut-spin 3s linear infinite; transform-box: fill-box; transform-origin: center; }
+.tut-hoop.on { stroke: #f6c445; stroke-width: 2.2; } .tut-defend { stroke: #4dc3ff; stroke-width: 2; }
+.tut-traj { fill: none; stroke: #fff; stroke-width: 1.6; stroke-dasharray: 3 3; animation: tut-flow 1s linear infinite; }
+.tut-traj.pass { stroke: #5dff8f; } .tut-traj.hit { stroke: #ff5a6a; }
+.tut-aim circle, .tut-aim path { fill: none; stroke: #fff; stroke-width: 1.4; } .tut-aim { animation: tut-pulse 1.4s ease-in-out infinite; }
+.tut-shade { fill: #e5293e55; stroke: #e5293e; stroke-width: 1; } .tut-block { stroke: #fff; stroke-width: 3; stroke-linecap: round; }
+.tut-mark { fill: #fff; } .tut-zoom { fill: none; stroke: #f6c445; stroke-width: 1.6; animation: tut-pulse 1.4s ease-in-out infinite; }
+.tut-mini { font: 800 6px var(--am-body); fill: #fff; text-anchor: middle; }
+.tut-phone { fill: #0b1020; stroke: #ffffff55; stroke-width: 2; } .tut-zone { fill: #ffffff10; stroke: #ffffff40; stroke-dasharray: 4 3; }
+.tut-zone.hit { fill: #e5293e22; } .tut-zone-t { font: 800 7px var(--am-body); fill: #fff; text-anchor: middle; letter-spacing: 1.5px; }
+.tut-finger { fill: #f6c445aa; } .tut-finger.drag { animation: tut-drag 2s ease-in-out infinite; } .tut-finger.tap, .tut-key.press { animation: tut-tap 1s ease-in-out infinite; }
+.tut-mouse { fill: #1a2240; stroke: #fff; stroke-width: 1.6; } .tut-key { fill: #1a2240; stroke: #fff; stroke-width: 1.4; }
+.tut-arrow { fill: none; stroke: #f6c445; stroke-width: 2; }
+.tut-meter { position: relative; height: 22px; border-radius: 8px; overflow: hidden; background: #ffffff10; border: 1px solid #ffffff2a; }
+.tut-meter span { position: absolute; top: 0; bottom: 0; display: grid; place-items: center; font: 800 9px var(--am-body); letter-spacing: 1px; color: #0b0f18; }
+.tut-meter .green { background: #5dff8f; } .tut-meter .yellow { background: #ffd23f; } .tut-meter .red { background: #ff5a6a; } .tut-meter .purple { background: #c084fc; }
+.tut-needle { position: absolute; top: -2px; bottom: -2px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 8px #000; left: 0; }
+.tut-needle.sweep { animation: tut-sweep 2.2s ease-in-out infinite alternate; }
+.tut-dots { display: flex; justify-content: center; gap: 8px; }
+.tut-dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: #ffffff30; cursor: pointer; }
+.tut-dots button.on { background: var(--am-gold); width: 26px; border-radius: 6px; }
+.tut-nav { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.tut-nav .am-ghost:first-child { margin-right: auto; }
+.am-help-tut { justify-self: start; margin-bottom: 12px; }
+@keyframes tut-flow { to { stroke-dashoffset: -12; } }
+@keyframes tut-spin { to { transform: rotate(360deg); } }
+@keyframes tut-pulse { 50% { opacity: .55; } }
+@keyframes tut-jump { 50% { transform: translateY(-3px) scale(1.15); } }
+@keyframes tut-sweep { to { left: calc(100% - 4px); } }
+@keyframes tut-drag { 50% { transform: translate(24px, -18px); } }
+@keyframes tut-tap { 50% { transform: scale(.85); opacity: .6; } }
+.tut-p.jump, .tut-finger, .tut-key { transform-box: fill-box; transform-origin: center; }
+@media (max-width: 760px), (max-height: 560px) {
+  .tut-card { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 14px; }
+  .tut-text h2 { font-size: 26px; }
+  .tut-text p { font-size: 14px; }
+}
+@media (max-height: 560px) and (min-width: 640px) { .tut-card { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+.tut-nav .am-cta { width: auto; flex: 0 0 auto; }

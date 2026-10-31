@@ -135,9 +135,11 @@ export class CameraDirector {
         targetPos.set(-toward * Math.max(10.5, depth + 5), 7.4 + Math.max(0, depth - 3) * 0.7, u.z * 0.35);
         targetLook.set(-toward * Math.max(1.4, depth * 0.45), 0.4, u.z * 0.3);
       } else if (d.kind === 'serve') {
-        // El saque cruza toda la cancha: más alto, para ver el campo rival por encima de la red.
-        targetPos.set(u.x - toward * 2.6, 7.6, u.z * 0.6);
-        targetLook.set(u.x + (rival - u.x) * 0.78, 0, u.z * 0.22);
+        // Saque: detrás del sacador y a media altura, con él en la parte de abajo del cuadro (de cuerpo entero) y el
+        // campo rival arriba, por encima de la red. Antes la cámara quedaba casi encima de él y no se lo veía sacar.
+        const cx = Math.max(-15.5, Math.min(15.5, u.x - toward * 5.2));
+        targetPos.set(cx, 5.6, u.z * 0.8);
+        targetLook.set(cx + toward * 14, 0, u.z * 0.25);
       } else {
         // Remate (y pase): detrás del que golpea, que queda siempre abajo en el centro del cuadro.
         targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.85);

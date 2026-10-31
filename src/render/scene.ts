@@ -143,6 +143,8 @@ export class MatchView {
   private readonly landMark = new THREE.Group();
   private landPulse = 0;
   private markHold = 0;
+  /** Cuándo se revisó una jugada con challenge (performance.now). */
+  private reviewedAt = -1e9;
   /** Sombra del bloqueo rival sobre la cancha mientras se apunta el remate. */
   private blockShade!: THREE.Mesh;
   private readonly aimSpread = new THREE.Mesh(
@@ -349,6 +351,8 @@ export class MatchView {
       this.serveBall(ballPos);
       this.captureFrame(ballPos);
       // Tras un challenge, la repetición espera a que termine el plano de la marca.
+      // Si ya se abrió una jugada (el saque siguiente, online el reloj no espera), la repetición se descarta.
+      if (this.pendingReplay && ((this.sim.phase !== 'pointOver' && this.sim.phase !== 'matchOver') || this.sim.decision)) this.pendingReplay = null;
       if (this.pendingReplay && this.sim.time >= this.pendingReplay.at && now >= this.markHold && !this.transitioning) {
         this.transition(() => {
           if (this.pendingReplay) this.startReplay();
@@ -444,11 +448,13 @@ export class MatchView {
       } else if (e.type === 'decisionResolved') {
         this.lastPower = e.power ?? null;
       } else if (e.type === 'call') {
-        // Jugada cerrada: la marca queda donde picó para revisarla.
-        this.placeMark();
+        // Jugada cerrada: la marca queda justo donde picó (el punto exacto del pique, no el último cuadro dibujado).
+        this.placeMark(e.at);
       } else if (e.type === 'challenge' && e.kind === 'line' && this.landMark.visible) {
         // El challenge manda: corta cualquier repetición y baja sobre la marca.
+        // La revisión de la marca reemplaza la repetición (si no, la repetición caía encima del saque siguiente).
         if (this.replay) this.endReplay();
+        this.reviewedAt = now;
         this.director.focusMark(this.landMark.position, 3.2);
         this.landPulse = now;
         this.markHold = now + 3.2;
@@ -458,7 +464,8 @@ export class MatchView {
         const big = e.reason === 'ace' || e.reason === 'kill' || e.reason === 'blockKill';
         this.arena.cheer(e.winner, big);
         if (big) this.director.punch(0.05, 0.3);
-        const replay = this.policy.shouldReplay(e.reason);
+        // Tras un challenge no hay repetición: la revisión de la marca ya la mostró.
+        const replay = now - this.reviewedAt > 500 && this.policy.shouldReplay(e.reason);
         if (replay) {
           const b = this.sim.ballPos;
           const land = new THREE.Vector3(b.x, 0, b.z);
@@ -517,10 +524,10 @@ export class MatchView {
   }
 
   /** Marca el pique si la pelota está en el piso (no en una red, un bloqueo o una mano). */
-  private placeMark(): void {
+  private placeMark(at: { x: number; z: number } | null = null): void {
     const b = this.sim.ballPos;
-    if (b.y > 0.35) return;
-    this.landMark.position.set(b.x, 0.014, b.z);
+    if (!at && b.y > 0.35) return;
+    this.landMark.position.set(at?.x ?? b.x, 0.014, at?.z ?? b.z);
     this.landMark.scale.setScalar(1);
     this.landMark.visible = true;
   }

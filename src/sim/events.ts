@@ -25,7 +25,7 @@ export type SimEvent =
   /** Cambio de cancha (fin de set) o lado elegido en el sorteo (`chosenBy`). */
   | { type: 'sides'; flipped: boolean; chosenBy: TeamId | null }
   /** Jugada cerrada: lo que cantaron los árbitros (puede estar mal) y hasta cuándo se puede pedir challenge. */
-  | { type: 'call'; kind: 'line' | 'touch'; calledWinner: TeamId; calledReason: PointReason; until: number }
+  | { type: 'call'; kind: 'line' | 'touch'; calledWinner: TeamId; calledReason: PointReason; calledIn: boolean; until: number; at: { x: number; z: number } | null }
   /** Resultado del challenge: si se dio vuelta, y el detalle (distancia a la línea en metros, o si hubo toque). */
   | { type: 'challenge'; team: TeamId; overturned: boolean; kind: 'line' | 'touch'; margin: number; inside: boolean; touched: boolean }
   | { type: 'substitution'; team: TeamId; outKey: string; inKey: string };

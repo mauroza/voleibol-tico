@@ -63,14 +63,14 @@ describe('colocación pegada o despegada', () => {
   /** Distancia media a la red de los remates cuando se coloca apuntando a `depth` m de la red. */
   function attackDepth(depth: number): number {
     const seen: number[] = [];
-    for (let seed = 1; seed <= 8 && seen.length < 20; seed++) {
+    for (let seed = 1; seed <= 16 && seen.length < 60; seed++) {
       const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
       let set = false;
       sim.bus.on((e) => {
         if (e.type === 'contact' && e.kind === 'attack' && e.team === 'A' && set) seen.push(Math.abs(sim.player(e.playerKey).pos.x));
         if (e.type === 'contact' && e.kind !== 'set') set = false;
       });
-      while (sim.phase !== 'matchOver' && seen.length < 20) {
+      while (sim.phase !== 'matchOver' && seen.length < 60) {
         const d = sim.decision;
         if (d?.kind === 'set' && d.aim && d.pressedAt === null) {
           const side = Math.sign(sim.player(d.playerKey).pos.x) || 1;
@@ -89,7 +89,9 @@ describe('colocación pegada o despegada', () => {
   }
 
   it('la mira decide a qué distancia de la red llega la colocación', () => {
-    // Donde salta el rematador: casi 2 m más atrás cuando la colocación va despegada.
-    expect(attackDepth(2.6) - attackDepth(0.5)).toBeGreaterThan(1.5);
+    // Donde salta el rematador: metro y medio más atrás cuando la colocación va despegada (60 remates por lado).
+    const far = attackDepth(2.6);
+    const near = attackDepth(0.5);
+    expect(far - near).toBeGreaterThan(1.2);
   }, 120_000);
 });

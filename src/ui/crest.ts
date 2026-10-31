@@ -63,6 +63,7 @@ export function initials(name: string): string {
 
 const PATHS: Record<string, string> = {
   play: '<path d="M8 5v14l11-7z"/>',
+  tutorial: '<path d="M3 8l9-4 9 4-9 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 10.2v4.6c0 1.3 2.2 2.7 5 2.7s5-1.4 5-2.7v-4.6M21 8v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   solo: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.8 11c3-2.2 13.4-2.2 16.4 0M12 3.5c-2.8 3-2.8 14 0 17M6.5 5.6c4.3 1.8 6.4 7.5 4.7 14" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   online: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="19.5" r="1.6"/>',
   club: '<path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.5 11.5l2.4 2.4 4.6-4.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',

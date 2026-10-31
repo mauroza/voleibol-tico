@@ -42,22 +42,25 @@ describe('jugadas cerradas y challenge', () => {
   }, 60_000);
 
   it('el humano perjudicado puede pedir challenge (y solo él); los fallidos gastan uno', () => {
-    const sim = new Simulation({ seed: 9, setsToWin: 2, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
     const results: { overturned: boolean; left: number; before: number }[] = [];
-    let before = 0;
-    sim.bus.on((e) => { if (e.type === 'challenge' && e.team === 'A') results.push({ overturned: e.overturned, left: sim.challengesLeft.A, before }); });
-    run(sim, () => {
-      const d = sim.decisions.A;
-      if (d && (d.kind === 'serve' ? sim.time - d.startTime > 0.7 : d.contactTime !== null && d.contactTime - sim.time <= 0.05)) sim.press(sim.time, 'A');
-      const call = sim.callPending;
-      if (!call) return;
-      const wronged: TeamId = otherTeam(call.calledWinner);
-      expect(sim.canChallenge(call.calledWinner)).toBe(false);
-      if (wronged === 'A' && sim.canChallenge('A')) {
-        before = sim.challengesLeft.A;
-        sim.challenge('A');
-      }
-    });
+    // Varias semillas: alguna tiene una jugada cerrada en contra del humano.
+    for (let seed = 9; seed <= 20 && !results.length; seed++) {
+      const sim = new Simulation({ seed, setsToWin: 2, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
+      let before = 0;
+      sim.bus.on((e) => { if (e.type === 'challenge' && e.team === 'A') results.push({ overturned: e.overturned, left: sim.challengesLeft.A, before }); });
+      run(sim, () => {
+        const d = sim.decisions.A;
+        if (d && (d.kind === 'serve' ? sim.time - d.startTime > 0.7 : d.contactTime !== null && d.contactTime - sim.time <= 0.05)) sim.press(sim.time, 'A');
+        const call = sim.callPending;
+        if (!call) return;
+        const wronged: TeamId = otherTeam(call.calledWinner);
+        expect(sim.canChallenge(call.calledWinner)).toBe(false);
+        if (wronged === 'A' && sim.canChallenge('A')) {
+          before = sim.challengesLeft.A;
+          sim.challenge('A');
+        }
+      });
+    }
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) expect(r.left).toBe(r.overturned ? r.before : r.before - 1);
   }, 60_000);

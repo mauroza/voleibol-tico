@@ -9,6 +9,7 @@ import { SQUAD_ROLES, basePlayers, clubTeam, squadPlayer } from '../data/club';
 import { createRng } from '../sim/rng';
 import { audio } from '../audio/music';
 import { tutorialView } from './tutorial';
+import { BYE, ROUND_NAMES, createTournament, finishWithoutUser, nextOpponent, recordResult } from '../data/tournament';
 import { CREST_COUNT, CREST_NAMES, crestSvg, icon, initials, type IconName } from './crest';
 import { cardEl, esc, playerChip, rarityLevel, ROLE_SHORT } from './cards-ui';
 import { teamBadge } from './hud';
@@ -20,7 +21,8 @@ export type Pace = 'calm' | 'normal' | 'real';
 export const PACE_SPEED: Record<Pace, number> = { calm: 0.8, normal: 1, real: 1 };
 /** Ritmo de las decisiones de cada modo: cuánto se frena el tiempo para pensar y golpear. */
 export const PACE_TEMPO: Record<Pace, TempoProfile> = { calm: 'clasico', normal: 'fluido', real: 'online' };
-const PACE_LABELS: Record<Pace, string> = { calm: 'Tranquilo', normal: 'Fluido', real: 'Rápido' };
+/** El ritmo va con la dificultad: fácil, tranquilo (más cámara lenta); difícil, rápido. */
+export const paceOf = (d: Difficulty): Pace => (d === 'easy' ? 'calm' : d === 'hard' ? 'real' : 'normal');
 
 /** Índice de equipo para "Mi club" (los demás son los de `TEAMS`). */
 export const CLUB = -1;
@@ -32,7 +34,10 @@ export interface MatchSetup {
   rival: number;
   setsToWin: 1 | 2;
   difficulty: Difficulty;
-  pace: Pace;
+  /** Jugar: amistoso (un partido) o torneo (eliminación directa). */
+  mode?: 'friendly' | 'tournament';
+  /** El partido es de la ronda actual del torneo guardado en el perfil. */
+  tournament?: boolean;
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -80,7 +85,7 @@ function loadSetup(): { setup: MatchSetup; autostart: boolean } | null {
     sessionStorage.removeItem(KEY);
     const v = JSON.parse(raw) as { setup: MatchSetup; autostart: boolean };
     const ok = (i: number) => i === CLUB || !!TEAMS[i];
-    return v.setup && ok(v.setup.team) && TEAMS[v.setup.rival] ? v : null;
+    return v.setup && ok(v.setup.team) && ok(v.setup.rival) ? v : null;
   } catch {
     return null;
   }
@@ -96,9 +101,9 @@ function takeScreen(): Screen | null {
   }
 }
 
-const DEFAULT: MatchSetup = { team: CLUB, rival: 0, setsToWin: 1, difficulty: 'normal', pace: 'normal' };
+const DEFAULT: MatchSetup = { team: CLUB, rival: 0, setsToWin: 1, difficulty: 'normal', mode: 'friendly' };
 
-type Screen = 'welcome' | 'tutorial' | 'home' | 'solo' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
+type Screen = 'welcome' | 'tutorial' | 'home' | 'solo' | 'tournament' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
 
 const ONLINE_AVAILABLE = import.meta.env.MODE !== 'artifact';
 
@@ -186,6 +191,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       tutorial: tutorialScreen,
       home: homeScreen,
       solo: soloScreen,
+      tournament: tournamentScreen,
       online: onlineScreen,
       club: clubScreen,
       packs: packsScreen,
@@ -270,7 +276,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       list.append(b);
       return b;
     };
-    item('solo', 'Jugar', 'Contra la IA · tu club o un equipo de primera', () => go('solo'));
+    item('solo', 'Jugar', 'Contra la IA · amistoso o torneo', () => go('solo'));
     const on = item('online', 'Online 1 vs 1', ONLINE_AVAILABLE ? 'Crea una sala o únete con un código' : 'Solo en el sitio del juego (mauroza.github.io)', () => go('online'));
     if (!ONLINE_AVAILABLE) on.classList.add('soon');
     item('club', 'Mi club', 'Nombre, escudo, colores y plantilla', () => go('club'));
@@ -310,7 +316,12 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const soloScreen = (): HTMLElement => {
     const p = loadProfile();
     const el = h('section', 'am-solo');
-    el.append(heading('Jugar', 'Partido contra la IA. Si ganas, te llevas un sobre.'));
+    const cup = setup.mode === 'tournament';
+    el.append(heading('Jugar', cup ? 'Eliminación directa: cuartos, semifinal y final. Si sales campeón, te llevas 3 sobres.' : 'Partido contra la IA. Si ganas, te llevas un sobre.'));
+    el.append(tabs([['friendly', 'Amistoso'], ['tournament', 'Torneo']], cup ? 'tournament' : 'friendly', (m) => {
+      setup.mode = m as MatchSetup['mode'];
+      render();
+    }));
     const grid = h('div', 'am-cols');
     const pick = (title: string, selected: number, choose: (i: number) => void, withClub: boolean, disabled: number | null) => {
       const box = h('div', 'am-panel');
@@ -334,7 +345,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
         setup.team = i;
         if (setup.rival === i) setup.rival = (Math.max(0, i) + 1) % TEAMS.length;
       }, true, null),
-      pick('Rival', setup.rival, (i) => { setup.rival = i; }, false, setup.team),
+      ...(cup ? [] : [pick('Rival', setup.rival, (i) => { setup.rival = i; }, false, setup.team)]),
     );
     const opts = h('div', 'am-panel am-options');
     opts.append(
@@ -345,12 +356,83 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       row('Dificultad', segmented((Object.keys(DIFFICULTY_LABELS) as Difficulty[]).map((d) => ({
         label: DIFFICULTY_LABELS[d], active: setup.difficulty === d, pick: () => { setup.difficulty = d; render(); },
       })))),
-      row('Ritmo', segmented((Object.keys(PACE_LABELS) as Pace[]).map((pp) => ({
-        label: PACE_LABELS[pp], active: setup.pace === pp, pick: () => { setup.pace = pp; render(); },
-      })))),
     );
-    const play = button('am-cta big', `${icon('play', 22)} Jugar`, () => launch({ ...setup, online: undefined }));
+    if (cup) {
+      const live = p.tournament && nextOpponent(p.tournament) !== null ? p.tournament : null;
+      const actions = h('div', 'am-cup-actions');
+      if (live) actions.append(button('am-cta big', `${icon('trophy', 22)} Seguir torneo · ${ROUND_NAMES[live.round]}`, () => go('tournament')));
+      actions.append(button(live ? 'am-ghost' : 'am-cta big', `${icon('play', 22)} ${live ? 'Empezar uno nuevo' : 'Empezar torneo'}`, () => {
+        const others = [CLUB, ...TEAMS.map((_, i) => i)].filter((i) => i !== setup.team);
+        const t = createTournament(setup.team, others, overallFor, { difficulty: setup.difficulty, setsToWin: setup.setsToWin, seed: Date.now() % 1_000_000_007 });
+        updateProfile((pp) => { pp.tournament = t; });
+        go('tournament');
+      }));
+      el.append(grid, opts, actions);
+      return el;
+    }
+    const play = button('am-cta big', `${icon('play', 22)} Jugar`, () => launch({ ...setup, mode: 'friendly', tournament: false, online: undefined }));
     el.append(grid, opts, play);
+    return el;
+  };
+
+  // ---------- torneo ----------
+  const tournamentScreen = (): HTMLElement => {
+    const p = loadProfile();
+    const el = h('section', 'am-cup');
+    let t = p.tournament;
+    if (!t) {
+      el.append(heading('Torneo', 'Todavía no hay torneo. Arma uno en Jugar → Torneo.'));
+      el.append(button('am-cta', `${icon('trophy', 20)} Ir a Jugar`, () => { setup.mode = 'tournament'; go('solo'); }));
+      return el;
+    }
+    // Eliminado: el resto del torneo se juega solo para ver quién sale campeón.
+    if (t.out && t.champion === null) {
+      t = finishWithoutUser(t, overallFor);
+      const done = t;
+      updateProfile((pp) => { pp.tournament = done; });
+    }
+    const opp = nextOpponent(t);
+    const name = (i: number) => (i === BYE ? 'Pasa directo' : i === CLUB ? p.club.name : TEAMS[i].name);
+    const badge = (i: number) => (i === BYE ? '' : i === CLUB ? crestSvg(p.club, 26) : teamBadge(TEAMS[i], 26));
+    const status = t.champion === t.user ? `¡${esc(name(t.user))} es campeón!` : t.out ? `Eliminado · campeón: ${esc(name(t.champion ?? BYE))}` : `${ROUND_NAMES[t.round]} · ${t.setsToWin === 1 ? '1 set' : 'mejor de 3'} · ${DIFFICULTY_LABELS[t.difficulty]}`;
+    el.append(heading('Torneo', status));
+    const bracket = h('div', 'am-bracket');
+    for (let r = 0; r < 4; r++) {
+      const col = h('div', 'am-bracket-col');
+      col.append(h('h4', '', r < 3 ? ROUND_NAMES[r] : 'Campeón'));
+      const body = h('div', 'am-bracket-body');
+      col.append(body);
+      const teams = t.rounds[r] ?? Array.from({ length: 8 >> r }, () => null);
+      const next = t.rounds[r + 1] ?? [];
+      for (let i = 0; i < teams.length; i += r < 3 ? 2 : 1) {
+        const match = h('div', `am-bracket-match${r === 3 ? ' final' : ''}`);
+        for (const team of r < 3 ? [teams[i], teams[i + 1]] : [teams[i]]) {
+          const won = team !== null && (r === 3 || next.includes(team));
+          const lost = team !== null && r < 3 && next.length > 0 && !next.includes(team);
+          const cls = `am-bracket-team${team === t.user ? ' me' : ''}${won ? ' won' : ''}${lost ? ' lost' : ''}${team === BYE ? ' bye' : ''}`;
+          match.append(h('div', cls, team === null ? '<span class="tbd">—</span>' : `${badge(team)}<b>${esc(name(team))}</b>`));
+        }
+        body.append(match);
+      }
+      bracket.append(col);
+    }
+    const actions = h('div', 'am-cup-actions');
+    if (opp !== null) {
+      const cur = t;
+      if (opp === BYE) {
+        actions.append(button('am-cta big', `${icon('play', 22)} Pasar a ${ROUND_NAMES[cur.round + 1]}`, () => {
+          updateProfile((pp) => { pp.tournament = recordResult(cur, true, overallFor); });
+          render();
+        }));
+      } else {
+        actions.append(button('am-cta big', `${icon('play', 22)} Jugar ${ROUND_NAMES[cur.round].toLowerCase()} vs ${esc(name(opp))}`, () =>
+          launch({ team: cur.user, rival: opp, setsToWin: cur.setsToWin, difficulty: cur.difficulty, mode: 'tournament', tournament: true, online: undefined })));
+      }
+    } else {
+      actions.append(button('am-cta big', `${icon('trophy', 22)} Nuevo torneo`, () => { setup.mode = 'tournament'; go('solo'); }));
+    }
+    actions.append(button('am-ghost', 'Volver al menú', () => go('home'), 'back'));
+    el.append(bracket, actions);
     return el;
   };
 
@@ -358,7 +440,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const onlineScreen = (): HTMLElement => {
     const p = loadProfile();
     const el = h('section', 'am-online');
-    el.append(heading('Online 1 vs 1', 'Cada uno juega con su club. El que crea la sala elige el formato y el ritmo.'));
+    el.append(heading('Online 1 vs 1', 'Cada uno juega con su club. El que crea la sala elige el formato.'));
     if (!ONLINE_AVAILABLE) {
       const box = h('div', 'am-panel');
       box.innerHTML = '<h3>Disponible en el sitio del juego</h3><p>Desde aquí la página no puede conectarse a internet. Para jugar online abre <b>mauroza.github.io/voleibol-tico</b>.</p>';
@@ -375,9 +457,6 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
         { label: '1 set', active: setup.setsToWin === 1, pick: () => { setup.setsToWin = 1; render(); } },
         { label: 'Mejor de 3', active: setup.setsToWin === 2, pick: () => { setup.setsToWin = 2; render(); } },
       ])),
-      row('Ritmo', segmented((Object.keys(PACE_LABELS) as Pace[]).map((pp) => ({
-        label: PACE_LABELS[pp], active: setup.pace === pp, pick: () => { setup.pace = pp; render(); },
-      })))),
       button('am-cta', `${icon('online', 20)} Crear sala`, () => launch({ ...setup, team: CLUB, online: { mode: 'host' } })),
     );
     const join = h('div', 'am-panel');
@@ -745,6 +824,9 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const times = (v: number) => `${v.toFixed(2)}×`;
+
+/** Media de un equipo por índice (`CLUB` = el club del usuario). */
+export const overallFor = (i: number): number => teamOverall(teamFor(i));
 
 function teamOverall(t: TeamDef): number {
   const starters = t.lineup.map((id) => t.roster.find((p) => p.id === id)!).concat(t.roster.filter((p) => p.id === t.libero));

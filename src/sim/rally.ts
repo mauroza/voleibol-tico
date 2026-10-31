@@ -3,7 +3,7 @@ import { availableSetOptions, setLabel, type AttackShot, type ServeType, type Se
 import { chooseBlockScheme, chooseServe, chooseSet, chooseShot } from './ai';
 import { checkNet, landingTime, launch, positionAt, timeAtHeightDescending, type Trajectory } from './ball';
 import { COURT, GRAVITY, isInCourt, otherTeam, setSidesFlipped, sideOfX, sideSign, toWorld, type TeamId } from './court';
-import { judgeTiming, meterOf, meterWindow, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
+import { aceBand, judgeTiming, meterOf, meterWindow, powerTiming, powerZone, serveMeter, tempoOf, type Decision, type DecisionKind, type DecisionOption, type Power, type UserOption } from './decision';
 import { EventBus, type ContactKind, type PointReason } from './events';
 import { APPROACH_SPOTS, ATTACK_POINTS, DEFENSE_SPOTS, LIBERO_SET_SPOT, SERVE_SPOT, SETTER_SPOT, ZONE_SPOTS, receiveFormation, spot, zoneSpotFor } from './formation';
 import { awardPoint, courtPlayers, createMatch, isDecidingSet, isFrontIndex, type MatchState, type TeamSetup } from './match';
@@ -210,6 +210,8 @@ export class Simulation {
   private pendingServe: { type: ServeType; power: Power; zone: Zone; timing: Timing; aim: { x: number; z: number } | null; at: number; user: boolean; from: Vec3; ace: boolean } | null = null;
   /** El saque en el aire es un ace morado: nadie lo alcanza y pica en el piso. */
   private aceServe = false;
+  /** Aces seguidos de cada equipo (la racha corta con cualquier otro punto). */
+  readonly aceStreak: Record<TeamId, number> = { A: 0, B: 0 };
   /** Saque que hará la IA en este punto (para animarlo antes). */
   private aiServe: { type: ServeType; power: Power; zone: Zone } | null = null;
   /** Tipo del último saque (la pelota del flotado baila; la del de suspensión gira). */
@@ -656,7 +658,10 @@ export class Simulation {
           if (!this.humans.has(this.match.serving)) {
             const ai = this.aiServe ?? this.chooseAiServe();
             const sk = this.player(this.court(this.match.serving)[0]).def.attrs.serve / 100;
-            const ace = ai.power === 'strong' && this.rng.chance(TUNING.power.aiAce * sk * DIFFICULTY_ACE[this.difficulty]);
+            const pw = TUNING.power;
+            const streak = this.aceStreak[this.match.serving];
+            const cold = streak >= pw.streakFrom ? pw.streakAi ** (streak - pw.streakFrom + 1) : 1;
+            const ace = ai.power === 'strong' && this.rng.chance(pw.aiAce * sk * DIFFICULTY_ACE[this.difficulty] * cold);
             this.beginServe(ai.type, ai.power, ai.zone, this.aiTiming(this.match.serving), null, false, ace);
           } else {
             const sd = this.decisions[this.match.serving];
@@ -1533,8 +1538,8 @@ export class Simulation {
 
   // ---------- decisiones del usuario ----------
 
-  private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null, playerKey: string): void {
-    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null, aim: null, aimSide: null, meter: 'timing', lead: this.inputLead };
+  private openDecision(kind: DecisionKind, options: DecisionOption[], contactTime: number | null, playerKey: string, extra?: Partial<Decision>): void {
+    const decision: Decision = { kind, playerKey, options, contactTime, startTime: this.time, chosen: null, pressedAt: null, zone: null, aim: null, aimSide: null, meter: 'timing', lead: this.inputLead, ...extra };
     const team = this.player(playerKey).team;
     this.decisions[team] = decision;
     this.bus.emit({ type: 'decision', team, decision });
@@ -1551,7 +1556,16 @@ export class Simulation {
   private openServeDecision(): void {
     const team = this.match.serving;
     const opp = otherTeam(team);
-    this.openDecision('serve', [{ label: 'Saque apuntado', option: { id: 'serve', type: 'float' } }], null, this.court(team)[0]);
+    // Racha de aces: el morado se corre a otro lugar de la barra y se achica (cuesta más hacer otro ace).
+    const streak = this.aceStreak[team];
+    const pw = TUNING.power;
+    let ace: [number, number] | undefined;
+    if (streak >= pw.streakFrom) {
+      const w = Math.max(pw.streakMin, pw.streakWidth * pw.streakShrink ** (streak - pw.streakFrom));
+      const from = this.rng.range(pw.streakRange[0], pw.streakRange[1] - w);
+      ace = [from, from + w];
+    }
+    this.openDecision('serve', [{ label: 'Saque apuntado', option: { id: 'serve', type: 'float' } }], null, this.court(team)[0], ace ? { ace } : undefined);
     const d = this.decisions[team];
     if (!d) return;
     const start = spot(opp, ZONE_SPOTS[1]);
@@ -1779,8 +1793,10 @@ export class Simulation {
     if (!d || this.pendingServe) return;
     // La posición del medidor al presionar es la fuerza: verde = seguro, amarillo = flotado en salto, rojo = suspensión.
     const meter = d.pressedAt === null ? 0 : serveMeter(d.pressedAt - d.startTime);
-    const power: Power = d.pressedAt === null ? 'medium' : powerZone(meter);
-    const ace = d.pressedAt !== null && meter >= TUNING.power.ace;
+    const [aceFrom, aceTo] = aceBand(d);
+    // En racha el morado puede caer en el amarillo o el verde: igual es un ace (el saque más fuerte).
+    const power: Power = d.pressedAt === null ? 'medium' : meter >= aceFrom && meter <= aceTo ? 'strong' : powerZone(meter);
+    const ace = d.pressedAt !== null && meter >= aceFrom && meter <= aceTo;
     const timing: Timing = d.pressedAt === null ? 'bad' : powerTiming(power);
     const aim = d.aim;
     this.closeDecision(team, timing, power, ace ? '¡ACE MORADO!' : undefined);
@@ -2076,12 +2092,21 @@ export class Simulation {
       this.ball = launch(from, target, 0.9, t);
       this.threat = 1;
     } else if (outcome === 'stuff') {
-      // Las manos pasan sobre la red: la pelota sale ya del lado atacante.
+      // Las manos pasan sobre la red: la pelota sale ya del lado atacante. A veces rebota alta y cae a unos metros de la
+      // red, y la cobertura del rematador llega a levantarla; si no, cae pegada a la red, sin remedio.
       const from = v3(sideSign(attackers) * 0.1, Math.max(at.y, 2.7), at.z);
-      const z = clamp(at.z + this.rng.range(-1.5, 1.5), -COURT.halfWidth - 1, COURT.halfWidth + 1);
-      const target = v3(sideSign(attackers) * this.rng.range(0.5, 3), COURT.ballRadius, z);
-      this.ball = launch(from, target, 0.4, t);
-      this.threat = 0.8;
+      const cover = TUNING.block.cover;
+      if (this.rng.chance(cover.chance)) {
+        const z = clamp(at.z + this.rng.range(-1.2, 1.2), -COURT.halfWidth + 0.3, COURT.halfWidth - 0.3);
+        const target = v3(sideSign(attackers) * this.rng.range(cover.land[0], cover.land[1]), COURT.ballRadius, z);
+        this.ball = launch(from, target, this.rng.range(cover.flight[0], cover.flight[1]), t);
+        this.threat = 0.5;
+      } else {
+        const z = clamp(at.z + this.rng.range(-1.5, 1.5), -COURT.halfWidth - 1, COURT.halfWidth + 1);
+        const target = v3(sideSign(attackers) * this.rng.range(0.5, 3), COURT.ballRadius, z);
+        this.ball = launch(from, target, 0.4, t);
+        this.threat = 0.8;
+      }
     } else {
       const from = v3(sideSign(p.team) * 0.15, Math.max(at.y, 2.7), at.z);
       const target = v3(sideSign(p.team) * this.rng.range(2.5, 6), COURT.ballRadius, this.rng.range(-3, 3));
@@ -2468,6 +2493,8 @@ export class Simulation {
       const receivingFirst = plan !== null && plan.team === team && !building;
       const block = [this.blockSetup, this.blockHold].find((b) => b?.team === team) ?? null;
       const blockSpots = block ? this.blockSpots(block) : null;
+      // Cobertura: con el remate ya en camino, los compañeros rodean al rematador por si la pelota vuelve del bloqueo.
+      const cover = building && plan.kind === 'attack' ? this.coverSpots(plan) : null;
       if (block?.focus && !block.focusKey) {
         // Quien cubre la marca de defensa: el compañero (que no bloquea) más cercano a ella.
         const free = this.court(team).filter((k) => !block.keys.includes(k));
@@ -2479,6 +2506,7 @@ export class Simulation {
         // El bloqueador principal no corre al punto de cruce: sigue en su lugar del bloqueo cerrado.
         if (plan && plan.key === key) p.target = plan.kind === 'block' && blockSpots?.has(key) ? blockSpots.get(key)! : this.standPoint(plan);
         else if (building && p.def.role === 'L' && this.last?.team === team && this.player(this.last.key).def.role === 'S') p.target = spot(team, LIBERO_SET_SPOT);
+        else if (cover?.has(key)) p.target = cover.get(key)!;
         else if (building) p.target = this.attackSpot(team, p, idx);
         else if (receivingFirst) {
           if (p.def.role === 'S') p.target = spot(team, SETTER_SPOT);
@@ -2520,6 +2548,35 @@ export class Simulation {
         return v3(pt.x + (vx / len) * reach, 0, pt.z + (vz / len) * reach);
       }
     }
+  }
+
+  /**
+   * Cobertura del rematador: tres compañeros cerca (atrás y a los dos costados) y dos más lejos, cada lugar para el
+   * compañero que tiene más cerca (nadie se cruza). El central que amaga la rápida sigue su carrera.
+   */
+  private coverSpots(plan: Plan): Map<string, Vec3> {
+    const c = TUNING.block.cover;
+    const team = plan.team;
+    const back = sideSign(team);
+    const pt = plan.point;
+    const z = (v: number) => clamp(v, -COURT.halfWidth + 0.4, COURT.halfWidth - 0.4);
+    const x = (d: number) => back * clamp(Math.abs(pt.x) + d, 1.2, COURT.halfLength - 0.5);
+    const places = [
+      v3(x(c.near), 0, z(pt.z)),
+      v3(x(c.near * 0.7), 0, z(pt.z - c.side)),
+      v3(x(c.near * 0.7), 0, z(pt.z + c.side)),
+      v3(x(c.far), 0, z(pt.z - c.side * 1.6)),
+      v3(x(c.far), 0, z(pt.z + c.side * 1.6)),
+    ];
+    const keys = this.court(team).filter((k) => k !== plan.key && k !== this.decoyRun?.key);
+    const out = new Map<string, Vec3>();
+    for (const at of places) {
+      const free = keys.filter((k) => !out.has(k));
+      if (!free.length) break;
+      const best = free.reduce((a, b) => (distXZ(this.player(a).pos, at) <= distXZ(this.player(b).pos, at) ? a : b));
+      out.set(best, at);
+    }
+    return out;
   }
 
   /** Zona de defensa por especialidad; un delantero que no bloquea se retira a defender. */
@@ -2798,6 +2855,10 @@ export class Simulation {
     }
     if (out.setWinner) for (const t of TEAM_IDS) this.challengesLeft[t] = TUNING.calls.challenges;
     if (out.setWinner && !out.matchWinner) this.setBreakPending = true;
+    if (reason === 'ace') {
+      this.aceStreak[winner] += 1;
+      this.aceStreak[otherTeam(winner)] = 0;
+    } else this.aceStreak.A = this.aceStreak.B = 0;
     this.bus.emit({ type: 'point', winner, reason, points: out.points, sets: { ...this.match.sets } });
     if (out.rotated) this.bus.emit({ type: 'rotation', team: out.rotated });
     if (out.setWinner) this.bus.emit({ type: 'setEnd', winner: out.setWinner, sets: { ...this.match.sets } });

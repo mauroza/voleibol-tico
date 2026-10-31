@@ -46,7 +46,12 @@ export interface Decision {
   locked?: boolean;
   /** Recepción: cuánto antes del contacto (s) está el punto ideal (la zona verde se corre a la izquierda). */
   shift?: number;
+  /** Saque: franja morada del ace en la barra [desde, hasta] (0..1). En racha de aces se mueve y se achica. */
+  ace?: [number, number];
 }
+
+/** Franja morada del ace de un saque (la puntita de la barra, salvo en racha). */
+export const aceBand = (d: Pick<Decision, 'ace'>): [number, number] => d.ace ?? [TUNING.power.ace, 1];
 
 /** Largo (s) de la barra de timing de una decisión. */
 export const meterWindow = (d: { kind: DecisionKind }): number =>

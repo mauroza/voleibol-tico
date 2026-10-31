@@ -103,14 +103,14 @@ export function showResult(
   sets: Record<TeamId, number>,
   stats: MatchStats,
   hasUser: boolean,
-  actions: { rematch: () => void; menu: () => void; packs?: () => void },
+  actions: { rematch: () => void; menu: () => void; packs?: () => void; rematchLabel?: string },
   userTeam: TeamId = 'A',
   reward = '',
 ): void {
   const won = winner === userTeam;
   const buttons = [
     ...(reward && actions.packs ? [{ label: 'Abrir sobre', run: actions.packs, primary: true }] : []),
-    { label: 'Revancha', run: actions.rematch, primary: !reward },
+    { label: actions.rematchLabel ?? 'Revancha', run: actions.rematch, primary: !reward },
     { label: 'Menú principal', run: actions.menu },
   ];
   const p = panel('result', won ? '¡Ganaste, mae!' : 'Derrota… ¡a la próxima!', buttons);

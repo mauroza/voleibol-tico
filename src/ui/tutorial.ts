@@ -31,7 +31,7 @@ const court = (inner: string): string => `<svg viewBox="0 0 200 140" class="tut-
 </svg>`;
 
 const player = (x: number, y: number, cls = 'mine', label = '') =>
-  `<g class="tut-p ${cls}" transform="translate(${x} ${y})"><circle r="6"/>${label ? `<text y="3">${label}</text>` : ''}</g>`;
+  `<g class="tut-p ${cls}" transform="translate(${x} ${y})"><g class="tut-body"><circle r="6"/>${label ? `<text y="3">${label}</text>` : ''}</g></g>`;
 
 /** Barra de timing o de fuerza (debajo del dibujo). */
 const meter = (zones: { from: number; to: number; cls: string; label?: string }[], extra = '') => `<div class="tut-meter">
@@ -83,7 +83,7 @@ function steps(): Step[] {
       title: 'La barra es la fuerza',
       text: [
         `Apunta a dónde quieres sacar en la cancha rival y presiona ${hit}. La barra sube sola: donde la pares es la fuerza.`,
-        '<span class="c-green">Verde</span>: seguro y suave. <span class="c-yellow">Amarillo</span>: flotado. <span class="c-red">Rojo</span>: potente pero arriesgado. La puntita <span class="c-purple">morada</span> es un <b>ace</b>: va justo donde apuntaste.',
+        '<span class="c-green">Verde</span>: seguro y suave. <span class="c-yellow">Amarillo</span>: flotado. <span class="c-red">Rojo</span>: potente pero arriesgado. La puntita <span class="c-purple">morada</span> es un <b>ace</b>: va justo donde apuntaste. Después de <b>2 aces seguidos</b> el morado cambia de lugar y se achica: el tercero cuesta mucho más.',
         'Si el saque no pasa la red, es punto del rival.',
       ],
       art: `${court(`${player(100, 140 - 4, 'mine me', 'TÚ')}<path class="tut-traj" d="M100 132 Q100 60 132 30"/><g class="tut-aim" transform="translate(132 30)"><circle r="7"/><path d="M-11 0H-4M4 0H11M0 -11V-4M0 4V11"/></g>`)}
@@ -127,10 +127,12 @@ function steps(): Step[] {
       title: 'Salta justo antes del remate',
       text: [
         `Cuando el rival va a rematar, presiona ${hit} para saltar <b>un poquito antes</b> de que le pegue: arriba justo cuando la pelota cruza la red. Si saltas tarde o muy temprano, pasa.`,
-        'Entre puntos, el botón <b>Estrategia</b> te deja planear el bloqueo: <b>cerrar la línea</b> (tapa la banda) o <b>cerrar la diagonal</b> (tapa el cruce).',
+        '<b>Cobertura</b>: cuando rematas y te bloquean, tus compañeros se agachan alrededor del rematador. Si la pelota rebota en el bloqueo y cae cerca, la levantan y la jugada sigue.',
+        'Entre puntos, el botón <b>Estrategia</b> te deja planear el bloqueo: <b>cerrar la línea</b> o <b>cerrar la diagonal</b>.',
       ],
-      art: `${court(`${player(150, 58, 'rival', 'R')}${player(140, 74, 'mine me jump', 'TÚ')}${player(152, 74, 'mine jump')}<path class="tut-traj hit" d="M150 58 L144 70"/><path class="tut-block" d="M132 70.5H162"/>`)}
-        ${meter([{ from: 0, to: 55, cls: 'red', label: 'TARDE / TEMPRANO' }, { from: 55, to: 72, cls: 'green', label: 'SALTA' }, { from: 72, to: 100, cls: 'red' }], 'sweep')}`,
+      art: `${court(`${player(140, 52, 'rival', 'R')}${player(60, 30, 'rival')}${player(100, 38, 'rival')}<path class="tut-traj hit" d="M140 52 L140 64"/>
+        <path class="tut-block" d="M126 70H154"/>${player(132, 77, 'mine me jump', 'TÚ')}${player(148, 77, 'mine jump')}<circle class="tut-ball bounce" cx="140" cy="62" r="3.5"/>`)}
+        ${meter([{ from: 0, to: 55, cls: 'red', label: 'TEMPRANO' }, { from: 55, to: 72, cls: 'green', label: 'SALTA' }, { from: 72, to: 100, cls: 'red', label: 'TARDE' }], 'sweep')}`,
     },
     {
       tag: 'Defensa',

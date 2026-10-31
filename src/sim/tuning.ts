@@ -135,6 +135,17 @@ export const TUNING = {
     ace: 0.975,
     aceSpeed: 1.3,
     aiAce: 0.025,
+    /**
+     * Racha de aces: después de `streakFrom` aces seguidos del mismo equipo, la franja morada cambia de lugar (en algún
+     * punto entre `streakRange`) y se achica a `streakWidth` de la barra, cada vez más con cada ace extra
+     * (`streakShrink`). La IA en racha también acierta menos el morado.
+     */
+    streakFrom: 2,
+    streakRange: [0.45, 0.95],
+    streakWidth: 0.02,
+    streakShrink: 0.7,
+    streakMin: 0.009,
+    streakAi: 0.35,
     spike: {
       soft: { speed: 0.75, risk: 0.6, noise: 0.7 },
       medium: { speed: 1, risk: 1, noise: 1 },
@@ -258,5 +269,11 @@ export const TUNING = {
     jumpGood: 0.17,
     /** Cada metro de estatura promedio del bloqueo sobre el promedio: más tapas. */
     heightStuff: 2.5,
+    /**
+     * Cobertura del bloqueo: mientras el compañero remata, los demás se agachan alrededor de él (cerca: a `near` m
+     * detrás y a los costados; lejos: a `far` m). De las tapas, una parte (`chance`) rebota más alta y cae a
+     * `land` m de la red, a tiempo para que la cobertura la levante; las demás caen pegadas a la red, sin remedio.
+     */
+    cover: { near: 1.7, side: 1.5, far: 4.2, chance: 0.4, land: [1.2, 3.0], flight: [0.8, 1.0] },
   },
 } as const;

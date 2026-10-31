@@ -205,7 +205,10 @@ body.touch .timeout-toast { right: auto; left: max(10px, env(safe-area-inset-lef
   body.touch .decision { width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); bottom: calc(126px + env(safe-area-inset-bottom, 0px)); }
   body.touch .replay-badge, body.touch .warmup-banner, body.touch .challenge-verdict { top: calc(130px + env(safe-area-inset-top, 0px)); }
 }
-.meter.power.serve { background: linear-gradient(90deg, #2f9e5b 0, #5dff8f var(--medium), #ffd23f var(--medium), #ffb020 var(--strong), #ff3b3b var(--strong), #b80d1f var(--ace), #b026ff var(--ace), #e08bff 100%); }
+.meter.power.serve { background: linear-gradient(90deg, transparent var(--ace), #b026ff var(--ace), #e08bff var(--ace-to), transparent var(--ace-to)),
+  linear-gradient(90deg, #2f9e5b 0, #5dff8f var(--medium), #ffd23f var(--medium), #ffb020 var(--strong), #ff3b3b var(--strong), #b80d1f 100%); }
+/* Racha de aces: la franja morada se movió; brilla para que se note. */
+.meter.power.serve.ace-moved { box-shadow: 0 0 0 2px #b026ff88, 0 0 16px #b026ff66; }
 .feedback[data-timing="ace"] { color: #c45bff; font-size: 56px; text-shadow: 0 0 20px #b026ff, 0 3px 12px #000; }
 
 /* ---------- Previa: cartel, sorteo y alineación ---------- */

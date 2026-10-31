@@ -1,6 +1,6 @@
 import { isKey, typingIn } from '../data/profile';
 import { SPECIALTY_LABELS, eliteJump } from '../sim/players';
-import { meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
+import { aceBand, meterOf, meterWindow, type Decision, type DecisionKind, type Power } from '../sim/decision';
 import type { Simulation } from '../sim/rally';
 import type { Timing } from '../sim/resolver';
 import { TUNING } from '../sim/tuning';
@@ -25,7 +25,7 @@ const AIM_TITLES: Record<DecisionKind, string> = {
 
 const MOVE = 'Apunta con el mouse o flechas/WASD';
 const HINTS: Record<DecisionKind, (d: Decision) => string> = {
-  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente · la puntita morada: ¡ace!)`,
+  serve: () => `${MOVE} · clic o ESPACIO: la barra es la fuerza (verde suave y seguro · amarillo · rojo potente · la franja morada: ¡ace! Con 2 aces seguidos se mueve y se achica)`,
   pass: () => `${MOVE} dónde dejar la pelota · clic o ESPACIO justo cuando llegue (zona verde)`,
   set: (d) => (d.aim
     ? 'Apunta al atacante (aros en la cancha): pegado a la red o despegado (abre el ángulo); detrás de la línea de 3 m, zagueros · la barra es el tempo: verde alta (3) · amarillo media (2) · rojo rápida (1) · clic o ESPACIO coloca · más allá de la red = segunda'
@@ -177,7 +177,11 @@ export class DecisionPanel {
     this.meter.classList.toggle('power', power);
     // Saque: la puntita morada después del rojo es el ace.
     this.meter.classList.toggle('serve', d.kind === 'serve');
-    this.meter.style.setProperty('--ace', `${TUNING.power.ace * 100}%`);
+    // En racha de aces la franja morada está en otro lugar y es más angosta.
+    const [aceFrom, aceTo] = aceBand(d);
+    this.meter.style.setProperty('--ace', `${aceFrom * 100}%`);
+    this.meter.style.setProperty('--ace-to', `${aceTo * 100}%`);
+    this.meter.classList.toggle('ace-moved', aceTo < 1);
     // Colocación: la barra es el tempo.
     this.tempo.style.display = d.kind === 'set' && d.aim ? 'flex' : 'none';
     // Colocación: solo los tempos que permite la recepción (alta siempre; media y rápida con buen pase).

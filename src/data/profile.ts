@@ -1,3 +1,4 @@
+import type { Tournament } from './tournament';
 /**
  * Perfil del jugador, guardado en este navegador: apodo, su club (nombre, siglas, colores, escudo), la plantilla
  * (jugadores básicos y cartas de los sobres), sobres por abrir y los ajustes del juego.
@@ -89,6 +90,8 @@ export interface Profile {
   played: number;
   /** Ya vio (o saltó) el tutorial de entrada. */
   tutorial?: boolean;
+  /** Torneo en curso (o el último que jugó). */
+  tournament?: Tournament;
   settings: Settings;
 }
 

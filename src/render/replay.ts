@@ -82,10 +82,13 @@ export class ReplayBuffer {
   }
 }
 
-/** Puntos que se repiten: remate que cae (también el que sale del bloqueo), ace y tapa. */
-const REPLAYED: ReadonlySet<PointReason> = new Set<PointReason>(['kill', 'blockOut', 'ace', 'blockKill']);
+/**
+ * Puntos que se repiten: todos los que terminan con la pelota en el piso o afuera. Remate que cae o que sale, el que
+ * sale del bloqueo, tapa, ace, saque afuera o a la red y la pelota que cae sin que nadie la toque.
+ */
+const REPLAYED: ReadonlySet<PointReason> = new Set<PointReason>(['kill', 'blockOut', 'ace', 'blockKill', 'attackError', 'serviceError', 'landed', 'error']);
 
-/** Decide qué puntos merecen repetición: siempre los remates que caen, los aces y las tapas; nunca los errores. */
+/** Decide qué puntos merecen repetición. */
 export class ReplayPolicy {
   shouldReplay(reason: PointReason): boolean {
     return REPLAYED.has(reason);

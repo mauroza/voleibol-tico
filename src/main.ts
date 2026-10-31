@@ -12,7 +12,8 @@ import { AimInput } from './ui/aim';
 import { DecisionPanel } from './ui/decision';
 import { GamepadInput } from './ui/gamepad';
 import { Hud } from './ui/hud';
-import { PACE_SPEED, PACE_TEMPO, saveSetup, showMenu, teamFor, type MatchSetup } from './ui/menu';
+import { PACE_SPEED, PACE_TEMPO, overallFor, paceOf, saveSetup, showMenu, teamFor, type MatchSetup } from './ui/menu';
+import { ROUND_NAMES, recordResult } from './data/tournament';
 import { isKey, loadProfile, settings, typingIn, updateProfile } from './data/profile';
 import { clubTeam } from './data/club';
 import { audio } from './audio/music';
@@ -42,7 +43,7 @@ showMenu(ui).then(async (setup) => {
   const me = { club: clubTeam(profile), nick: profile.nickname || 'Invitado' };
   try {
     const match = setup.online.mode === 'host'
-      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin, tempo: PACE_TEMPO[setup.pace] ?? 'fluido' }, me, (text, code) => lobby.show(text, code))
+      ? await hostRoom({ team: setup.team, rival: setup.rival, setsToWin: setup.setsToWin, tempo: 'fluido' }, me, (text, code) => lobby.show(text, code))
       : await joinRoom(setup.online.code, me, (text) => lobby.show(text, setup.online?.mode === 'join' ? setup.online.code : ''));
     lobby.close();
     start(setup, match);
@@ -57,11 +58,11 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     seed: deal ? deal.seed : Date.now() % 1_000_000_000,
     setsToWin: deal ? deal.setsToWin : setup.setsToWin,
     teamA: deal ? deal.clubA ?? TEAMS[deal.teamA] : teamFor(setup.team),
-    teamB: deal ? deal.clubB ?? TEAMS[deal.teamB] : TEAMS[setup.rival],
+    teamB: deal ? deal.clubB ?? TEAMS[deal.teamB] : teamFor(setup.rival),
     control: online ? online.local : 'A',
     difficulty: setup.difficulty,
     // Online: los dos juegan con el mismo reloj, casi sin cámara lenta, y las barras se adelantan lo que tarda la red.
-    tempo: online ? online.deal.tempo ?? 'fluido' : PACE_TEMPO[setup.pace] ?? 'fluido',
+    tempo: online ? online.deal.tempo ?? 'fluido' : PACE_TEMPO[paceOf(setup.difficulty)],
     // Previa: entrada, 1:30 de remate por zona 4, 1:30 por zona 2, 1:00 de saque, saludo, sorteo y alineación.
     warmup: 90,
     pregame: true,
@@ -98,7 +99,8 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     location.reload();
   };
   const toMenu = () => {
-    saveSetup({ ...setup, online: undefined }, false);
+    // En el torneo se vuelve a la llave.
+    saveSetup({ ...setup, online: undefined, tournament: false }, false, setup.tournament ? 'tournament' : undefined);
     location.reload();
   };
   gone.querySelector('button')!.addEventListener('click', (e) => {
@@ -168,9 +170,25 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     });
     // Tabla global: cuentan los partidos jugados con tu club (contra la IA u online).
     if (setup.team === -1 || online) void recordMatch(won, !!online);
-    const reward = won ? `¡Ganaste un sobre! Tienes ${loadProfile().packs} por abrir.` : '';
+    let reward = won ? `¡Ganaste un sobre! Tienes ${loadProfile().packs} por abrir.` : '';
+    // Torneo: se anota el partido y se resuelven los demás de la ronda. El campeón se lleva 3 sobres más.
+    if (setup.tournament) {
+      const t = loadProfile().tournament;
+      if (t) {
+        const round = ROUND_NAMES[t.round];
+        const next = recordResult(t, won, overallFor);
+        updateProfile((p) => {
+          p.tournament = next;
+          if (next.champion === next.user) p.packs += 3;
+        });
+        reward = next.champion === next.user
+          ? `¡Campeón del torneo! Te llevas 4 sobres. Tienes ${loadProfile().packs} por abrir.`
+          : won ? `Pasaste a ${ROUND_NAMES[next.round].toLowerCase()}. ${reward}` : `Eliminado en ${round.toLowerCase()}.`;
+      }
+    }
+    const rematch = online ? toMenu : setup.tournament ? toMenu : restart;
     // Deja ver la celebración antes del resultado.
-    setTimeout(() => showResult(ui, sim.teams, e.winner, sim.match.sets, stats, true, { rematch: online ? toMenu : restart, menu: toMenu, packs: toPacks }, sim.control ?? 'A', reward), 2200);
+    setTimeout(() => showResult(ui, sim.teams, e.winner, sim.match.sets, stats, true, { rematch, menu: toMenu, packs: toPacks, rematchLabel: setup.tournament ? 'Ver la llave' : undefined }, sim.control ?? 'A', reward), 2200);
   });
 
   // Solo en desarrollo: permite avanzar y renderizar a mano desde la consola o las pruebas visuales.
@@ -199,7 +217,7 @@ function start(setup: MatchSetup, online?: OnlineMatch): void {
     view.skipReplay();
   });
 
-  const pace = online ? 1 : PACE_SPEED[setup.pace];
+  const pace = online ? 1 : PACE_SPEED[paceOf(setup.difficulty)];
   let waitingFor = 0;
   let last = performance.now();
   function frame(now: number): void {

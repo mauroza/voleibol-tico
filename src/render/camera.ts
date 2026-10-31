@@ -137,9 +137,16 @@ export class CameraDirector {
       } else if (d.kind === 'serve') {
         // Saque: detrás del sacador y a media altura, con él en la parte de abajo del cuadro (de cuerpo entero) y el
         // campo rival arriba, por encima de la red. Antes la cámara quedaba casi encima de él y no se lo veía sacar.
-        const cx = Math.max(-15.5, Math.min(15.5, u.x - toward * 5.2));
-        targetPos.set(cx, 5.6, u.z * 0.8);
-        targetLook.set(cx + toward * 14, 0, u.z * 0.25);
+        // En el saque en salto el sacador está muy atrás y la pared deja poco espacio: la cámara baja y mira más hacia
+        // abajo para que sus pies queden en cuadro (antes quedaba debajo de la cámara, fuera de la imagen).
+        const wall = TUNING.hall.wallX - 0.6;
+        const cx = Math.max(-wall, Math.min(wall, u.x - toward * 5.2));
+        const back = Math.max(1.5, Math.abs(cx - u.x));
+        const h = Math.max(3.1, Math.min(5.6, back * 0.85 + 0.6));
+        const half = (this.camera.fov * Math.PI) / 360;
+        const pitch = Math.max(Math.atan2(h, 24), Math.atan2(h, back) - half * 0.72);
+        targetPos.set(cx, h, u.z * 0.8);
+        targetLook.set(cx + toward * (h / Math.tan(pitch)), 0, u.z * 0.25);
       } else {
         // Remate (y pase): detrás del que golpea, que queda siempre abajo en el centro del cuadro.
         targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.85);
@@ -176,7 +183,8 @@ export class CameraDirector {
     }
     // Nunca contra las paredes ni dentro de la tribuna: la cámara queda dentro del pabellón.
     if (this.mode === 'aim' || this.mode === 'decision') {
-      targetPos.x = Math.max(-15.5, Math.min(15.5, targetPos.x));
+      const wall = TUNING.hall.wallX - 0.6;
+      targetPos.x = Math.max(-wall, Math.min(wall, targetPos.x));
       // Nunca dentro de la tribuna de enfrente (el público tapaba la jugada).
       targetPos.z = Math.max(-9, Math.min(TUNING.hall.standZ - 0.6, targetPos.z));
     }

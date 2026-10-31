@@ -199,6 +199,8 @@ export class MatchView {
   /** Tiempos de la jugada en curso: saque y última colocación (para que la repetición la muestre entera). */
   private rallyServe = 0;
   private rallySet = -Infinity;
+  /** Hubo remate en esta jugada (si no, la repetición enfoca donde picó la pelota). */
+  private rallyAttack = false;
   private lastCapture = -Infinity;
   private readonly mixed: Float32Array;
   /** Resolución adaptativa: si los cuadros van lentos, baja la densidad de píxeles. */
@@ -426,10 +428,12 @@ export class MatchView {
           this.landMark.visible = false;
           this.rallyServe = e.time;
           this.rallySet = -Infinity;
+          this.rallyAttack = false;
         }
         if (!e.warmup && e.kind === 'set') this.rallySet = e.time;
         if (e.kind === 'attack') {
           this.lastAttackAt.copy(at);
+          if (!e.warmup) this.rallyAttack = true;
           if (e.quality > 0.7) {
             this.director.punch(0.03);
             this.speedLines.flash(0.8);
@@ -465,14 +469,15 @@ export class MatchView {
         this.arena.cheer(e.winner, big);
         if (big) this.director.punch(0.05, 0.3);
         // Tras un challenge no hay repetición: la revisión de la marca ya la mostró.
-        const replay = now - this.reviewedAt > 500 && this.policy.shouldReplay(e.reason);
+        const replay = now - this.reviewedAt > 0.5 && this.policy.shouldReplay(e.reason);
         if (replay) {
           const b = this.sim.ballPos;
           const land = new THREE.Vector3(b.x, 0, b.z);
-          const focus = e.reason === 'ace' ? land : this.lastAttackAt.clone().setY(0);
+          const serve = e.reason === 'ace' || e.reason === 'serviceError';
+          const focus = serve || !this.rallyAttack ? land : this.lastAttackAt.clone().setY(0);
           this.pendingReplay = { at: this.sim.time + REPLAY_AFTER, focus, land };
-          // Toda la jugada: desde un poco antes de la colocación (o del saque en un ace) hasta que pica.
-          const from = e.reason === 'ace' || this.rallySet < this.rallyServe ? this.rallyServe : this.rallySet;
+          // Toda la jugada: desde un poco antes de la colocación (o del saque, si fue el saque) hasta que pica.
+          const from = serve || this.rallySet < this.rallyServe ? this.rallyServe : this.rallySet;
           this.replayStart = Math.max(from - REPLAY_LEAD, this.sim.time - REPLAY_MAX);
         }
       }

@@ -22,10 +22,9 @@ describe('ReplayBuffer', () => {
 });
 
 describe('ReplayPolicy', () => {
-  it('repite siempre remates que caen, aces y tapas; nunca errores', () => {
+  it('repite todos los puntos: remates, tapas, aces y pelotas afuera', () => {
     const p = new ReplayPolicy();
-    for (const r of ['kill', 'blockOut', 'ace', 'blockKill', 'kill', 'ace'] as PointReason[]) expect(p.shouldReplay(r)).toBe(true);
-    for (const r of ['serviceError', 'attackError', 'error', 'landed'] as PointReason[]) expect(p.shouldReplay(r)).toBe(false);
+    for (const r of ['kill', 'blockOut', 'ace', 'blockKill', 'serviceError', 'attackError', 'error', 'landed'] as PointReason[]) expect(p.shouldReplay(r)).toBe(true);
   });
 });
 

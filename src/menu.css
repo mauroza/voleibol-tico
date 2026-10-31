@@ -469,3 +469,4 @@ body.touch { touch-action: none; }
   .tut-text p { font-size: 14px; }
 }
 @media (max-height: 560px) and (min-width: 640px) { .tut-card { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+.tut-nav .am-cta { width: auto; flex: 0 0 auto; }

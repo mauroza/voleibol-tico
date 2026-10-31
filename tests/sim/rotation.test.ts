@@ -1,3 +1,4 @@
+import { meterOf, powerZone } from '../../src/sim/decision';
 import { describe, expect, it } from 'vitest';
 import { TEAMS } from '../../src/data/teams';
 import { runMatch } from '../../src/sim/headless';
@@ -90,7 +91,7 @@ describe('5-1 y rotaciones', () => {
 
 describe('colocación en abanico', () => {
   /** Juega hasta una colocación con rápida y semi al central; apunta a él y presiona `lead` s antes del contacto. */
-  function setToMiddle(lead: number): string | null {
+  function setToMiddle(zone: 'strong' | 'medium'): string | null {
     for (let seed = 1; seed <= 20; seed++) {
       const sim = new Simulation({ seed, setsToWin: 1, teamA: TEAMS[0], teamB: TEAMS[1], control: 'A' });
       let label: string | null = null;
@@ -105,7 +106,8 @@ describe('colocación en abanico', () => {
             target = true;
             const at = sim.setOptionPoint(d, quick);
             sim.setAim(at.x, at.z);
-            if (d.contactTime! - sim.time <= lead) sim.press();
+            // Se presiona cuando la barra entra en la zona pedida (su ventana cambia según la jugada).
+            if (powerZone(meterOf(d, sim.time)) === zone) sim.press();
           } else if (d.contactTime! - sim.time <= 0.03) sim.press();
         } else if (d && d.chosen === null) sim.choose(0);
         else if (d && d.kind === 'serve' && sim.time - d.startTime > 0.7) sim.press();
@@ -118,8 +120,8 @@ describe('colocación en abanico', () => {
   }
 
   it('la mira elige al atacante y la barra el tempo: tarde (rojo) rápida, temprano (verde) semi', () => {
-    expect(setToMiddle(0.03)).toBe('Central (zona 3) · rápida (tiempo 1)');
-    expect(setToMiddle(0.38)).toBe('Central (zona 3) · media (tiempo 2)');
+    expect(setToMiddle('strong')).toBe('Central (zona 3) · rápida (tiempo 1)');
+    expect(setToMiddle('medium')).toBe('Central (zona 3) · media (tiempo 2)');
   }, 60_000);
 });
 

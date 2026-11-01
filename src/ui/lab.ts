@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DIMS, buildCharacter, lookFor, type Rig } from '../render/character';
+import { buildCharacter, lookFor, type Rig } from '../render/character';
 import { JOINTS, POSES, hipHeight, sampleTrack, TRACKS, trackSpan, resetPosePool, type Pose } from '../render/pose';
 import {
   BEFORE_STYLE, BLOCK_STYLE, GAME_STYLE, ROUND_STYLE, STYLE_RANGES, draftStyle, saveDraft, tryDraftInMatch,
@@ -24,7 +24,7 @@ const LABELS: Partial<Record<keyof CharStyle, string>> = {
   limbs: 'Grosor de brazos y piernas', eyes: 'Tamaño de los ojos', tones: 'Tonos de sombra', soft: 'Sombra difuminada',
   shadow: 'Claridad de la sombra', outline: 'Contorno negro', rim: 'Luz de borde', brows: 'Cejas (− alegre · + serio)',
   hairVolume: 'Volumen del pelo', shoes: 'Tamaño de zapatillas', fist: 'Tamaño del puño', warmth: 'Sombra cálida',
-  vivid: 'Viveza de colores',
+  vivid: 'Viveza de colores', legs: 'Largo de piernas', legGap: 'Espacio entre piernas',
 };
 
 const HAIR_LABELS: Record<HairStyle, string> = { variado: 'Variado', casquete: 'Corto', puntas: 'Puntas anime', mechones: 'Mechones', cola: 'Cola' };
@@ -86,7 +86,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   let rigs: Rig[] = [];
   // Solo en desarrollo: cámara a mano desde la consola (para revisar detalles de cerca).
   let devCam: number[] | null = null;
-  if (import.meta.env.DEV) Object.assign(window, { __lab: { cam: (c: number[] | null) => { devCam = c; } } });
+
   const build = () => {
     for (const r of rigs) {
       turntable.remove(r.root);
@@ -109,14 +109,16 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   let cam: 'detail' | 'near' | 'far' = 'near';
   let yaw = 0.35;
   let t0 = performance.now();
+  if (import.meta.env.DEV) Object.assign(window, { __lab: { cam: (c: number[] | null) => { devCam = c; }, yaw: (v: number) => { yaw = v; } } });
   const apply = (rig: Rig, p: Pose) => {
     for (const j of JOINTS) {
       const e = p[j];
       rig.joints[j].rotation.set(e ? e[0] : 0, e ? e[1] : 0, e ? e[2] : 0);
     }
-    const legL = hipHeight(DIMS.thigh, DIMS.shin, rig.joints.hipL.rotation.x, rig.joints.kneeL.rotation.x);
-    const legR = hipHeight(DIMS.thigh, DIMS.shin, rig.joints.hipR.rotation.x, rig.joints.kneeR.rotation.x);
-    rig.hips.position.y = DIMS.foot + Math.max(legL, legR);
+    const D = rig.dims;
+    const legL = hipHeight(D.thigh, D.shin, rig.joints.hipL.rotation.x, rig.joints.kneeL.rotation.x);
+    const legR = hipHeight(D.thigh, D.shin, rig.joints.hipR.rotation.x, rig.joints.kneeR.rotation.x);
+    rig.hips.position.y = D.foot + Math.max(legL, legR);
   };
   const currentPose = (now: number): Pose => {
     if (pose === 'idle' || pose === 'ready' || pose === 'celebrate') return POSES[pose];

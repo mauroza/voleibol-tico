@@ -35,7 +35,23 @@ export const HAIR_COLORS = ['#1b1512', '#3a2618', '#5e3b22', '#f2e6b8', '#f4f4f6
 /** Índice de pelo para "rapado". */
 export const SHAVED = HAIR_COLORS.length;
 
+/** Medidas de un personaje (las del estilo: las piernas de bloque pueden ser más cortas). */
+export type Dims = { thigh: number; shin: number; foot: number; upperArm: number; forearm: number };
+
+/**
+ * Medidas según el estilo: `legs` acorta muslo y pierna (el tronco crece lo mismo, así los hombros y el alcance de los
+ * brazos quedan a la misma altura que en la simulación).
+ */
+export function dimsFor(st: CharStyle): Dims {
+  return { ...DIMS, thigh: DIMS.thigh * st.legs, shin: DIMS.shin * st.legs };
+}
+
+/** Cuánto crece el tronco para compensar las piernas más cortas (m). */
+const torsoLift = (D: Dims): number => DIMS.thigh + DIMS.shin - D.thigh - D.shin;
+
 export interface Rig {
+  /** Medidas de este personaje (las animaciones las usan para doblar piernas y apoyar los pies). */
+  dims: Dims;
   root: THREE.Group;
   /** Hijo de root: se desplaza en y para los saltos. */
   body: THREE.Group;
@@ -145,6 +161,8 @@ interface Kit {
   backZ: number;
   /** Separación de los hombros (x). */
   shoulderX: number;
+  /** Separación de las caderas (x): piernas juntas o separadas. */
+  hipX: number;
   pelvis: THREE.BufferGeometry;
   upperArm: THREE.BufferGeometry;
   forearm: THREE.BufferGeometry;
@@ -210,7 +228,8 @@ function athleteTorso(shoulders: number, waist: number, segments: number): { geo
 
 function kitFor(st: CharStyle): Kit {
   const d = Math.max(1, Math.min(4, Math.round(st.detail)));
-  const key = [st.body, d, st.torso, st.shoulders, st.waist, st.limbs].join('|');
+  const D = dimsFor(st);
+  const key = [st.body, d, st.torso, st.shoulders, st.waist, st.limbs, st.legs, st.legGap].join('|');
   let kit = kits.get(key);
   if (kit) return kit;
   const cap = 2 + (d - 1) * 2;
@@ -230,22 +249,23 @@ function kitFor(st: CharStyle): Kit {
     chestZ: chestR - (athlete ? 0.002 : 0.016),
     backZ: -chestR + (athlete ? 0.002 : 0.015),
     shoulderX: 0.2 * (athlete ? st.shoulders : 1),
+    hipX: 0.1,
     pelvis: ball(0.13, 8, 6),
-    upperArm: limb(0.058, DIMS.upperArm - 0.06),
-    forearm: limb(0.055, DIMS.forearm - 0.02),
+    upperArm: limb(0.058, D.upperArm - 0.06),
+    forearm: limb(0.055, D.forearm - 0.02),
     hand: ball(0.048 * st.limbs, 8, 6),
-    thigh: limb(0.078, DIMS.thigh - 0.06),
-    shin: limb(0.07, DIMS.shin - 0.04),
+    thigh: limb(0.078, D.thigh - 0.06),
+    shin: limb(0.07, D.shin - 0.04),
     foot: limb(0.06, 0.12),
     neck: cyl(0.048, 0.055, 0.12, true),
     sleeve: limb(0.075, 0.13),
     shoulderCap: ball(0.085 * st.limbs, 8, 6),
     shortsLeg: cyl(0.104 * st.limbs, 0.095 * st.limbs, 0.22),
     kneePad: cyl(0.094 * st.limbs, 0.088 * st.limbs, 0.14),
-    armSleeveUpper: limb(0.064, DIMS.upperArm - 0.12),
-    armSleeveLower: limb(0.061, DIMS.forearm - 0.12),
-    legSleeveUpper: limb(0.085, DIMS.thigh - 0.3),
-    legSleeveLower: limb(0.077, DIMS.shin - 0.16),
+    armSleeveUpper: limb(0.064, D.upperArm - 0.12),
+    armSleeveLower: limb(0.061, D.forearm - 0.12),
+    legSleeveUpper: limb(0.085, D.thigh - 0.3),
+    legSleeveLower: limb(0.077, D.shin - 0.16),
     hair: new THREE.SphereGeometry(0.153, 14 + (d - 1) * 8, 6 + (d - 1) * 3, 0, Math.PI * 2, 0, Math.PI * 0.45),
     spike: new THREE.ConeGeometry(0.05, 0.14, 5 + d),
     tuft: ball(0.06, 8, 6),
@@ -265,7 +285,7 @@ function kitFor(st: CharStyle): Kit {
     arm: null,
     leg: null,
   };
-  if (st.body === 'bloque') Object.assign(kit, blockKit(st, d));
+  if (st.body === 'bloque') Object.assign(kit, blockKit(st, d, D));
   // El Probador crea una variante por cada valor del deslizador: se guardan solo las últimas.
   if (kits.size >= 6) kits.delete(kits.keys().next().value!);
   kits.set(key, kit);
@@ -277,23 +297,25 @@ function kitFor(st: CharStyle): Kit {
  * caja queda casi cuadrada; con `r` grande, casi una esfera. Unos 400 vértices (una caja redondeada de three.js con
  * la misma suavidad usa más de mil). Normales exactas de la forma, sin costuras.
  */
-function roundedBar(w: number, len: number, depth: number, r: number, d: number, taper = 1): THREE.BufferGeometry {
+function roundedBar(w: number, len: number, depth: number, r: number, d: number, taper = 1, capR?: number): THREE.BufferGeometry {
   // Cápsula con la sección redondeada-cuadrada: lados rectos a lo largo y solo las puntas redondas. Brazos y piernas de
   // bloque (antes eran supercuadros enteros: gordos al medio y finos en las puntas, como salchichas). Lleva anillos
   // cada 3 cm a lo largo: el brazo entero es una sola pieza que se dobla en el codo. `taper`: ancho abajo / arriba.
   const rr = Math.min(w, depth) / 2;
-  const straight = Math.max(0.001, len - 2 * rr);
+  // Puntas: semiesferas (o aplanadas con `capR` chico: un anillo de bordes planos, como el ribete de la manga).
+  const cr = Math.min(capR ?? rr, len / 2);
+  const straight = Math.max(0.001, len - 2 * cr);
   const profile: THREE.Vector2[] = [];
   const capN = 3 + d;
   for (let k = 0; k <= capN; k++) {
     const a = -Math.PI / 2 + (k / capN) * (Math.PI / 2);
-    profile.push(new THREE.Vector2(rr * Math.cos(a), -straight / 2 + rr * Math.sin(a)));
+    profile.push(new THREE.Vector2(rr * Math.cos(a), -straight / 2 + cr * Math.sin(a)));
   }
   const rings = Math.max(1, Math.ceil(straight / 0.03));
   for (let k = 1; k < rings; k++) profile.push(new THREE.Vector2(rr, -straight / 2 + (k / rings) * straight));
   for (let k = 0; k <= capN; k++) {
     const a = (k / capN) * (Math.PI / 2);
-    profile.push(new THREE.Vector2(rr * Math.cos(a), straight / 2 + rr * Math.sin(a)));
+    profile.push(new THREE.Vector2(rr * Math.cos(a), straight / 2 + cr * Math.sin(a)));
   }
   profile[0].x = 0;
   profile[profile.length - 1].x = 0;
@@ -361,31 +383,38 @@ function roundedBlock(w: number, h: number, depth: number, r: number, d: number)
   return g;
 }
 
+/** Cadera de cada pierna (x): media pierna más la mitad del espacio entre las dos. */
+const hipX = (st: CharStyle): number => 0.075 * st.limbs + st.legGap / 2;
+
 /**
  * Cuerpo de bloques redondeados (como el dibujo del 10): cabeza cúbica, tronco y pantaloneta de caja, brazos y
  * piernas cuadrados, puños, rodilleras, medias y zapatillas gruesas con suela. Mismas articulaciones y medidas que el
  * cuerpo redondo: las animaciones y los pies sobre el piso no cambian.
  */
-function blockKit(st: CharStyle, d: number): Partial<Kit> {
+function blockKit(st: CharStyle, d: number, D: Dims): Partial<Kit> {
+  const lift = torsoLift(D);
   const box = (w: number, h: number, depth: number, r: number) => roundedBlock(w, h, depth, r, d);
-  const bar = (w: number, len: number, depth: number, r: number, taper = 1) => roundedBar(w, len, depth, r, d, taper);
+  const bar = (w: number, len: number, depth: number, r: number, taper = 1, capR?: number) => roundedBar(w, len, depth, r, d, taper, capR);
   const t = st.limbs;
   const s = st.shoulders;
   return {
     head: box(0.3, 0.29, 0.28, 0.075),
-    torso: box(0.36 * s, 0.66, 0.25, 0.08),
+    // Tronco de camiseta: más ancho en los hombros que en la cintura y con hombros casi rectos (las mangas cuelgan de
+    // sus esquinas, como en la camiseta del 10).
+    torso: bar(0.4 * s, 0.66 + lift, 0.25, 0.09, 0.86, 0.07),
     chestZ: 0.125 * 0.97,
     backZ: -0.125 * 0.97,
     // El brazo cuelga separado del tronco y de la pierna (como en el dibujo): borde del tronco + medio brazo + aire.
     shoulderX: 0.18 * s + 0.06 * t + 0.03,
-    pelvis: box(0.33, 0.2, 0.25, 0.06),
+    hipX: hipX(st),
+    pelvis: box(Math.max(0.33, 2 * hipX(st) + 0.17 * t), 0.2, 0.25, 0.06),
     // Brazo y antebrazo del mismo grosor y más largos que el hueso: se meten uno en el otro en el codo (y el antebrazo en
     // el puño), así el brazo estirado parece un solo cilindro. La bisagra rellena el codo cuando se dobla.
     // Brazo y pierna enteros, de una sola pieza (se doblan en el codo y la rodilla): sin uniones ni rayas.
-    arm: bar(0.108 * t, DIMS.upperArm + DIMS.forearm + 0.06, 0.108 * t, 0.04, 1.12),
-    leg: bar(0.15 * t, DIMS.thigh + DIMS.shin + 0.04, 0.15 * t, 0.05, 0.92),
-    upperArm: bar(0.115 * t, DIMS.upperArm + 0.1, 0.115 * t, 0.04),
-    forearm: bar(0.112 * t, DIMS.forearm + 0.08, 0.112 * t, 0.04),
+    arm: bar(0.108 * t, D.upperArm + D.forearm + 0.06, 0.108 * t, 0.04, 1.12),
+    leg: bar(0.15 * t, D.thigh + D.shin + 0.04, 0.15 * t, 0.05, 0.9),
+    upperArm: bar(0.115 * t, D.upperArm + 0.1, 0.115 * t, 0.04),
+    forearm: bar(0.112 * t, D.forearm + 0.08, 0.112 * t, 0.04),
     // Mano como mitón: palma alta que sigue al antebrazo, dedos doblados abajo hacia adentro (con la punta que sube) y el
     // pulgar arriba; entre la punta de los dedos y el pulgar queda la muesca del puño cerrado.
     // La mano sigue al antebrazo con el mismo ancho y termina redonda abajo (el borde de afuera baja y se curva hacia
@@ -394,17 +423,19 @@ function blockKit(st: CharStyle, d: number): Partial<Kit> {
     fingers: box(0.095 * t, 0.058, 0.108 * t, 0.026),
     tip: box(0.046 * t, 0.062, 0.098 * t, 0.021),
     thumb: null,
-    thigh: bar(0.155 * t, DIMS.thigh + 0.08, 0.155 * t, 0.05),
-    shin: bar(0.14 * t, DIMS.shin + 0.06, 0.14 * t, 0.045),
+    thigh: bar(0.155 * t, D.thigh + 0.08, 0.155 * t, 0.05),
+    shin: bar(0.14 * t, D.shin + 0.06, 0.14 * t, 0.045),
     hinge: box(0.112 * t, 0.112 * t, 0.112 * t, 0.056 * t),
-    foot: box(0.15, 0.11, 0.27, 0.045),
-    sleeve: bar(0.15 * t, 0.17, 0.15 * t, 0.05),
+    // Zapatilla grande y apoyada: la suela toca el piso, la media sale de su boca.
+    foot: box(0.17, 0.12, 0.3, 0.05),
+    // Manga corta que se abre un poco hacia el borde (como la camiseta del 10), con el ribete pegado al borde.
+    sleeve: bar(0.148 * t, 0.2, 0.148 * t, 0.05, 1.12),
     shoulderCap: box(0.16 * t, 0.16, 0.16 * t, 0.06),
     shortsLeg: box(0.19 * t, 0.24, 0.2 * t, 0.06),
-    kneePad: box(0.165 * t, 0.15, 0.165 * t, 0.06),
-    sock: bar(0.148 * t, 0.17, 0.148 * t, 0.04),
-    sole: box(0.155, 0.03, 0.28, 0.012),
-    trim: box(0.158 * t, 0.028, 0.158 * t, 0.012),
+    kneePad: box(0.18 * t, 0.16, 0.18 * t, 0.06),
+    sock: bar(0.158 * t, 0.2, 0.158 * t, 0.05),
+    sole: box(0.176, 0.032, 0.306, 0.014),
+    trim: bar(0.168 * t, 0.034, 0.168 * t, 0.05, 1, 0.012),
     tuft: box(0.11, 0.09, 0.11, 0.04),
     hairCap: box(0.322, 0.1, 0.302, 0.045),
     hairBack: box(0.322, 0.2, 0.07, 0.035),
@@ -600,33 +631,35 @@ function skinCharacter(root: THREE.Object3D): void {
 export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
   applyCharShading(st);
   const kit = kitFor(st);
+  const D = dimsFor(st);
+  const lift = st.body === 'bloque' ? torsoLift(D) : 0;
   const { shirt, shorts, skin } = look;
   const shoe = st.shoes;
   const trim = contrast(shirt) === '#ffffff' ? '#e9ecf2' : '#2a2e36';
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const hips = joint(body, 0, DIMS.thigh + DIMS.shin + DIMS.foot, 0);
+  const hips = joint(body, 0, D.thigh + D.shin + D.foot, 0);
   const athlete = st.torso === 'atleta';
   attach(hips, [{ geometry: kit.pelvis, color: shorts, matrix: st.body === 'bloque' ? placed(0, 0.03, 0) : placed(0, 0.02, 0, [0, 0, 0], athlete ? [1.15 * st.waist + 0.15, 0.85, 0.85] : [1.2, 0.85, 0.9]) }]);
 
   const spine = joint(hips, 0, 0.06, 0);
   const block = st.body === 'bloque';
-  if (block) attach(spine, [{ geometry: kit.torso, color: shirt, matrix: placed(0, 0.26, 0) }]);
+  if (block) attach(spine, [{ geometry: kit.torso, color: shirt, matrix: placed(0, 0.26 + lift / 2, 0) }]);
   else attach(spine, [{ geometry: kit.torso, color: shirt, matrix: placed(0, athlete ? -0.01 : 0.26, 0, [0, 0, 0], kit.torsoScale) }]);
   const ink = contrast(shirt);
   // Árbitros, jueces y entrenadores (número 0) no llevan número ni nombre.
   if (look.number > 0) {
     const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
-    number.position.set(0, 0.32, kit.chestZ + 0.01);
+    number.position.set(0, 0.32 + lift * 0.8, kit.chestZ + 0.01);
     const back = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
-    back.position.set(0, 0.33, kit.backZ - 0.011);
+    back.position.set(0, 0.33 + lift * 0.8, kit.backZ - 0.011);
     back.rotation.y = Math.PI;
     spine.add(number, back);
   }
 
   // Cabeza con cuello, pelo y cara (ojos, cejas y boca) mirando hacia +z. La cara crece con la cabeza.
-  const neck = joint(spine, 0, 0.56, 0);
+  const neck = joint(spine, 0, 0.56 + lift, 0);
   const h = st.head;
   const e = st.eyes;
   const c = new THREE.Vector3(0, 0.16 + (h - 1) * 0.12, 0.01);
@@ -655,29 +688,30 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
 
   const arm = (side: 1 | -1) => {
     const sleeve = side === 1 ? look.armSleeve.L : look.armSleeve.R;
-    const shoulder = joint(spine, side * kit.shoulderX, 0.46, 0);
+    const shoulder = joint(spine, side * kit.shoulderX, 0.46 + lift, 0);
     const upper: Part[] = [
-      ...(kit.arm ? [] : [{ geometry: kit.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) }]),
-      { geometry: kit.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
-      // Hombrera corrida hacia el cuerpo: une la manga con el tronco aunque el brazo cuelgue más afuera.
-      { geometry: kit.shoulderCap, color: shirt, matrix: placed(block ? -side * 0.03 : 0, 0, 0, [0, 0, 0], block ? [1.15, 1, 1] : [1, 1, 1]) },
+      ...(kit.arm ? [] : [{ geometry: kit.upperArm, color: skin, matrix: placed(0, -D.upperArm / 2, 0) }]),
+      { geometry: kit.sleeve, color: shirt, matrix: block ? placed(-side * 0.025, -0.075, 0, [0, 0, -side * 0.12]) : placed(0, -0.06, 0) },
+      // Bloques: sin hombrera (era una bola sobre el hombro); la manga entra en el tronco y el hombro baja suave.
+      ...(block ? [] : [{ geometry: kit.shoulderCap, color: shirt, matrix: placed(0, 0, 0) }]),
     ];
     // Ribete claro en el borde de la manga (como las camisetas del dibujo).
-    if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(0, -0.14, 0) });
-    if (sleeve) upper.push({ geometry: kit.armSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.upperArm / 2 - 0.03, 0) });
+    if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(0, -0.158, 0) });
+    if (sleeve && !kit.arm) upper.push({ geometry: kit.armSleeveUpper, color: look.sleeve, matrix: placed(0, -D.upperArm / 2 - 0.03, 0) });
     attach(shoulder, upper);
-    const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
+    const elbow = joint(shoulder, 0, -D.upperArm, 0);
     // Brazo entero (bloques): de dentro del hombro hasta dentro de la palma, una sola pieza que se dobla en el codo.
-    if (kit.arm) attachBlend(shoulder, [{ geometry: kit.arm, color: skin, matrix: placed(0, -(DIMS.upperArm + DIMS.forearm) / 2 + 0.005, 0) }], elbow, -DIMS.upperArm);
-    const lower: Part[] = kit.arm ? [] : [{ geometry: kit.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
+    // La manga de compresión (si tiene) es el mismo brazo pintado de la manga hasta la muñeca: sin tramos ni bordes.
+    if (kit.arm) attachBlend(shoulder, [{ geometry: kit.arm, color: skin, matrix: placed(0, -(D.upperArm + D.forearm) / 2 + 0.005, 0), band: sleeve ? { from: -0.12, to: -(D.upperArm + D.forearm) + 0.015, color: look.sleeve } : undefined }], elbow, -D.upperArm);
+    const lower: Part[] = kit.arm ? [] : [{ geometry: kit.forearm, color: skin, matrix: placed(0, -D.forearm / 2, 0) }];
     // La manga llega a la muñeca: la mano queda descubierta.
-    if (sleeve) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
+    if (sleeve && !kit.arm) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(D.forearm - 0.1) / 2, 0) });
     if (st.hands && block && kit.fingers && kit.tip) {
       // Mitón: la palma (mira hacia el cuerpo) sale de la muñeca; abajo los dedos doblados hacia adentro y su punta que
       // sube; arriba de la muesca, el pulgar. Dedos y pulgar sin contorno: el pliegue se ve por la sombra, sin rayas.
       const f = st.fist;
       const inner = -side;
-      const w = -DIMS.forearm;
+      const w = -D.forearm;
       const at = (x: number, y: number, z: number) => [inner * x * f, w + y * f, z * f] as const;
       const part = (geometry: THREE.BufferGeometry, [x, y, z]: readonly [number, number, number], rot: [number, number, number], outline = true): Part =>
         ({ geometry, color: skin, matrix: placed(x, y, z, rot, [f, f, f]), outline });
@@ -687,7 +721,7 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
         part(kit.fingers, at(0.038, -0.125, 0.004), [0, 0, inner * 0.4], false),
         part(kit.tip, at(0.084, -0.104, 0.004), [0, 0, inner * -0.2], false),
       );
-    } else if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
+    } else if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -D.forearm - 0.045, 0.005) : placed(0, -D.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
     attach(elbow, lower);
     return { shoulder, elbow };
   };
@@ -696,28 +730,28 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
 
   const leg = (side: 1 | -1) => {
     const sleeve = side === 1 ? look.legSleeve.L : look.legSleeve.R;
-    const hip = joint(hips, side * 0.1, -0.02, 0);
+    const hip = joint(hips, side * kit.hipX, -0.02, 0);
     const upper: Part[] = [
-      ...(kit.leg ? [] : [{ geometry: kit.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) }]),
+      ...(kit.leg ? [] : [{ geometry: kit.thigh, color: skin, matrix: placed(0, -D.thigh / 2, 0) }]),
       { geometry: kit.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
     ];
-    if (sleeve) upper.push({ geometry: kit.legSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.thigh + 0.13, 0) });
+    if (sleeve && !kit.leg) upper.push({ geometry: kit.legSleeveUpper, color: look.sleeve, matrix: placed(0, -D.thigh + 0.13, 0) });
     attach(hip, upper);
-    const knee = joint(hip, 0, -DIMS.thigh, 0);
-    if (kit.leg) attachBlend(hip, [{ geometry: kit.leg, color: skin, matrix: placed(0, -(DIMS.thigh + DIMS.shin) / 2 + 0.01, 0) }], knee, -DIMS.thigh);
-    const lower: Part[] = kit.leg ? [] : [{ geometry: kit.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
-    if (sleeve) lower.push({ geometry: kit.legSleeveLower, color: look.sleeve, matrix: placed(0, -DIMS.shin / 2 + 0.02, 0) });
+    const knee = joint(hip, 0, -D.thigh, 0);
+    if (kit.leg) attachBlend(hip, [{ geometry: kit.leg, color: skin, matrix: placed(0, -(D.thigh + D.shin) / 2 + 0.01, 0), band: sleeve ? { from: -0.16, to: -(D.thigh + D.shin) + 0.2, color: look.sleeve } : undefined }], knee, -D.thigh);
+    const lower: Part[] = kit.leg ? [] : [{ geometry: kit.shin, color: skin, matrix: placed(0, -D.shin / 2, 0) }];
+    if (sleeve && !kit.leg) lower.push({ geometry: kit.legSleeveLower, color: look.sleeve, matrix: placed(0, -D.shin / 2 + 0.02, 0) });
     attach(knee, [
       ...lower,
       // La rodillera envuelve la rodilla (centrada un poco debajo de la articulación).
       { geometry: kit.kneePad, color: PAD, matrix: placed(0, -0.03, 0.006) },
       // Zapatilla: un poco más plana y larga que antes cuando el estilo es de atleta; de bloque, gruesa y con suela.
       block
-        ? { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.035 + (shoe - 1) * 0.05, 0.055 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, shoe, shoe]) }
-        : { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03 + (shoe - 1) * 0.03, 0.06 + (shoe - 1) * 0.07, [Math.PI / 2, 0, 0], (athlete ? [1.05, 1.08, 0.82] : [1, 1, 1]).map((v) => v * shoe) as [number, number, number]) },
-      ...(kit.sole ? [{ geometry: kit.sole, color: PAD, matrix: placed(0, -DIMS.shin - DIMS.foot + 0.015, 0.055 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, 1, shoe]) }] : []),
+        ? { geometry: kit.foot, color: SHOE, matrix: placed(0, -D.shin - D.foot + 0.06 * shoe, 0.05 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, shoe, shoe]) }
+        : { geometry: kit.foot, color: SHOE, matrix: placed(0, -D.shin - D.foot / 2 + 0.03 + (shoe - 1) * 0.03, 0.06 + (shoe - 1) * 0.07, [Math.PI / 2, 0, 0], (athlete ? [1.05, 1.08, 0.82] : [1, 1, 1]).map((v) => v * shoe) as [number, number, number]) },
+      ...(kit.sole ? [{ geometry: kit.sole, color: PAD, matrix: placed(0, -D.shin - D.foot + 0.016, 0.05 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, 1, shoe]) }] : []),
       // Media blanca entre la rodillera y la zapatilla.
-      ...(kit.sock && st.socks ? [{ geometry: kit.sock, color: SOCK, matrix: placed(0, -DIMS.shin + 0.1, 0) }] : []),
+      ...(kit.sock && st.socks ? [{ geometry: kit.sock, color: SOCK, matrix: placed(0, -D.shin + 0.1 + (shoe - 1) * 0.06, 0) }] : []),
     ]);
     return { hip, knee };
   };
@@ -726,6 +760,7 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
 
   skinCharacter(root);
   return {
+    dims: D,
     root,
     body,
     hips,

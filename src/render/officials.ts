@@ -3,7 +3,7 @@ import { COURT, sideSign, type TeamId } from '../sim/court';
 import type { PointReason } from '../sim/events';
 import type { Simulation } from '../sim/rally';
 import { matchStyle } from './style';
-import { DIMS, SKIN_TONES, buildCharacter, type Look, type Rig } from './character';
+import { SKIN_TONES, buildCharacter, type Look, type Rig } from './character';
 import { JOINTS, POSES, blendPose, hipHeight, type Pose } from './pose';
 import { toon } from './toon';
 
@@ -27,9 +27,10 @@ function applyPose(rig: Rig, pose: Pose): void {
     const e = pose[j];
     rig.joints[j].rotation.set(e ? e[0] : 0, e ? e[1] : 0, e ? e[2] : 0);
   }
-  const legL = hipHeight(DIMS.thigh, DIMS.shin, rig.joints.hipL.rotation.x, rig.joints.kneeL.rotation.x);
-  const legR = hipHeight(DIMS.thigh, DIMS.shin, rig.joints.hipR.rotation.x, rig.joints.kneeR.rotation.x);
-  rig.hips.position.y = DIMS.foot + Math.max(legL, legR);
+  const D = rig.dims;
+  const legL = hipHeight(D.thigh, D.shin, rig.joints.hipL.rotation.x, rig.joints.kneeL.rotation.x);
+  const legR = hipHeight(D.thigh, D.shin, rig.joints.hipR.rotation.x, rig.joints.kneeR.rotation.x);
+  rig.hips.position.y = D.foot + Math.max(legL, legR);
 }
 
 /** Señas: brazo extendido al lado que saca, bandera arriba (fuera), abajo (dentro), arriba sacudiendo (toque). */
@@ -106,7 +107,7 @@ export class Officials {
   /** Bandera roja y amarilla en la mano derecha del juez de línea. */
   private addFlag(rig: Rig): void {
     const hand = new THREE.Group();
-    hand.position.set(0, -DIMS.forearm - 0.04, 0.02);
+    hand.position.set(0, -rig.dims.forearm - 0.04, 0.02);
     rig.joints.elbowR.add(hand);
     const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 6), toon('#2a2a2a'));
     stick.position.y = -0.2;

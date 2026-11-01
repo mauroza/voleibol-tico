@@ -58,25 +58,29 @@ export interface CharStyle {
   warmth: number;
   /** Viveza de los colores (1 = normal). */
   vivid: number;
+  /** Largo de las piernas (1 = como antes; menos = más cortas, el tronco crece lo mismo). */
+  legs: number;
+  /** Espacio entre las piernas (m). */
+  legGap: number;
 }
 
 /** Cómo se veían los jugadores antes del editor (para comparar). */
 export const BEFORE_STYLE: CharStyle = {
   body: 'redondo', detail: 1, torso: 'capsula', head: 1, shoulders: 1, waist: 1, limbs: 1, hands: false, hair: 'casquete',
-  eyes: 1, eyeShine: false, tones: 4, soft: 0, shadow: 0.47, outline: 1, rim: 0, shoes: 1, socks: false, brows: -0.12, hairVolume: 1, fist: 1, warmth: 0, vivid: 1,
+  eyes: 1, eyeShine: false, tones: 4, soft: 0, shadow: 0.47, outline: 1, rim: 0, shoes: 1, socks: false, brows: -0.12, hairVolume: 1, fist: 1, warmth: 0, vivid: 1, legs: 1, legGap: 0.05,
 };
 
 /** Redondo: curvas suaves, tronco de atleta, cara anime y sombreado suave. */
 export const ROUND_STYLE: CharStyle = {
   body: 'redondo', detail: 3, torso: 'atleta', head: 1.12, shoulders: 1.12, waist: 0.8, limbs: 1, hands: true, hair: 'variado',
-  eyes: 1.25, eyeShine: true, tones: 3, soft: 0.35, shadow: 0.55, outline: 0.75, rim: 0.35, shoes: 1, socks: false, brows: -0.12, hairVolume: 1, fist: 1, warmth: 0.3, vivid: 1.1,
+  eyes: 1.25, eyeShine: true, tones: 3, soft: 0.35, shadow: 0.55, outline: 0.75, rim: 0.35, shoes: 1, socks: false, brows: -0.12, hairVolume: 1, fist: 1, warmth: 0.3, vivid: 1.1, legs: 1, legGap: 0.05,
 };
 
 /** Bloques redondeados, como el dibujo del jugador con el 10: cabeza grande, puños, medias y zapatillas gruesas. */
 export const BLOCK_STYLE: CharStyle = {
   body: 'bloque', detail: 3, torso: 'atleta', head: 1.3, shoulders: 1.1, waist: 0.9, limbs: 1.1, hands: true, hair: 'mechones',
   eyes: 1.1, eyeShine: false, tones: 5, soft: 1, shadow: 0.62, outline: 0.3, rim: 0.2, shoes: 1, socks: true, brows: 0.32, hairVolume: 1,
-  fist: 1.1, warmth: 0.7, vivid: 1.2,
+  fist: 1.1, warmth: 0.7, vivid: 1.2, legs: 0.82, legGap: 0.07,
 };
 
 /** El estilo del juego: el que ven todos. Se cambia pegando aquí los ajustes copiados del editor. */
@@ -93,6 +97,8 @@ export const STYLE_RANGES: Partial<Record<keyof CharStyle, [number, number, numb
   brows: [-0.5, 0.6, 0.01],
   hairVolume: [0.7, 1.5, 0.01],
   shoes: [0.8, 1.5, 0.01],
+  legs: [0.7, 1, 0.01],
+  legGap: [0, 0.14, 0.005],
   fist: [0.8, 1.4, 0.01],
   warmth: [0, 1, 0.01],
   vivid: [0.7, 1.6, 0.01],

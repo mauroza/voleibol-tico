@@ -4,7 +4,7 @@ import type { ContactKind } from '../sim/events';
 import { attackContactHeight, blockReach } from '../sim/players';
 import { TUNING } from '../sim/tuning';
 import type { Simulation } from '../sim/rally';
-import { DIMS, type Rig } from './character';
+import { type Dims, type Rig } from './character';
 import { JOINTS, POSES, TRACKS, blendPose, framePose, ease, hipHeight, jumpOffset, runPose, sampleTrack, shufflePose, walkPose, type Euler3, type Key, type Pose } from './pose';
 
 /** Por debajo de esto está quieto; hasta WALK_MAX camina, más rápido corre (m/s). */
@@ -51,15 +51,16 @@ const trackFor = (kind: ContactKind, low: boolean): readonly Key[] => {
 /** Distancia horizontal del cuerpo a las manos en la plancha (brazos estirados al frente). */
 const DIVE_HANDS = 1.05;
 
-/** Talón, planta y punta del zapato, en el espacio de la rodilla (ver `buildCharacter`). */
-const SOLE_POINTS = [
-  new THREE.Vector3(0, -DIMS.shin - DIMS.foot, -0.04),
-  new THREE.Vector3(0, -DIMS.shin - DIMS.foot, 0.08),
-  new THREE.Vector3(0, -DIMS.shin - DIMS.foot + 0.02, 0.17),
+/** Talón, planta y punta del zapato, en el espacio de la rodilla (ver `buildCharacter`): según las medidas del jugador. */
+const solePoints = (D: Dims): THREE.Vector3[] => [
+  new THREE.Vector3(0, -D.shin - D.foot, -0.06),
+  new THREE.Vector3(0, -D.shin - D.foot, 0.08),
+  new THREE.Vector3(0, -D.shin - D.foot + 0.02, 0.18),
 ];
 
 export class Animator {
   private readonly tmp = new THREE.Vector3();
+  private soles: THREE.Vector3[] = [];
   private dive: { at: number; point: { x: number; z: number }; reach: number; dir: { x: number; z: number } } | null = null;
   private lastTime: number | null = null;
   private readonly prev = new THREE.Vector3();
@@ -89,6 +90,7 @@ export class Animator {
     private readonly sim: Simulation,
   ) {
     const p = sim.player(key);
+    this.soles = solePoints(rig.dims);
     this.prev.set(p.pos.x, 0, p.pos.z);
     this.yaw = this.netYaw();
   }
@@ -380,7 +382,7 @@ export class Animator {
     // Dos pasadas: la segunda corrige lo que movió el brazo al acomodarse el cuerpo.
     for (let i = 0; i < 2; i++) {
       this.rig.root.updateMatrixWorld(true);
-      this.rig.joints.elbowR.localToWorld(this.hand.set(0, -DIMS.forearm - 0.05, 0));
+      this.rig.joints.elbowR.localToWorld(this.hand.set(0, -this.rig.dims.forearm - 0.05, 0));
       const dx = Math.max(-0.7, Math.min(0.7, s.target.x - this.hand.x));
       const dz = Math.max(-0.7, Math.min(0.7, s.target.z - this.hand.z));
       const dy = Math.max(-0.35, Math.min(0.35, s.target.y - this.hand.y));
@@ -402,7 +404,7 @@ export class Animator {
     let worst = 0;
     for (const side of ['L', 'R'] as const) {
       const elbow = this.rig.joints[`elbow${side}`];
-      for (const reach of [0, DIMS.forearm + 0.09]) {
+      for (const reach of [0, this.rig.dims.forearm + 0.09]) {
         const w = elbow.localToWorld(NET_PROBE.set(0, -reach, 0));
         // Del lado propio s·x > 0; se deja un margen de 5 cm antes de la red.
         worst = Math.max(worst, 0.05 - s * w.x);
@@ -419,7 +421,7 @@ export class Animator {
     this.applyPose(sampleTrack(track, 0));
     this.rig.body.position.y = 0;
     this.rig.root.updateMatrixWorld(true);
-    const hand = this.rig.joints[`elbow${side}`].localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.05, 0));
+    const hand = this.rig.joints[`elbow${side}`].localToWorld(new THREE.Vector3(0, -this.rig.dims.forearm - 0.05, 0));
     // El salto se aplica dentro de la raíz, que está escalada según la estatura.
     return Math.min(max, Math.max(min, height - hand.y)) / this.rig.root.scale.y;
   }
@@ -433,7 +435,7 @@ export class Animator {
     body.updateMatrixWorld(true);
     let min = Infinity;
     for (const knee of [joints.kneeL, joints.kneeR]) {
-      for (const sole of SOLE_POINTS) {
+      for (const sole of this.soles) {
         const p = root.worldToLocal(knee.localToWorld(this.tmp.copy(sole)));
         min = Math.min(min, p.y);
       }
@@ -459,9 +461,10 @@ export class Animator {
       const e = pose[j];
       this.rig.joints[j].rotation.set(e ? e[0] : 0, e ? e[1] : 0, e ? e[2] : 0);
     }
-    const legL = hipHeight(DIMS.thigh, DIMS.shin, this.rig.joints.hipL.rotation.x, this.rig.joints.kneeL.rotation.x);
-    const legR = hipHeight(DIMS.thigh, DIMS.shin, this.rig.joints.hipR.rotation.x, this.rig.joints.kneeR.rotation.x);
-    this.rig.hips.position.y = DIMS.foot + Math.max(legL, legR);
+    const D = this.rig.dims;
+    const legL = hipHeight(D.thigh, D.shin, this.rig.joints.hipL.rotation.x, this.rig.joints.kneeL.rotation.x);
+    const legR = hipHeight(D.thigh, D.shin, this.rig.joints.hipR.rotation.x, this.rig.joints.kneeR.rotation.x);
+    this.rig.hips.position.y = D.foot + Math.max(legL, legR);
   }
 
   /** Apunta el brazo (o ambos) hacia la pelota en el contacto: plataforma en la recepción, mano en el remate. */

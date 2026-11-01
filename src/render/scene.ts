@@ -11,7 +11,7 @@ import { Animator } from './animator';
 import { Arena } from './arena';
 import { CameraDirector } from './camera';
 import { matchStyle } from './style';
-import { DIMS, buildCharacter, lookFor, type Rig } from './character';
+import { buildCharacter, lookFor, type Rig } from './character';
 import { PlayerStatus } from './status';
 import { Officials } from './officials';
 import { Effects } from './fx';
@@ -576,7 +576,7 @@ export class MatchView {
     const key = this.sim.court(this.sim.match.serving)[0];
     const rig = this.byKey.get(key)!.rig;
     rig.root.updateMatrixWorld(true);
-    const hand = rig.joints.elbowL.localToWorld(new THREE.Vector3(0, -DIMS.forearm - 0.09, 0.05));
+    const hand = rig.joints.elbowL.localToWorld(new THREE.Vector3(0, -rig.dims.forearm - 0.09, 0.05));
     const seq = this.sim.serveSequence;
     // El lanzamiento dura casi toda la secuencia; el de suspensión sube muchísimo más.
     const toss = seq ? TUNING.serveWindup[seq.type] * 0.92 : SERVE_TOSS;

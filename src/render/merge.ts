@@ -7,6 +7,8 @@ export interface Part {
   matrix: THREE.Matrix4;
   /** false: la pieza no lleva contorno negro (detalles dentro de la silueta, como los dedos: si no, se ven rayas). */
   outline?: boolean;
+  /** Franja de otro color entre dos alturas (y local de la articulación): la manga de compresión pintada en el brazo. */
+  band?: { from: number; to: number; color: THREE.ColorRepresentation };
 }
 
 /**
@@ -37,12 +39,15 @@ export function mergeParts(parts: readonly Part[]): THREE.BufferGeometry {
     const tex = g.attributes.uv;
     nm.getNormalMatrix(p.matrix);
     c.set(p.color);
+    const alt = p.band ? new THREE.Color(p.band.color) : null;
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(p.matrix);
+      const py = v.y;
       position.set([v.x, v.y, v.z], (vo + i) * 3);
       v.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize();
       normal.set([v.x, v.y, v.z], (vo + i) * 3);
-      color.set([c.r, c.g, c.b], (vo + i) * 3);
+      const tint = alt && py <= p.band!.from && py >= p.band!.to ? alt : c;
+      color.set([tint.r, tint.g, tint.b], (vo + i) * 3);
       if (tex) uv.set([tex.getX(i), tex.getY(i)], (vo + i) * 2);
     }
     if (g.index) for (let i = 0; i < g.index.count; i++) index[io + i] = g.index.getX(i) + vo;

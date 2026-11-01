@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeParts, mergeSkinned, placed, type Part } from './merge';
 import type { JointName } from './pose';
-import { OUTLINE_SKINNED, toon, toonVertexColors } from './toon';
+import { OUTLINE_SKINNED, applyCharShading, toon, toonVertexColors } from './toon';
+import { charStyle, type CharStyle, type HairStyle } from './style';
 
 /** Medidas del personaje (metros). */
 export const DIMS = {
@@ -132,37 +133,278 @@ function backMaterial(name: string, n: number, ink: string): THREE.MeshToonMater
   return m;
 }
 
-// ---------- geometrías compartidas (redondeadas, sin detalles) ----------
+// ---------- geometrías compartidas (según el estilo; se reutilizan entre jugadores) ----------
 
-const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 2, 8);
-const shared = {
-  head: new THREE.SphereGeometry(0.145, 14, 10),
-  torso: limb(0.14, 0.4),
-  pelvis: new THREE.SphereGeometry(0.13, 8, 6),
-  upperArm: limb(0.058, DIMS.upperArm - 0.06),
-  forearm: limb(0.055, DIMS.forearm - 0.02),
-  thigh: limb(0.078, DIMS.thigh - 0.06),
-  shin: limb(0.07, DIMS.shin - 0.04),
-  foot: limb(0.06, 0.12),
-  neck: new THREE.CylinderGeometry(0.048, 0.055, 0.12, 8, 1, true),
-  /** Manga corta de la camisa y pierna de la pantaloneta. */
-  sleeve: limb(0.075, 0.13),
-  /** Hombro de la camisa: cubre la unión del brazo con el tronco en cualquier ángulo. */
-  shoulderCap: new THREE.SphereGeometry(0.085, 8, 6),
-  shortsLeg: new THREE.CylinderGeometry(0.104, 0.095, 0.22, 10),
-  /** Rodillera: una banda acolchada que envuelve la rodilla. */
-  kneePad: new THREE.CylinderGeometry(0.094, 0.088, 0.14, 10),
-  /** Mangas de compresión (un poco más gruesas que la piel que cubren). */
-  armSleeveUpper: limb(0.064, DIMS.upperArm - 0.12),
-  armSleeveLower: limb(0.061, DIMS.forearm - 0.12),
-  legSleeveUpper: limb(0.085, DIMS.thigh - 0.3),
-  legSleeveLower: limb(0.077, DIMS.shin - 0.16),
-  /** Pelo: casquete sobre la cabeza. */
-  hair: new THREE.SphereGeometry(0.153, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.45),
-  eye: new THREE.SphereGeometry(0.021, 6, 4),
-  mouth: new THREE.CapsuleGeometry(0.008, 0.04, 1, 4),
-  brow: new THREE.CapsuleGeometry(0.0055, 0.035, 1, 3),
-};
+interface Kit {
+  head: THREE.BufferGeometry;
+  torso: THREE.BufferGeometry;
+  /** Escala del tronco (la cápsula se aplana; el de atleta ya tiene su forma). */
+  torsoScale: [number, number, number];
+  /** Profundidad del pecho y la espalda a la altura del número (z). */
+  chestZ: number;
+  backZ: number;
+  /** Separación de los hombros (x). */
+  shoulderX: number;
+  pelvis: THREE.BufferGeometry;
+  upperArm: THREE.BufferGeometry;
+  forearm: THREE.BufferGeometry;
+  hand: THREE.BufferGeometry;
+  thigh: THREE.BufferGeometry;
+  shin: THREE.BufferGeometry;
+  foot: THREE.BufferGeometry;
+  neck: THREE.BufferGeometry;
+  sleeve: THREE.BufferGeometry;
+  shoulderCap: THREE.BufferGeometry;
+  shortsLeg: THREE.BufferGeometry;
+  kneePad: THREE.BufferGeometry;
+  armSleeveUpper: THREE.BufferGeometry;
+  armSleeveLower: THREE.BufferGeometry;
+  legSleeveUpper: THREE.BufferGeometry;
+  legSleeveLower: THREE.BufferGeometry;
+  hair: THREE.BufferGeometry;
+  spike: THREE.BufferGeometry;
+  tuft: THREE.BufferGeometry;
+  eye: THREE.BufferGeometry;
+  shine: THREE.BufferGeometry;
+  mouth: THREE.BufferGeometry;
+  brow: THREE.BufferGeometry;
+  /** Solo en el cuerpo de bloques: media, suela y ribete de la manga. */
+  sock: THREE.BufferGeometry | null;
+  sole: THREE.BufferGeometry | null;
+  trim: THREE.BufferGeometry | null;
+  /** Pelo de la cabeza cúbica: tapa arriba y nuca (en vez del casquete redondo). */
+  hairCap: THREE.BufferGeometry | null;
+  hairBack: THREE.BufferGeometry | null;
+}
+
+const kits = new Map<string, Kit>();
+
+/**
+ * Tronco de atleta: perfil girado (más ancho en los hombros, cintura fina, pecho redondeado arriba y abajo).
+ * Devuelve la geometría y el radio a la altura del número.
+ */
+function athleteTorso(shoulders: number, waist: number, segments: number): { geometry: THREE.BufferGeometry; chestR: number } {
+  const s = 0.155 * shoulders;
+  const w = 0.155 * waist;
+  const profile: [number, number][] = [
+    [0, -0.07], [w * 0.7, -0.06], [w * 0.95, -0.02], [w, 0.06], [w * 1.03, 0.16],
+    [(w + s) / 2, 0.26], [s * 0.97, 0.36], [s, 0.44], [s * 0.93, 0.51], [s * 0.7, 0.57], [s * 0.35, 0.6], [0, 0.61],
+  ];
+  // Curva suave por el perfil (sin quiebres entre los puntos).
+  const curve = new THREE.SplineCurve(profile.map(([r, y]) => new THREE.Vector2(r, y)));
+  const pts = curve.getPoints(10 + segments * 3).map((p) => new THREE.Vector2(Math.max(0, p.x), p.y));
+  pts[0].x = 0;
+  pts[pts.length - 1].x = 0;
+  const geometry = new THREE.LatheGeometry(pts, segments);
+  return { geometry, chestR: (s * 0.97 + (w + s) / 2) / 2 };
+}
+
+function kitFor(st: CharStyle): Kit {
+  const d = Math.max(1, Math.min(4, Math.round(st.detail)));
+  const key = [st.body, d, st.torso, st.shoulders, st.waist, st.limbs].join('|');
+  let kit = kits.get(key);
+  if (kit) return kit;
+  const cap = 2 + (d - 1) * 2;
+  const rad = 8 + (d - 1) * 4;
+  const limb = (r: number, len: number) => new THREE.CapsuleGeometry(r * st.limbs, len, cap, rad);
+  const ball = (r: number, w: number, h: number) => new THREE.SphereGeometry(r, w + (d - 1) * Math.ceil(w * 0.6), h + (d - 1) * Math.ceil(h * 0.6));
+  const cyl = (top: number, bottom: number, h: number, open = false) => new THREE.CylinderGeometry(top, bottom, h, 8 + (d - 1) * 4, 1, open);
+  const athlete = st.torso === 'atleta';
+  const torso = athlete ? athleteTorso(st.shoulders, st.waist, 10 + (d - 1) * 6) : null;
+  // Atleta: el pecho se aplana un poco (más ancho que profundo); la cápsula, como antes.
+  const torsoScale: [number, number, number] = athlete ? [1.08, 1, 0.74] : [1.1, 1, 0.85];
+  const chestR = torso ? torso.chestR * torsoScale[2] : 0.14 * 0.85;
+  kit = {
+    head: ball(0.145, 14, 10),
+    torso: torso ? torso.geometry : limb(0.14 / st.limbs, 0.4),
+    torsoScale,
+    chestZ: chestR - (athlete ? 0.002 : 0.016),
+    backZ: -chestR + (athlete ? 0.002 : 0.015),
+    shoulderX: 0.2 * (athlete ? st.shoulders : 1),
+    pelvis: ball(0.13, 8, 6),
+    upperArm: limb(0.058, DIMS.upperArm - 0.06),
+    forearm: limb(0.055, DIMS.forearm - 0.02),
+    hand: ball(0.048 * st.limbs, 8, 6),
+    thigh: limb(0.078, DIMS.thigh - 0.06),
+    shin: limb(0.07, DIMS.shin - 0.04),
+    foot: limb(0.06, 0.12),
+    neck: cyl(0.048, 0.055, 0.12, true),
+    sleeve: limb(0.075, 0.13),
+    shoulderCap: ball(0.085 * st.limbs, 8, 6),
+    shortsLeg: cyl(0.104 * st.limbs, 0.095 * st.limbs, 0.22),
+    kneePad: cyl(0.094 * st.limbs, 0.088 * st.limbs, 0.14),
+    armSleeveUpper: limb(0.064, DIMS.upperArm - 0.12),
+    armSleeveLower: limb(0.061, DIMS.forearm - 0.12),
+    legSleeveUpper: limb(0.085, DIMS.thigh - 0.3),
+    legSleeveLower: limb(0.077, DIMS.shin - 0.16),
+    hair: new THREE.SphereGeometry(0.153, 14 + (d - 1) * 8, 6 + (d - 1) * 3, 0, Math.PI * 2, 0, Math.PI * 0.45),
+    spike: new THREE.ConeGeometry(0.05, 0.14, 5 + d),
+    tuft: ball(0.06, 8, 6),
+    eye: ball(0.021, 6, 4),
+    shine: ball(0.0075, 5, 3),
+    mouth: new THREE.CapsuleGeometry(0.008, 0.04, 1, 4),
+    brow: new THREE.CapsuleGeometry(0.0055, 0.035, 1, 3),
+    sock: null,
+    sole: null,
+    trim: null,
+    hairCap: null,
+    hairBack: null,
+  };
+  if (st.body === 'bloque') Object.assign(kit, blockKit(st, d));
+  // El Probador crea una variante por cada valor del deslizador: se guardan solo las últimas.
+  if (kits.size >= 6) kits.delete(kits.keys().next().value!);
+  kits.set(key, kit);
+  return kit;
+}
+
+/**
+ * Caja de esquinas redondeadas barata: una esfera deformada en "supercuadro" (|x|^e). Con `r` chico respecto de la
+ * caja queda casi cuadrada; con `r` grande, casi una esfera. Unos 400 vértices (una caja redondeada de three.js con
+ * la misma suavidad usa más de mil). Normales exactas de la forma, sin costuras.
+ */
+function roundedBlock(w: number, h: number, depth: number, r: number, d: number): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(1, 10 + d * 4, 8 + d * 3);
+  const half = [w / 2, h / 2, depth / 2];
+  const e = THREE.MathUtils.clamp((2 * r) / Math.min(w, h, depth), 0.12, 1);
+  const pos = g.attributes.position;
+  const nrm = g.attributes.normal;
+  const p = [0, 0, 0];
+  const n = [0, 0, 0];
+  for (let i = 0; i < pos.count; i++) {
+    const v = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+    for (let k = 0; k < 3; k++) {
+      const s = Math.sign(v[k]);
+      const m = Math.abs(v[k]) ** e;
+      p[k] = s * m * half[k];
+      // Gradiente de la superficie |x/a|^(2/e) + …: la normal de la forma (suave en todas las esquinas).
+      n[k] = (s * m ** (2 / e - 1)) / half[k];
+    }
+    const len = Math.hypot(n[0], n[1], n[2]) || 1;
+    pos.setXYZ(i, p[0], p[1], p[2]);
+    nrm.setXYZ(i, n[0] / len, n[1] / len, n[2] / len);
+  }
+  return g;
+}
+
+/**
+ * Cuerpo de bloques redondeados (como el dibujo del 10): cabeza cúbica, tronco y pantaloneta de caja, brazos y
+ * piernas cuadrados, puños, rodilleras, medias y zapatillas gruesas con suela. Mismas articulaciones y medidas que el
+ * cuerpo redondo: las animaciones y los pies sobre el piso no cambian.
+ */
+function blockKit(st: CharStyle, d: number): Partial<Kit> {
+  const box = (w: number, h: number, depth: number, r: number) => roundedBlock(w, h, depth, r, d);
+  const t = st.limbs;
+  const s = st.shoulders;
+  return {
+    head: box(0.3, 0.29, 0.28, 0.075),
+    torso: box(0.36 * s, 0.66, 0.25, 0.08),
+    chestZ: 0.125 * 0.97,
+    backZ: -0.125 * 0.97,
+    shoulderX: 0.2 * s,
+    pelvis: box(0.33, 0.2, 0.25, 0.06),
+    upperArm: box(0.11 * t, DIMS.upperArm, 0.11 * t, 0.04),
+    forearm: box(0.105 * t, DIMS.forearm + 0.02, 0.105 * t, 0.04),
+    hand: box(0.115 * t, 0.12, 0.11 * t, 0.04),
+    thigh: box(0.15 * t, DIMS.thigh, 0.15 * t, 0.05),
+    shin: box(0.135 * t, DIMS.shin + 0.02, 0.135 * t, 0.045),
+    foot: box(0.15, 0.11, 0.27, 0.045),
+    sleeve: box(0.15 * t, 0.17, 0.15 * t, 0.05),
+    shoulderCap: box(0.16 * t, 0.16, 0.16 * t, 0.06),
+    shortsLeg: box(0.19 * t, 0.24, 0.2 * t, 0.06),
+    kneePad: box(0.165 * t, 0.15, 0.165 * t, 0.06),
+    sock: box(0.148 * t, 0.17, 0.148 * t, 0.04),
+    sole: box(0.155, 0.03, 0.28, 0.012),
+    trim: box(0.158 * t, 0.028, 0.158 * t, 0.012),
+    tuft: box(0.11, 0.09, 0.11, 0.04),
+    hairCap: box(0.322, 0.1, 0.302, 0.045),
+    hairBack: box(0.322, 0.2, 0.07, 0.035),
+    eye: box(0.032, 0.05, 0.012, 0.012),
+    brow: box(0.065, 0.016, 0.012, 0.007),
+    mouth: box(0.032, 0.01, 0.008, 0.004),
+  };
+}
+
+/** Peinado de cada jugador cuando el estilo es "variado" (siempre el mismo para el mismo jugador). */
+function hairOf(look: Look, st: CharStyle): Exclude<HairStyle, 'variado'> {
+  if (st.hair !== 'variado') return st.hair;
+  let h = look.number * 7;
+  for (const ch of look.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (['puntas', 'puntas', 'mechones', 'mechones', 'casquete', 'cola'] as const)[h % 6];
+}
+
+/** Matriz de una pieza en `at`, apuntando su eje y hacia `dir`, con escala uniforme `s`. */
+function aimed(at: THREE.Vector3, dir: THREE.Vector3, s: number, stretch = 1): THREE.Matrix4 {
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return new THREE.Matrix4().compose(at, q, new THREE.Vector3(s, s * stretch, s));
+}
+
+/** Pelo: casquete y, según el peinado, puntas anime, mechones o cola. */
+function hairParts(kit: Kit, style: Exclude<HairStyle, 'variado'>, color: string, c: THREE.Vector3, h: number): Part[] {
+  if (kit.hairCap && kit.hairBack) return blockHair(kit, style, color, c, h);
+  const parts: Part[] = [{ geometry: kit.hair, color, matrix: placed(c.x, c.y + 0.005 * h, c.z - 0.015 * h, [-0.42, 0, 0], [h, h, h]) }];
+  const R = 0.145 * h;
+  // Punto de la superficie de la cabeza: elevación (desde el ecuador) y azimut (0 = la frente, π = la nuca).
+  const surface = (elev: number, az: number, out = 1) => {
+    const dir = new THREE.Vector3(Math.sin(az) * Math.cos(elev), Math.sin(elev), Math.cos(az) * Math.cos(elev));
+    return { dir, at: c.clone().addScaledVector(dir, R * out) };
+  };
+  if (style === 'puntas') {
+    const tips: [number, number][] = [[1.25, 0], [0.95, 0.9], [0.95, -0.9], [0.75, 2.0], [0.75, -2.0], [0.7, Math.PI], [1.05, 2.7], [1.05, -2.7], [0.45, 1.6], [0.45, -1.6]];
+    for (const [e, a] of tips) {
+      const { dir, at } = surface(e, a, 0.92);
+      // Las puntas se inclinan hacia atrás y hacia arriba, como en el anime.
+      const tilt = dir.clone().add(new THREE.Vector3(0, 0.55, -0.45)).normalize();
+      parts.push({ geometry: kit.spike, color, matrix: aimed(at, tilt, h, 1.1) });
+    }
+    // Flequillo: tres puntas cortas que caen sobre la frente.
+    for (const a of [-0.35, 0, 0.35]) {
+      const { at } = surface(0.75, a, 0.95);
+      parts.push({ geometry: kit.spike, color, matrix: aimed(at, new THREE.Vector3(Math.sin(a) * 0.3, -0.75, 0.6), h * 0.75, 0.9) });
+    }
+  } else if (style === 'mechones') {
+    const tufts: [number, number, number][] = [[1.2, 0, 1], [0.85, 1.0, 0.95], [0.85, -1.0, 0.95], [0.75, 2.2, 1], [0.75, -2.2, 1], [0.55, Math.PI, 1], [1.0, Math.PI, 1.05]];
+    for (const [e, a, k] of tufts) {
+      const { at } = surface(e, a, 0.9);
+      parts.push({ geometry: kit.tuft, color, matrix: placed(at.x, at.y, at.z, [0, 0, 0], [h * k, h * k * 0.85, h * k]) });
+    }
+    for (const a of [-0.45, 0, 0.45]) {
+      const { at } = surface(0.82, a, 0.98);
+      parts.push({ geometry: kit.tuft, color, matrix: placed(at.x, at.y - 0.01, at.z, [0.5, 0, 0], [h * 0.75, h * 0.5, h * 0.55]) });
+    }
+  } else if (style === 'cola') {
+    const { at } = surface(0.75, Math.PI, 1);
+    parts.push({ geometry: kit.tuft, color, matrix: placed(at.x, at.y, at.z - 0.01, [0, 0, 0], [h * 0.7, h * 0.7, h * 0.7]) });
+    parts.push({ geometry: kit.spike, color, matrix: aimed(at.clone().add(new THREE.Vector3(0, -0.11 * h, -0.04 * h)), new THREE.Vector3(0, 1, 0.25), h * 1.1, 1.6) });
+  }
+  return parts;
+}
+
+/**
+ * Pelo de la cabeza cúbica (como el dibujo del 10): tapa y nuca de bloques, y encima mechones sueltos y flequillo
+ * (mechones), puntas, una cola o nada más (corto).
+ */
+function blockHair(kit: Kit, style: Exclude<HairStyle, 'variado'>, color: string, c: THREE.Vector3, h: number): Part[] {
+  const at = (x: number, y: number, z: number) => [c.x + x * h, c.y + y * h, c.z + z * h] as const;
+  const parts: Part[] = [];
+  const add = (g: THREE.BufferGeometry, [x, y, z]: readonly [number, number, number], rot: [number, number, number] = [0, 0, 0], k = 1) =>
+    parts.push({ geometry: g, color, matrix: placed(x, y, z, rot, [h * k, h * k, h * k]) });
+  add(kit.hairCap!, at(0, 0.115, -0.005));
+  add(kit.hairBack!, at(0, 0.02, -0.12));
+  if (style === 'mechones') {
+    // Mechones revueltos arriba (cada uno girado distinto) y un flequillo que cae sobre la frente.
+    const top: [number, number, number, number][] = [[-0.09, 0.07, 0.4, 1], [0.07, 0.08, -0.5, 1.05], [0, -0.02, 0.2, 1.1], [-0.1, -0.09, -0.3, 1], [0.1, -0.07, 0.6, 1], [0.01, -0.12, -0.1, 0.95]];
+    for (const [x, z, r, k] of top) add(kit.tuft, at(x, 0.175, z), [r * 0.4, r, r * 0.3], k);
+    for (const [x, r] of [[-0.09, -0.25], [0, 0.1], [0.09, 0.3]] as const) add(kit.tuft, at(x, 0.1, 0.13), [0.7, r, 0], 0.8);
+    for (const s of [-1, 1]) add(kit.tuft, at(s * 0.15, 0.06, -0.02), [0, 0, s * 0.3], 0.75);
+  } else if (style === 'puntas') {
+    const tips: [number, number, number, number][] = [[0, 0.04, -0.4, 0], [-0.08, -0.05, -0.6, 0.35], [0.08, -0.05, -0.6, -0.35], [0, -0.1, -0.9, 0], [-0.1, 0.06, -0.2, 0.45], [0.1, 0.06, -0.2, -0.45]];
+    for (const [x, z, rx, rz] of tips) add(kit.spike, at(x, 0.21, z), [rx, 0, rz], 1.1);
+  } else if (style === 'cola') {
+    add(kit.tuft, at(0, 0.06, -0.17), [0, 0, 0], 0.7);
+    parts.push({ geometry: kit.spike, color, matrix: aimed(new THREE.Vector3(...at(0, -0.06, -0.2)), new THREE.Vector3(0, 1, 0.25), h * 1.1, 1.6) });
+  }
+  return parts;
+}
 
 /** Número del pecho (en el plano frontal del tronco) y espalda con nombre y número. */
 const CHEST_NUMBER = new THREE.PlaneGeometry(0.17, 0.17);
@@ -170,6 +412,7 @@ const BACK_PRINT = new THREE.PlaneGeometry(0.27, 0.27);
 const FACE_INK = '#24160f';
 const SHOE = '#f4f4f4';
 const PAD = '#22252b';
+const SOCK = '#f2f2f2';
 
 /** Piezas de cada articulación del personaje que se está armando (se unen al final en una sola malla). */
 let pending: { bone: THREE.Bone; parts: Part[] }[] = [];
@@ -218,57 +461,79 @@ function skinCharacter(root: THREE.Object3D): void {
 
 /**
  * Jugador estilizado: piel, camisa de manga corta con número y apellido, pantaloneta, rodilleras, zapatos,
- * pelo y una cara sencilla. Una malla fusionada (color por vértice) por articulación: pocas llamadas de dibujo.
+ * pelo y una cara sencilla. La forma (cuerpo, cabeza, ojos, peinado) sale del estilo del Probador.
  */
-export function buildCharacter(look: Look): Rig {
+export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
+  applyCharShading(st);
+  const kit = kitFor(st);
   const { shirt, shorts, skin } = look;
+  const trim = contrast(shirt) === '#ffffff' ? '#e9ecf2' : '#2a2e36';
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
   const hips = joint(body, 0, DIMS.thigh + DIMS.shin + DIMS.foot, 0);
-  attach(hips, [{ geometry: shared.pelvis, color: shorts, matrix: placed(0, 0.02, 0, [0, 0, 0], [1.2, 0.85, 0.9]) }]);
+  const athlete = st.torso === 'atleta';
+  attach(hips, [{ geometry: kit.pelvis, color: shorts, matrix: st.body === 'bloque' ? placed(0, 0.03, 0) : placed(0, 0.02, 0, [0, 0, 0], athlete ? [1.15 * st.waist + 0.15, 0.85, 0.85] : [1.2, 0.85, 0.9]) }]);
 
   const spine = joint(hips, 0, 0.06, 0);
-  attach(spine, [{ geometry: shared.torso, color: shirt, matrix: placed(0, 0.26, 0, [0, 0, 0], [1.1, 1, 0.85]) }]);
+  const block = st.body === 'bloque';
+  if (block) attach(spine, [{ geometry: kit.torso, color: shirt, matrix: placed(0, 0.26, 0) }]);
+  else attach(spine, [{ geometry: kit.torso, color: shirt, matrix: placed(0, athlete ? -0.01 : 0.26, 0, [0, 0, 0], kit.torsoScale) }]);
   const ink = contrast(shirt);
   // Árbitros, jueces y entrenadores (número 0) no llevan número ni nombre.
   if (look.number > 0) {
     const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
-    number.position.set(0, 0.32, 0.124);
+    number.position.set(0, 0.32, kit.chestZ + 0.01);
     const back = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
-    back.position.set(0, 0.33, -0.125);
+    back.position.set(0, 0.33, kit.backZ - 0.011);
     back.rotation.y = Math.PI;
     spine.add(number, back);
   }
 
-  // Cabeza con cuello, pelo y cara (ojos, cejas y boca) mirando hacia +z.
+  // Cabeza con cuello, pelo y cara (ojos, cejas y boca) mirando hacia +z. La cara crece con la cabeza.
   const neck = joint(spine, 0, 0.56, 0);
+  const h = st.head;
+  const e = st.eyes;
+  const c = new THREE.Vector3(0, 0.16 + (h - 1) * 0.12, 0.01);
+  const face = (x: number, y: number, z: number) => [c.x + x * h, c.y + y * h, c.z + z * h] as const;
+  const eyeAt = (side: 1 | -1) => face(side * 0.05, 0.02 + (e - 1) * 0.005, 0.128);
   const head: Part[] = [
-    { geometry: shared.neck, color: skin, matrix: placed(0, -0.02, 0) },
-    { geometry: shared.head, color: skin, matrix: placed(0, 0.16, 0.01) },
-    { geometry: shared.eye, color: FACE_INK, matrix: placed(0.05, 0.18, 0.138, [0, 0, 0], [1, 1.25, 0.6]) },
-    { geometry: shared.eye, color: FACE_INK, matrix: placed(-0.05, 0.18, 0.138, [0, 0, 0], [1, 1.25, 0.6]) },
-    { geometry: shared.brow, color: FACE_INK, matrix: placed(0.05, 0.228, 0.128, [0, 0, Math.PI / 2 - 0.12]) },
-    { geometry: shared.brow, color: FACE_INK, matrix: placed(-0.05, 0.228, 0.128, [0, 0, Math.PI / 2 + 0.12]) },
-    { geometry: shared.mouth, color: '#5a2420', matrix: placed(0, 0.1, 0.14, [0, 0, Math.PI / 2], [1, 1, 0.6]) },
+    { geometry: kit.neck, color: skin, matrix: placed(0, -0.02, 0) },
+    { geometry: kit.head, color: skin, matrix: placed(c.x, c.y, c.z, [0, 0, 0], [h, h * 1.04, h]) },
   ];
-  if (look.hair) head.push({ geometry: shared.hair, color: look.hair, matrix: placed(0, 0.165, -0.005, [-0.42, 0, 0]) });
+  for (const side of [1, -1] as const) {
+    const [x, y, z] = eyeAt(side);
+    head.push({ geometry: kit.eye, color: FACE_INK, matrix: placed(x, y, z + (block ? 0.012 : 0), [0, 0, 0], block ? [h * e, h * e, h] : [h * e, h * 1.25 * e * (st.eyeShine ? 1.15 : 1), 0.6 * h]) });
+    // Brillo anime: un punto blanco arriba y hacia afuera del ojo.
+    if (st.eyeShine) head.push({ geometry: kit.shine, color: '#ffffff', matrix: placed(x + side * 0.006 * h * e, y + 0.009 * h * e, z + 0.011 * h, [0, 0, 0], [h * e, h * e, 0.6 * h]) });
+    const [bx, by, bz] = face(side * 0.05, 0.068 + (e - 1) * 0.02, 0.118);
+    // Bloque: cejas gruesas y serias (bajan hacia adentro), como en el dibujo.
+    if (block) head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by - 0.008 * h, bz + 0.018, [0, 0, side * 0.32], [h, h, h]) });
+    else head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by, bz, [0, 0, Math.PI / 2 - side * 0.12], [h, h, h]) });
+  }
+  const [mx, my, mz] = face(0, -0.06, 0.13);
+  if (st.body === 'bloque') head.push({ geometry: kit.mouth, color: '#5a2420', matrix: placed(mx, my - 0.005, mz + 0.012, [0, 0, 0], [h, h, h]) });
+  else head.push({ geometry: kit.mouth, color: '#5a2420', matrix: placed(mx, my, mz, [0, 0, Math.PI / 2], [h, h, 0.6 * h]) });
+  if (look.hair) head.push(...hairParts(kit, hairOf(look, st), look.hair, c, h));
   attach(neck, head);
 
   const arm = (side: 1 | -1) => {
     const sleeve = side === 1 ? look.armSleeve.L : look.armSleeve.R;
-    const shoulder = joint(spine, side * 0.2, 0.46, 0);
+    const shoulder = joint(spine, side * kit.shoulderX, 0.46, 0);
     const upper: Part[] = [
-      { geometry: shared.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
-      { geometry: shared.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
-      { geometry: shared.shoulderCap, color: shirt, matrix: placed(0, 0, 0) },
+      { geometry: kit.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
+      { geometry: kit.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
+      { geometry: kit.shoulderCap, color: shirt, matrix: placed(0, 0, 0) },
     ];
-    if (sleeve) upper.push({ geometry: shared.armSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.upperArm / 2 - 0.03, 0) });
+    // Ribete claro en el borde de la manga (como las camisetas del dibujo).
+    if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(0, -0.14, 0) });
+    if (sleeve) upper.push({ geometry: kit.armSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.upperArm / 2 - 0.03, 0) });
     attach(shoulder, upper);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
-    const lower: Part[] = [{ geometry: shared.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
+    const lower: Part[] = [{ geometry: kit.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
     // La manga llega a la muñeca: la mano queda descubierta.
-    if (sleeve) lower.push({ geometry: shared.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
+    if (sleeve) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
+    if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
     attach(elbow, lower);
     return { shoulder, elbow };
   };
@@ -279,19 +544,25 @@ export function buildCharacter(look: Look): Rig {
     const sleeve = side === 1 ? look.legSleeve.L : look.legSleeve.R;
     const hip = joint(hips, side * 0.1, -0.02, 0);
     const upper: Part[] = [
-      { geometry: shared.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
-      { geometry: shared.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
+      { geometry: kit.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
+      { geometry: kit.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
     ];
-    if (sleeve) upper.push({ geometry: shared.legSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.thigh + 0.13, 0) });
+    if (sleeve) upper.push({ geometry: kit.legSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.thigh + 0.13, 0) });
     attach(hip, upper);
     const knee = joint(hip, 0, -DIMS.thigh, 0);
-    const lower: Part[] = [{ geometry: shared.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
-    if (sleeve) lower.push({ geometry: shared.legSleeveLower, color: look.sleeve, matrix: placed(0, -DIMS.shin / 2 + 0.02, 0) });
+    const lower: Part[] = [{ geometry: kit.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
+    if (sleeve) lower.push({ geometry: kit.legSleeveLower, color: look.sleeve, matrix: placed(0, -DIMS.shin / 2 + 0.02, 0) });
     attach(knee, [
       ...lower,
       // La rodillera envuelve la rodilla (centrada un poco debajo de la articulación).
-      { geometry: shared.kneePad, color: PAD, matrix: placed(0, -0.03, 0.006) },
-      { geometry: shared.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03, 0.06, [Math.PI / 2, 0, 0]) },
+      { geometry: kit.kneePad, color: PAD, matrix: placed(0, -0.03, 0.006) },
+      // Zapatilla: un poco más plana y larga que antes cuando el estilo es de atleta; de bloque, gruesa y con suela.
+      block
+        ? { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.035, 0.055) }
+        : { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03, 0.06, [Math.PI / 2, 0, 0], athlete ? [1.05, 1.08, 0.82] : [1, 1, 1]) },
+      ...(kit.sole ? [{ geometry: kit.sole, color: PAD, matrix: placed(0, -DIMS.shin - DIMS.foot + 0.015, 0.055) }] : []),
+      // Media blanca entre la rodillera y la zapatilla.
+      ...(kit.sock ? [{ geometry: kit.sock, color: SOCK, matrix: placed(0, -DIMS.shin + 0.1, 0) }] : []),
     ]);
     return { hip, knee };
   };

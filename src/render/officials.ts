@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { COURT, sideSign, type TeamId } from '../sim/court';
 import type { PointReason } from '../sim/events';
 import type { Simulation } from '../sim/rally';
+import { matchStyle } from './style';
 import { DIMS, SKIN_TONES, buildCharacter, type Look, type Rig } from './character';
 import { JOINTS, POSES, blendPose, hipHeight, type Pose } from './pose';
 import { toon } from './toon';
@@ -65,7 +66,7 @@ export class Officials {
     const L = COURT.halfLength;
     const W = COURT.halfWidth;
     const ref = (look: Look, x: number, y: number, z: number, yaw: number, extra: Partial<Official> = {}) => {
-      const rig = buildCharacter(look);
+      const rig = buildCharacter(look, matchStyle());
       rig.root.position.set(x, y, z);
       rig.root.rotation.y = yaw;
       this.group.add(rig.root);

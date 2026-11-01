@@ -489,3 +489,36 @@ body.touch { touch-action: none; }
 .am-bracket-team.bye { color: var(--am-muted); font-style: italic; }
 .am-bracket-team .tbd { color: var(--am-muted); }
 @media (max-width: 700px) { .am-bracket { grid-template-columns: repeat(4, minmax(132px, 1fr)); } }
+
+/* ---------- Probador de jugadores ---------- */
+.screen-lab { padding: 0 !important; max-width: none !important; }
+.am-lab { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-columns: minmax(0, 1fr) 360px; background: var(--am-bg); }
+.lab-stage { position: relative; min-width: 0; min-height: 0; }
+.lab-stage canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.lab-poses, .lab-cam { position: absolute; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lab-poses { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.lab-cam { top: calc(12px + env(safe-area-inset-top, 0px)); justify-content: flex-end; }
+.lab-poses button, .lab-cam button, .lab-presets button { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--am-line); background: #0b1020cc; color: var(--am-text); font: 700 13px var(--am-body); cursor: pointer; }
+.lab-poses button.on, .lab-cam button.on { background: var(--am-gold); color: #1a1300; border-color: var(--am-gold); }
+.lab-panel { overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); border-left: 1px solid var(--am-line); background: #0b1122; }
+.lab-head { display: flex; gap: 10px; align-items: center; }
+.lab-head h2 { margin: 0; font-family: var(--am-display); font-weight: 400; font-size: 30px; letter-spacing: 1px; }
+.lab-head p { margin: 2px 0 0; color: var(--am-muted); font-size: 12.5px; line-height: 1.4; }
+.lab-back { flex: 0 0 auto; width: 40px; height: 40px; font-size: 26px; line-height: 1; }
+.lab-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.lab-presets button:hover { border-color: var(--am-gold); }
+.lab-controls { display: grid; gap: 10px; }
+.lab-row { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: var(--am-muted); text-transform: uppercase; letter-spacing: 1px; }
+.lab-row .segmented { flex-wrap: wrap; }
+.lab-row .segmented button { flex: 1 1 auto; padding: 7px 8px; font-size: 12px; }
+.lab-slider span { display: flex; justify-content: space-between; }
+.lab-slider b { color: var(--am-text); font-variant-numeric: tabular-nums; }
+.lab-slider input { width: 100%; accent-color: var(--am-gold); touch-action: pan-x; }
+.lab-actions { display: grid; gap: 8px; }
+.lab-out { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--am-line); background: #060a17; color: var(--am-text); font: 12px ui-monospace, monospace; padding: 8px; resize: vertical; }
+@media (max-width: 760px), (orientation: portrait) {
+  .am-lab { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52vh minmax(0, 1fr); }
+  .lab-panel { border-left: 0; border-top: 1px solid var(--am-line); }
+  .lab-poses button, .lab-cam button { padding: 6px 10px; font-size: 12px; }
+}
+@media (max-height: 520px) and (orientation: landscape) { .am-lab { grid-template-columns: minmax(0, 1fr) 300px; } }

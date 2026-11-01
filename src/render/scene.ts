@@ -10,6 +10,7 @@ import { SpeedLines } from '../ui/speedlines';
 import { Animator } from './animator';
 import { Arena } from './arena';
 import { CameraDirector } from './camera';
+import { matchStyle } from './style';
 import { DIMS, buildCharacter, lookFor, type Rig } from './character';
 import { PlayerStatus } from './status';
 import { Officials } from './officials';
@@ -1066,7 +1067,7 @@ export class MatchView {
   private buildPlayers(): void {
     for (const p of this.sim.players.values()) {
       const team = this.sim.teams[p.team];
-      const rig = buildCharacter(lookFor(p.def, shirtName(p.def), team.primary, team.secondary, p.def.role === 'L'));
+      const rig = buildCharacter(lookFor(p.def, shirtName(p.def), team.primary, team.secondary, p.def.role === 'L'), matchStyle());
       // Estatura: diferencia exagerada un poco para que se note en la cancha.
       rig.root.scale.setScalar(1 + ((p.def.height - AVG_HEIGHT) / AVG_HEIGHT) * 1.6);
       const a = new Animator(p.key, rig, this.sim);

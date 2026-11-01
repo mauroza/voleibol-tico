@@ -42,7 +42,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   el.innerHTML = `
     <div class="lab-stage"><canvas></canvas>
       <div class="lab-poses"></div>
-      <div class="lab-cam"><button type="button" data-cam="near" class="on">Cerca</button><button type="button" data-cam="far">Como en el partido</button><button type="button" data-spin class="on">Girar</button></div>
+      <div class="lab-cam"><button type="button" data-cam="detail">Detalle</button><button type="button" data-cam="near" class="on">Cerca</button><button type="button" data-cam="far">Como en el partido</button><button type="button" data-spin class="on">Girar</button></div>
     </div>
     <aside class="lab-panel">
       <div class="lab-head"><button type="button" class="am-back lab-back" aria-label="Volver">‹</button><div><h2>Editor de personajes</h2><p>Solo para ti. Ajusta, toca <b>Copiar ajustes</b> y pásaselo a Claude: lo pone en el juego para todos.</p></div></div>
@@ -102,7 +102,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
 
   let pose: PoseId = 'idle';
   let spin = true;
-  let far = false;
+  let cam: 'detail' | 'near' | 'far' = 'near';
   let yaw = 0.35;
   let t0 = performance.now();
   const apply = (rig: Rig, p: Pose) => {
@@ -141,7 +141,9 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (spin && drag === null) yaw += dt * 0.5;
-    turntable.rotation.y = yaw;
+    // En el detalle gira solo el jugador de la izquierda, en su lugar.
+    turntable.rotation.y = cam === 'detail' ? 0 : yaw;
+    if (rigs[0]) rigs[0].root.rotation.y = cam === 'detail' ? yaw : 0;
     resetPosePool();
     const p = currentPose(now);
     for (const r of rigs) apply(r, p);
@@ -154,9 +156,11 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
     }
     // Cerca: de frente a la altura del pecho. Partido: alto y lejos, como la cámara de juego.
     const fit = Math.max(1, 1.25 / camera.aspect);
-    if (far) camera.position.set(0, 7.4, 15.2);
+    // Detalle: a tres metros del de la izquierda (que deja de girar con los demás, para verlo de frente).
+    if (cam === 'far') camera.position.set(0, 7.4, 15.2);
+    else if (cam === 'detail') camera.position.set(-1.05, 1.3, 3.0 * fit);
     else camera.position.set(0, 1.5, 6.2 * fit);
-    camera.lookAt(0, far ? 0.6 : 1.05, 0);
+    camera.lookAt(cam === 'detail' ? -1.05 : 0, cam === 'far' ? 0.6 : cam === 'detail' ? 1.15 : 1.05, 0);
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   };
@@ -178,7 +182,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
     poses.append(b);
   }
   el.querySelectorAll<HTMLButtonElement>('[data-cam]').forEach((b) => tap(b, () => {
-    far = b.dataset.cam === 'far';
+    cam = b.dataset.cam as typeof cam;
     el.querySelectorAll('[data-cam]').forEach((x) => x.classList.toggle('on', x === b));
   }));
   const spinBtn = el.querySelector<HTMLButtonElement>('[data-spin]')!;

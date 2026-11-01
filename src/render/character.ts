@@ -172,6 +172,8 @@ interface Kit {
   sock: THREE.BufferGeometry | null;
   sole: THREE.BufferGeometry | null;
   trim: THREE.BufferGeometry | null;
+  /** Bisagra del codo (cuerpo de bloques): rellena la unión cuando el brazo se dobla. */
+  hinge: THREE.BufferGeometry | null;
   /** Pelo de la cabeza cúbica: tapa arriba y nuca (en vez del casquete redondo). */
   hairCap: THREE.BufferGeometry | null;
   hairBack: THREE.BufferGeometry | null;
@@ -249,6 +251,7 @@ function kitFor(st: CharStyle): Kit {
     trim: null,
     hairCap: null,
     hairBack: null,
+    hinge: null,
   };
   if (st.body === 'bloque') Object.assign(kit, blockKit(st, d));
   // El Probador crea una variante por cada valor del deslizador: se guardan solo las últimas.
@@ -262,6 +265,43 @@ function kitFor(st: CharStyle): Kit {
  * caja queda casi cuadrada; con `r` grande, casi una esfera. Unos 400 vértices (una caja redondeada de three.js con
  * la misma suavidad usa más de mil). Normales exactas de la forma, sin costuras.
  */
+function roundedBar(w: number, len: number, depth: number, r: number, d: number): THREE.BufferGeometry {
+  // Cápsula con la sección redondeada-cuadrada: lados rectos a lo largo y solo las puntas redondas. Brazos y piernas de
+  // bloque (antes eran supercuadros enteros: gordos al medio y finos en las puntas, como salchichas).
+  const rr = Math.min(w, depth) / 2;
+  const g = new THREE.CapsuleGeometry(rr, Math.max(0.001, len - 2 * rr), 2 + d, 10 + d * 4);
+  const e = THREE.MathUtils.clamp((2 * r) / Math.min(w, depth), 0.12, 1);
+  const sx = w / 2 / rr;
+  const sz = depth / 2 / rr;
+  const pos = g.attributes.position;
+  const nrm = g.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const rho = Math.hypot(x, z);
+    if (rho < 1e-6) continue;
+    const ux = x / rho;
+    const uz = z / rho;
+    const px = Math.sign(ux) * Math.abs(ux) ** e;
+    const pz = Math.sign(uz) * Math.abs(uz) ** e;
+    pos.setX(i, px * rho * sx);
+    pos.setZ(i, pz * rho * sz);
+    // Normal: la de la sección cuadrada-redondeada, con la misma inclinación vertical que la de la cápsula.
+    const nx = nrm.getX(i);
+    const ny = nrm.getY(i);
+    const nz = nrm.getZ(i);
+    const flat = Math.hypot(nx, nz);
+    let gx = (Math.sign(ux) * Math.abs(ux) ** (2 - e)) / sx;
+    let gz = (Math.sign(uz) * Math.abs(uz) ** (2 - e)) / sz;
+    const gl = Math.hypot(gx, gz) || 1;
+    gx = (gx / gl) * flat;
+    gz = (gz / gl) * flat;
+    const len3 = Math.hypot(gx, ny, gz) || 1;
+    nrm.setXYZ(i, gx / len3, ny / len3, gz / len3);
+  }
+  return g;
+}
+
 function roundedBlock(w: number, h: number, depth: number, r: number, d: number): THREE.BufferGeometry {
   const g = new THREE.SphereGeometry(1, 10 + d * 4, 8 + d * 3);
   const half = [w / 2, h / 2, depth / 2];
@@ -293,6 +333,7 @@ function roundedBlock(w: number, h: number, depth: number, r: number, d: number)
  */
 function blockKit(st: CharStyle, d: number): Partial<Kit> {
   const box = (w: number, h: number, depth: number, r: number) => roundedBlock(w, h, depth, r, d);
+  const bar = (w: number, len: number, depth: number, r: number) => roundedBar(w, len, depth, r, d);
   const t = st.limbs;
   const s = st.shoulders;
   return {
@@ -302,17 +343,20 @@ function blockKit(st: CharStyle, d: number): Partial<Kit> {
     backZ: -0.125 * 0.97,
     shoulderX: 0.2 * s,
     pelvis: box(0.33, 0.2, 0.25, 0.06),
-    upperArm: box(0.11 * t, DIMS.upperArm, 0.11 * t, 0.04),
-    forearm: box(0.105 * t, DIMS.forearm + 0.02, 0.105 * t, 0.04),
-    hand: box(0.115 * t, 0.12, 0.11 * t, 0.04),
-    thigh: box(0.15 * t, DIMS.thigh, 0.15 * t, 0.05),
-    shin: box(0.135 * t, DIMS.shin + 0.02, 0.135 * t, 0.045),
+    // Brazo y antebrazo del mismo grosor y más largos que el hueso: se meten uno en el otro en el codo (y el antebrazo en
+    // el puño), así el brazo estirado parece un solo cilindro. La bisagra rellena el codo cuando se dobla.
+    upperArm: bar(0.115 * t, DIMS.upperArm + 0.1, 0.115 * t, 0.04),
+    forearm: bar(0.112 * t, DIMS.forearm + 0.08, 0.112 * t, 0.04),
+    hand: box(0.13 * t, 0.125, 0.12 * t, 0.045),
+    thigh: bar(0.155 * t, DIMS.thigh + 0.08, 0.155 * t, 0.05),
+    shin: bar(0.14 * t, DIMS.shin + 0.06, 0.14 * t, 0.045),
+    hinge: box(0.112 * t, 0.112 * t, 0.112 * t, 0.056 * t),
     foot: box(0.15, 0.11, 0.27, 0.045),
-    sleeve: box(0.15 * t, 0.17, 0.15 * t, 0.05),
+    sleeve: bar(0.15 * t, 0.17, 0.15 * t, 0.05),
     shoulderCap: box(0.16 * t, 0.16, 0.16 * t, 0.06),
     shortsLeg: box(0.19 * t, 0.24, 0.2 * t, 0.06),
     kneePad: box(0.165 * t, 0.15, 0.165 * t, 0.06),
-    sock: box(0.148 * t, 0.17, 0.148 * t, 0.04),
+    sock: bar(0.148 * t, 0.17, 0.148 * t, 0.04),
     sole: box(0.155, 0.03, 0.28, 0.012),
     trim: box(0.158 * t, 0.028, 0.158 * t, 0.012),
     tuft: box(0.11, 0.09, 0.11, 0.04),
@@ -553,6 +597,7 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     const lower: Part[] = [{ geometry: kit.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
     // La manga llega a la muñeca: la mano queda descubierta.
     if (sleeve) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
+    if (kit.hinge) lower.push({ geometry: kit.hinge, color: skin, matrix: placed(0, 0, 0) });
     if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
     attach(elbow, lower);
     return { shoulder, elbow };

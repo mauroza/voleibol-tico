@@ -1762,7 +1762,8 @@ export class Simulation {
 
   // ---------- contactos ----------
 
-  private registerTouch(p: PlayerState, kind: ContactKind, quality: number): void {
+  /** `at`: dónde se golpea, si la pelota todavía no está ahí (el saque: el evento sale antes de lanzarla). */
+  private registerTouch(p: PlayerState, kind: ContactKind, quality: number, at?: Vec3): void {
     this.fingertip = null;
     if (kind === 'serve' || kind === 'block') {
       this.touchSide = p.team;
@@ -1783,7 +1784,7 @@ export class Simulation {
       this.tire(p.key, Math.abs(p.pos.x) > 3 ? cost.backAttack : cost.attack);
     } else if (kind === 'set') this.tire(p.key, cost.set);
     else if (kind === 'reception' || kind === 'dig' || kind === 'free') this.tire(p.key, this.diving ? cost.dive : cost.pass);
-    this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team: p.team, kind, quality });
+    this.bus.emit({ type: 'contact', time: this.time, playerKey: p.key, team: p.team, kind, quality, ...(at ? { at: clone(at) } : {}) });
   }
 
   /** El usuario presionó (o se le acabó el tiempo): la barra decide el tipo y empieza la secuencia. */
@@ -1858,7 +1859,8 @@ export class Simulation {
     );
     this.phase = 'inPlay';
     q = this.boosted(q, ps.user ? timing : undefined);
-    this.registerTouch(server, 'serve', q);
+    // El destello sale donde la mano le pega a la pelota, no donde estaba antes del lanzamiento.
+    this.registerTouch(server, 'serve', q, from);
     const opp = otherTeam(team);
     // Morado: va justo donde apuntó (dentro de la cancha, pegado a la línea si apuntó ahí) y sin margen de error.
     this.aceServe = ps.ace;

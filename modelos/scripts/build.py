@@ -100,7 +100,7 @@ for o in list(scene.objects):
     for m in list(o.modifiers):
         if m.type == 'SUBSURF':
             # el tronco se ve bien con poca subdivisión; cabeza, orejas y piernas necesitan al menos 2
-            m.levels = m.render_levels = CFG['lod'] if o.name == 'cuerpo' else max(2, CFG['lod'])
+            m.levels = m.render_levels = CFG['lod'] if o.name == 'cuerpo' else 3 if o.name == 'cabeza' else max(2, CFG['lod'])
             if o.name in ('cuerpo', 'piernas'):
                 bpy.ops.object.modifier_apply(modifier=m.name)
     for p in o.data.polygons:
@@ -460,8 +460,8 @@ number('numero_short', legs, CX - 0.34, -0.75, 0.14)
 HAIR = {
     'mechones': dict(sep=0.08, r=(0.14, 0.16), off=(0.0, 0.025), front=0.86, side=0.68, tuft=True),
     'rizado': dict(sep=0.085, r=(0.14, 0.17), off=(0.02, 0.05), front=0.86, side=0.68, tuft=False),
-    'corto': dict(sep=0.08, r=(0.11, 0.13), off=(-0.01, 0.01), front=0.9, side=0.72, tuft=False),
-    'rapado': dict(sep=0.07, r=(0.09, 0.1), off=(-0.03, -0.02), front=0.92, side=0.74, tuft=False),
+    'corto': dict(sep=0.08, r=(0.11, 0.13), off=(0.0, 0.02), front=0.9, side=0.72, tuft=False),
+    'rapado': dict(sep=0.07, r=(0.09, 0.1), off=(-0.015, -0.005), front=0.92, side=0.74, tuft=False),
 }
 def make_hair(style, name):
     H = HAIR[style]
@@ -489,7 +489,7 @@ def make_hair(style, name):
         cand.append((p, n, rel))
     ev.to_mesh_clear()
     if hm:
-        hm.levels = max(2, CFG['lod'])
+        hm.levels = 3
     random.shuffle(cand)
     placed = []
     for p, n, rel in cand:

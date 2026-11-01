@@ -160,6 +160,8 @@ function slotColors(c: ModelColors): Record<string, string> {
     ojos: '#120e0e',
     cejas: '#1e1614',
     boca: '#5a2420',
+    // Cuero cabelludo bajo el pelo: del color del pelo, así no asoma piel entre los mechones.
+    cuero: c.hair,
   };
 }
 

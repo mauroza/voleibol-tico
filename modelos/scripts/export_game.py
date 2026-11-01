@@ -19,7 +19,7 @@ for a, b in (('shoulderL', 'shoulderR'), ('elbowL', 'elbowR'), ('wristL', 'wrist
     J[b] = Vector((-x, y, z))
 
 SLOTS = ['piel', 'camiseta', 'panel', 'ribete', 'pantaloneta', 'franja', 'medias', 'rodilleras', 'tenis', 'suela',
-         'detalle_tenis', 'pelo', 'ojos', 'cejas', 'boca']
+         'detalle_tenis', 'pelo', 'ojos', 'cejas', 'boca', 'cuero']
 BONES = ['hips', 'spine', 'neck', 'shoulderL', 'elbowL', 'shoulderR', 'elbowR', 'hipL', 'kneeL', 'hipR', 'kneeR']
 BI = {n: i for i, n in enumerate(BONES)}
 # triángulos máximos por pieza (el resto se simplifica)
@@ -84,6 +84,24 @@ def game(v):  # Blender (z arriba, frente -y) -> juego (y arriba, frente +z)
     return (v.x, v.z, -v.y)
 
 
+# Cuero cabelludo: la parte de la cabeza que tapa cualquier peinado se pinta del color del pelo (en el juego). Así,
+# si el pelo simplificado queda fino en algún punto, no asoma la piel.
+_h = bpy.data.objects['cabeza'].evaluated_get(bpy.context.evaluated_depsgraph_get())
+_hp = [_h.matrix_world @ v.co for v in _h.data.vertices]
+HEAD_Z0 = min(p.z for p in _hp)
+HEAD_H = max(p.z for p in _hp) - HEAD_Z0
+
+
+def scalp(c, n):
+    rel = (c.z - HEAD_Z0) / HEAD_H
+    front = -n.y  # el frente mira a -y
+    if front > 0.5:
+        return rel > 0.95
+    if front < -0.45:
+        return rel > 0.32
+    return rel > 0.8
+
+
 pos, nrm, slot, sidx, swt = [], [], [], [], []
 groups = {}
 stats = {}
@@ -117,6 +135,8 @@ for o in sorted(scene.objects, key=lambda o: o.name):
     remap = {}
     for t in me.loop_triangles:
         mi = SLOTS.index(mats[min(t.material_index, len(mats) - 1)])
+        if o.name == 'cabeza' and scalp(mw @ Vector(t.center), (nm @ t.normal).normalized()):
+            mi = SLOTS.index('cuero')
         tri = []
         for vi in t.vertices:
             key = (vi, mi)

@@ -220,10 +220,15 @@ body.touch .timeout-toast { right: auto; left: max(10px, env(safe-area-inset-lef
 .toss { z-index: 8; background: #05070d99; }
 .toss-box { text-align: center; }
 .toss-box p { margin: 10px 0 0; color: #cfd6ea; }
-.toss-coin { width: 110px; height: 110px; margin: 6px auto 0; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 18px; color: #3a2a00;
+.toss-coin { width: 110px; height: 110px; margin: 78px auto 4px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 18px; color: #3a2a00;
              background: radial-gradient(circle at 35% 30%, #fff2a8, #e0b712 60%, #a07c08); box-shadow: 0 0 0 4px #b8921a inset, 0 8px 24px #000a; }
 .toss-coin.spin { animation: coin-flip 2.4s cubic-bezier(.2, .7, .3, 1); }
-@keyframes coin-flip { 0% { transform: translateY(0) rotateX(0); } 40% { transform: translateY(-60px) rotateX(1440deg); } 100% { transform: translateY(0) rotateX(2880deg); } }
+/* La moneda sube dentro del espacio libre sobre ella (margen de arriba): nunca tapa el título. */
+@keyframes coin-flip { 0% { transform: perspective(500px) translateY(0) rotateX(0) scale(1); }
+                       45% { transform: perspective(500px) translateY(-64px) rotateX(1440deg) scale(1.08); }
+                       85% { transform: perspective(500px) translateY(0) rotateX(2700deg) scale(1); }
+                       92% { transform: perspective(500px) translateY(-8px) rotateX(2820deg) scale(1); }
+                       100% { transform: perspective(500px) translateY(0) rotateX(2880deg) scale(1); } }
 .toss-sides { grid-template-columns: 1fr 1fr; }
 @media (max-height: 520px) {
   .pregame-banner { top: calc(58px + env(safe-area-inset-top, 0px)); font-size: 12px; padding: 6px 10px; }

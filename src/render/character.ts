@@ -429,13 +429,13 @@ function blockKit(st: CharStyle, d: number, D: Dims): Partial<Kit> {
     // Zapatilla grande y apoyada: la suela toca el piso, la media sale de su boca.
     foot: box(0.17, 0.12, 0.3, 0.05),
     // Manga corta que se abre un poco hacia el borde (como la camiseta del 10), con el ribete pegado al borde.
-    sleeve: bar(0.148 * t, 0.2, 0.148 * t, 0.05, 1.12),
+    sleeve: bar(0.14 * t, 0.21, 0.14 * t, 0.05, 1.06, 0.05),
     shoulderCap: box(0.16 * t, 0.16, 0.16 * t, 0.06),
     shortsLeg: box(0.19 * t, 0.24, 0.2 * t, 0.06),
     kneePad: box(0.18 * t, 0.16, 0.18 * t, 0.06),
     sock: bar(0.158 * t, 0.2, 0.158 * t, 0.05),
     sole: box(0.176, 0.032, 0.306, 0.014),
-    trim: bar(0.168 * t, 0.034, 0.168 * t, 0.05, 1, 0.012),
+    trim: bar(0.15 * t, 0.026, 0.15 * t, 0.05, 1, 0.01),
     tuft: box(0.11, 0.09, 0.11, 0.04),
     hairCap: box(0.322, 0.1, 0.302, 0.045),
     hairBack: box(0.322, 0.2, 0.07, 0.035),
@@ -691,14 +691,20 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     const shoulder = joint(spine, side * kit.shoulderX, 0.46 + lift, 0);
     const upper: Part[] = [
       ...(kit.arm ? [] : [{ geometry: kit.upperArm, color: skin, matrix: placed(0, -D.upperArm / 2, 0) }]),
-      { geometry: kit.sleeve, color: shirt, matrix: block ? placed(-side * 0.025, -0.075, 0, [0, 0, -side * 0.12]) : placed(0, -0.06, 0) },
+      ...(block ? [] : [{ geometry: kit.sleeve, color: shirt, matrix: placed(0, -0.06, 0) }]),
       // Bloques: sin hombrera (era una bola sobre el hombro); la manga entra en el tronco y el hombro baja suave.
       ...(block ? [] : [{ geometry: kit.shoulderCap, color: shirt, matrix: placed(0, 0, 0) }]),
     ];
     // Ribete claro en el borde de la manga (como las camisetas del dibujo).
-    if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(0, -0.158, 0) });
+    if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(-side * 0.008, -0.1, 0) });
     if (sleeve && !kit.arm) upper.push({ geometry: kit.armSleeveUpper, color: look.sleeve, matrix: placed(0, -D.upperArm / 2 - 0.03, 0) });
     attach(shoulder, upper);
+    // Bloques: la manga es de la camiseta. Arriba queda cosida al tronco y abajo sigue al brazo (se reparte entre los dos
+    // huesos, como tela): al levantar el brazo se estira desde el hombro, sin cortes ni huecos.
+    if (block) {
+      const sy = 0.46 + lift;
+      attachBlend(spine, [{ geometry: kit.sleeve, color: shirt, matrix: placed(side * kit.shoulderX - side * 0.02, sy - 0.005, 0, [0, 0, -side * 0.1]) }], shoulder, sy - 0.02);
+    }
     const elbow = joint(shoulder, 0, -D.upperArm, 0);
     // Brazo entero (bloques): de dentro del hombro hasta dentro de la palma, una sola pieza que se dobla en el codo.
     // La manga de compresión (si tiene) es el mismo brazo pintado de la manga hasta la muñeca: sin tramos ni bordes.

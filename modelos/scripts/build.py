@@ -13,6 +13,7 @@ CFG = {
     'altura': 1.9,       # metros
     'complexion': 1.0,   # ancho del cuerpo (0.9 delgado, 1.1 fornido); la cabeza no cambia
     'semilla': 10,
+    'cabeza': 1.0,       # tamaño de la cabeza (el juego la usa más chica: en la cancha se veían cabezones)
     'lod': 3,            # subdivisión del cuerpo y las piezas: 3 para fotos, 1 para el juego
     'peinados': None,    # lista de peinados: se arma uno por cada uno (pelo_<peinado>), para el juego
 }
@@ -115,7 +116,7 @@ def bbox(obj):
     ev.to_mesh_clear()
     return Vector([min(p[i] for p in ps) for i in range(3)]), Vector([max(p[i] for p in ps) for i in range(3)]), ps
 
-HEAD_K = 1.07  # cabeza un poco más grande que el cuerpo, estilo juguete
+HEAD_K = 1.07 * CFG['cabeza']  # cabeza un poco más grande que el cuerpo, estilo juguete
 # Cabeza más cuadrada (casi tan alta como ancha) y cuello más corto: crece hacia arriba desde la barbilla.
 hmn0, hmx0, _ = bbox(head)
 pivot = Vector(((hmn0.x + hmx0.x) / 2, (hmn0.y + hmx0.y) / 2, hmn0.z))
@@ -458,7 +459,7 @@ number('numero_short', legs, CX - 0.34, -0.75, 0.14)
 # por peinado: separación, radio y despegue de las bolitas; mechones = óvalos largos peinados hacia atrás
 HAIR = {
     'mechones': dict(sep=0.08, r=(0.14, 0.16), off=(0.0, 0.025), front=0.86, side=0.68, tuft=True),
-    'rizado': dict(sep=0.085, r=(0.15, 0.2), off=(0.03, 0.08), front=0.86, side=0.68, tuft=False),
+    'rizado': dict(sep=0.085, r=(0.14, 0.17), off=(0.02, 0.05), front=0.86, side=0.68, tuft=False),
     'corto': dict(sep=0.08, r=(0.11, 0.13), off=(-0.01, 0.01), front=0.9, side=0.72, tuft=False),
     'rapado': dict(sep=0.07, r=(0.09, 0.1), off=(-0.03, -0.02), front=0.92, side=0.74, tuft=False),
 }

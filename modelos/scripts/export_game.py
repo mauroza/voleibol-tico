@@ -23,7 +23,7 @@ SLOTS = ['piel', 'camiseta', 'panel', 'ribete', 'pantaloneta', 'franja', 'medias
 BONES = ['hips', 'spine', 'neck', 'shoulderL', 'elbowL', 'shoulderR', 'elbowR', 'hipL', 'kneeL', 'hipR', 'kneeR']
 BI = {n: i for i, n in enumerate(BONES)}
 # triángulos máximos por pieza (el resto se simplifica)
-BUDGET = {'pelo_': 2200, 'cuerpo': 2600, 'piernas': 1900, 'cabeza': 900, 'boca': 120, 'ceja_': 160, 'ojo_': 200,
+BUDGET = {'pelo_': 3000, 'cuerpo': 2600, 'piernas': 1900, 'cabeza': 900, 'boca': 120, 'ceja_': 160, 'ojo_': 200,
           'tenis_': 500, 'suela_': 300, 'franja_': 60, 'mano_': 190, 'pulgar_': 90}
 
 
@@ -96,10 +96,10 @@ def scalp(c, n):
     rel = (c.z - HEAD_Z0) / HEAD_H
     front = -n.y  # el frente mira a -y
     if front > 0.5:
-        return rel > 0.95
+        return rel > 0.9
     if front < -0.45:
-        return rel > 0.32
-    return rel > 0.8
+        return rel > 0.26
+    return rel > 0.7
 
 
 pos, nrm, slot, sidx, swt = [], [], [], [], []

@@ -135,18 +135,26 @@ export class CameraDirector {
         targetPos.set(-toward * Math.max(10.5, depth + 5), 7.4 + Math.max(0, depth - 3) * 0.7, u.z * 0.35);
         targetLook.set(-toward * Math.max(1.4, depth * 0.45), 0.4, u.z * 0.3);
       } else if (d.kind === 'serve') {
-        // Saque: detrás del sacador y a media altura, con él en la parte de abajo del cuadro (de cuerpo entero) y el
-        // campo rival arriba, por encima de la red. Antes la cámara quedaba casi encima de él y no se lo veía sacar.
-        // En el saque en salto el sacador está muy atrás y la pared deja poco espacio: la cámara baja y mira más hacia
-        // abajo para que sus pies queden en cuadro (antes quedaba debajo de la cámara, fuera de la imagen).
+        // Saque: alta, detrás del sacador. El campo rival entra entero, hasta su línea de fondo, y el sacador queda
+        // abajo en una esquina (no tapa el campo rival ni queda bajo la barra de fuerza).
+        // En el saque en salto el sacador está muy atrás y la pared deja poco espacio: la cámara baja.
         const wall = TUNING.hall.wallX - 0.6;
         const cx = Math.max(-wall, Math.min(wall, u.x - toward * 5.2));
         const back = Math.max(1.5, Math.abs(cx - u.x));
-        const h = Math.max(3.1, Math.min(5.6, back * 0.85 + 0.6));
+        // Alta: desde abajo el campo rival se veía aplastado contra el borde de arriba.
+        const h = Math.max(6, Math.min(9.5, back * 1.5 + 1.5));
+        // Entre los pies del sacador y el fondo del campo rival; si no entran los dos, manda el campo rival (su línea de
+        // fondo queda debajo del marcador).
         const half = (this.camera.fov * Math.PI) / 360;
-        const pitch = Math.max(Math.atan2(h, 24), Math.atan2(h, back) - half * 0.72);
-        targetPos.set(cx, h, u.z * 0.8);
-        targetLook.set(cx + toward * (h / Math.tan(pitch)), 0, u.z * 0.25);
+        const toServer = Math.atan2(h, back) + 0.06;
+        const toFar = Math.atan2(h, back + Math.abs(u.x) + COURT.halfLength + 1);
+        const pitch = Math.min((toServer + toFar) / 2, toFar + half * 0.72);
+        // Corrida hacia el centro de la cancha y mirando al centro del campo rival: la cancha queda en el medio del
+        // cuadro y el sacador abajo en una esquina.
+        const aside = -(u.z >= 0 ? 1 : -1) * 3.2;
+        const camZ = u.z + aside;
+        targetPos.set(cx, h, camZ);
+        targetLook.set(cx + toward * (h / Math.tan(pitch)), 0, camZ * 0.3);
       } else {
         // Remate (y pase): detrás del que golpea, que queda siempre abajo en el centro del cuadro.
         targetPos.set(u.x - toward * 4.6, 5.2, u.z * 0.85);

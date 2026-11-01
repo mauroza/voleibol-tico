@@ -20,7 +20,7 @@ import { ReplayBuffer, ReplayPolicy } from './replay';
 import { TUNING } from '../sim/tuning';
 import { TEMPO_LABELS, TEMPO_TIME } from '../sim/actions';
 import { meterOf, powerZone, type Power } from '../sim/decision';
-import { toon } from './toon';
+import { OUTLINE, toon } from './toon';
 
 /**
  * Pelota de vóley: paneles curvos amarillos y azules con costuras finas (textura equirectangular dibujada en canvas).
@@ -32,39 +32,43 @@ const BODY_GAP = 0.52;
 const AIM_DOTS = 22;
 const BALL_DRAW_RADIUS = COURT.ballRadius * 1.6;
 
-function ballTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#f6f3e6';
-  g.fillRect(0, 0, 512, 256);
-  const bands = ['#ffcf2e', '#1f5fbf', '#f6f3e6'];
-  // Tres grupos de paneles, cada uno con tres franjas onduladas.
-  for (let group = 0; group < 3; group++) {
-    const x0 = (group * 512) / 3;
-    for (let b = 0; b < 3; b++) {
-      g.fillStyle = bands[(b + group) % 3];
-      g.beginPath();
-      for (let y = 0; y <= 256; y += 4) {
-        const wave = Math.sin((y / 256) * Math.PI * 2 + group) * 14;
-        g.lineTo(x0 + b * 56 + wave, y);
-      }
-      for (let y = 256; y >= 0; y -= 4) {
-        const wave = Math.sin((y / 256) * Math.PI * 2 + group) * 14;
-        g.lineTo(x0 + (b + 1) * 56 + wave, y);
-      }
-      g.closePath();
-      g.fill();
-      g.strokeStyle = '#2b2b2b55';
-      g.lineWidth = 2;
-      g.stroke();
-    }
+/**
+ * Pelota de voleibol de verdad en 3D: los paneles se pintan en la propia esfera (antes era una imagen pegada que se
+ * estiraba en los polos y se veía plana). Como una pelota de cuero: seis caras de cubo "infladas", cada una con tres
+ * franjas, y las franjas de caras vecinas cruzadas (x corta por z, y por x, z por y). Costuras finas oscuras.
+ */
+function ballGeometry(radius: number): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(1, 18).toNonIndexed();
+  const pos = g.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const yellow = new THREE.Color('#ffcf2e');
+  const blue = new THREE.Color('#1f5fbf');
+  const white = new THREE.Color('#f6f3e6');
+  const seam = new THREE.Color('#3a3a44');
+  // Franjas de cada cara (según el eje dominante): amarillo-azul-amarillo, azul-blanco-azul, blanco-amarillo-blanco.
+  const strips = [[yellow, blue, yellow], [blue, white, blue], [white, yellow, white]];
+  const c = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  for (let f = 0; f < pos.count; f += 3) {
+    c.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) c.add(v.fromBufferAttribute(pos, f + k));
+    c.normalize();
+    const a = [Math.abs(c.x), Math.abs(c.y), Math.abs(c.z)];
+    const axis = a[0] >= a[1] && a[0] >= a[2] ? 0 : a[1] >= a[2] ? 1 : 2;
+    // Coordenada a lo ancho de la cara (-1..1) que separa las tres franjas.
+    const across = [c.z, c.x, c.y][axis] / a[axis];
+    const strip = Math.min(2, Math.floor((across + 1) * 1.5));
+    const edge = Math.min(Math.abs(across + 1 / 3), Math.abs(across - 1 / 3), 1 - Math.max(...a.filter((_, i) => i !== axis)) / a[axis]);
+    const col = edge < 0.035 ? seam : strips[axis][strip];
+    for (let k = 0; k < 3; k++) col.toArray(colors, (f + k) * 3);
   }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
+  // Normales de esfera (suave), no las de cada triángulo.
+  const nrm = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) v.fromBufferAttribute(pos, i).normalize().toArray(nrm, i * 3);
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  g.scale(radius, radius, radius);
+  return g;
 }
 
 /** Un cuadro de la malla de la red (10 cm): hilo oscuro sobre fondo transparente. */
@@ -246,7 +250,10 @@ export class MatchView {
     this.scene.add(this.arena.group);
     this.buildCourt();
     this.buildPlayers();
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_DRAW_RADIUS, 32, 20), toon('#ffffff', ballTexture()));
+    const ballGeo = ballGeometry(BALL_DRAW_RADIUS);
+    this.ball = new THREE.Mesh(ballGeo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toon('#ffffff').gradientMap }));
+    // Contorno fino, como los jugadores: la pelota se despega del piso y de la tribuna.
+    this.ball.add(new THREE.Mesh(ballGeo, OUTLINE));
     this.ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.18, 20),
       new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 }),
@@ -952,6 +959,14 @@ export class MatchView {
       const i = p * stride + 2;
       const d = Math.atan2(Math.sin(b[i] - a[i]), Math.cos(b[i] - a[i]));
       out[i] = a[i] + d * k;
+      // Articulaciones: q y −q son el mismo giro. Si los dos cuadros quedaron con signos opuestos (al apuntar el brazo
+      // a la pelota), la mezcla directa pasaba por cero y en la repetición el jugador daba una vuelta en el aire.
+      for (let j = 0; j < JOINTS.length; j++) {
+        const q = p * stride + 5 + j * 4;
+        const dot = a[q] * b[q] + a[q + 1] * b[q + 1] + a[q + 2] * b[q + 2] + a[q + 3] * b[q + 3];
+        if (dot >= 0) continue;
+        for (let c = 0; c < 4; c++) out[q + c] = a[q + c] + (-b[q + c] - a[q + c]) * k;
+      }
     }
   }
 

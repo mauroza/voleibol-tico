@@ -84,6 +84,9 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
 
   let rigs: Rig[] = [];
+  // Solo en desarrollo: cámara a mano desde la consola (para revisar detalles de cerca).
+  let devCam: number[] | null = null;
+  if (import.meta.env.DEV) Object.assign(window, { __lab: { cam: (c: number[] | null) => { devCam = c; } } });
   const build = () => {
     for (const r of rigs) {
       turntable.remove(r.root);
@@ -158,10 +161,12 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
     // Cerca: de frente a la altura del pecho. Partido: alto y lejos, como la cámara de juego.
     const fit = Math.max(1, 1.25 / camera.aspect);
     // Detalle: a cuatro metros del de la izquierda (que deja de girar con los demás, para verlo de frente).
-    if (cam === 'far') camera.position.set(0, 7.4, 15.2);
+    if (devCam) camera.position.set(devCam[0], devCam[1], devCam[2]);
+    else if (cam === 'far') camera.position.set(0, 7.4, 15.2);
     else if (cam === 'detail') camera.position.set(-1.05, 1.25, 4.3 * fit);
     else camera.position.set(0, 1.5, 6.2 * fit);
-    camera.lookAt(cam === 'detail' ? -1.05 : 0, cam === 'far' ? 0.6 : cam === 'detail' ? 1.15 : 1.05, 0);
+    if (devCam) camera.lookAt(devCam[3], devCam[4], devCam[5]);
+    else camera.lookAt(cam === 'detail' ? -1.05 : 0, cam === 'far' ? 0.6 : cam === 'detail' ? 1.15 : 1.05, 0);
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   };

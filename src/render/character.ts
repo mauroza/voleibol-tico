@@ -176,7 +176,11 @@ interface Kit {
   hinge: THREE.BufferGeometry | null;
   /** Puño (cuerpo de bloques): dedos doblados y pulgar sobre la palma. */
   fingers: THREE.BufferGeometry | null;
+  tip: THREE.BufferGeometry | null;
   thumb: THREE.BufferGeometry | null;
+  /** Brazo y pierna de una sola pieza (cuerpo de bloques). */
+  arm: THREE.BufferGeometry | null;
+  leg: THREE.BufferGeometry | null;
   /** Pelo de la cabeza cúbica: tapa arriba y nuca (en vez del casquete redondo). */
   hairCap: THREE.BufferGeometry | null;
   hairBack: THREE.BufferGeometry | null;
@@ -256,7 +260,10 @@ function kitFor(st: CharStyle): Kit {
     hairBack: null,
     hinge: null,
     fingers: null,
+    tip: null,
     thumb: null,
+    arm: null,
+    leg: null,
   };
   if (st.body === 'bloque') Object.assign(kit, blockKit(st, d));
   // El Probador crea una variante por cada valor del deslizador: se guardan solo las últimas.
@@ -270,11 +277,27 @@ function kitFor(st: CharStyle): Kit {
  * caja queda casi cuadrada; con `r` grande, casi una esfera. Unos 400 vértices (una caja redondeada de three.js con
  * la misma suavidad usa más de mil). Normales exactas de la forma, sin costuras.
  */
-function roundedBar(w: number, len: number, depth: number, r: number, d: number): THREE.BufferGeometry {
+function roundedBar(w: number, len: number, depth: number, r: number, d: number, taper = 1): THREE.BufferGeometry {
   // Cápsula con la sección redondeada-cuadrada: lados rectos a lo largo y solo las puntas redondas. Brazos y piernas de
-  // bloque (antes eran supercuadros enteros: gordos al medio y finos en las puntas, como salchichas).
+  // bloque (antes eran supercuadros enteros: gordos al medio y finos en las puntas, como salchichas). Lleva anillos
+  // cada 3 cm a lo largo: el brazo entero es una sola pieza que se dobla en el codo. `taper`: ancho abajo / arriba.
   const rr = Math.min(w, depth) / 2;
-  const g = new THREE.CapsuleGeometry(rr, Math.max(0.001, len - 2 * rr), 2 + d, 10 + d * 4);
+  const straight = Math.max(0.001, len - 2 * rr);
+  const profile: THREE.Vector2[] = [];
+  const capN = 3 + d;
+  for (let k = 0; k <= capN; k++) {
+    const a = -Math.PI / 2 + (k / capN) * (Math.PI / 2);
+    profile.push(new THREE.Vector2(rr * Math.cos(a), -straight / 2 + rr * Math.sin(a)));
+  }
+  const rings = Math.max(1, Math.ceil(straight / 0.03));
+  for (let k = 1; k < rings; k++) profile.push(new THREE.Vector2(rr, -straight / 2 + (k / rings) * straight));
+  for (let k = 0; k <= capN; k++) {
+    const a = (k / capN) * (Math.PI / 2);
+    profile.push(new THREE.Vector2(rr * Math.cos(a), straight / 2 + rr * Math.sin(a)));
+  }
+  profile[0].x = 0;
+  profile[profile.length - 1].x = 0;
+  const g = new THREE.LatheGeometry(profile, 10 + d * 4);
   const e = THREE.MathUtils.clamp((2 * r) / Math.min(w, depth), 0.12, 1);
   const sx = w / 2 / rr;
   const sz = depth / 2 / rr;
@@ -303,6 +326,13 @@ function roundedBar(w: number, len: number, depth: number, r: number, d: number)
     gz = (gz / gl) * flat;
     const len3 = Math.hypot(gx, ny, gz) || 1;
     nrm.setXYZ(i, gx / len3, ny / len3, gz / len3);
+  }
+  if (taper !== 1) {
+    for (let i = 0; i < pos.count; i++) {
+      const k = 1 + (taper - 1) * (0.5 - pos.getY(i) / len);
+      pos.setX(i, pos.getX(i) * k);
+      pos.setZ(i, pos.getZ(i) * k);
+    }
   }
   return g;
 }
@@ -338,7 +368,7 @@ function roundedBlock(w: number, h: number, depth: number, r: number, d: number)
  */
 function blockKit(st: CharStyle, d: number): Partial<Kit> {
   const box = (w: number, h: number, depth: number, r: number) => roundedBlock(w, h, depth, r, d);
-  const bar = (w: number, len: number, depth: number, r: number) => roundedBar(w, len, depth, r, d);
+  const bar = (w: number, len: number, depth: number, r: number, taper = 1) => roundedBar(w, len, depth, r, d, taper);
   const t = st.limbs;
   const s = st.shoulders;
   return {
@@ -346,16 +376,24 @@ function blockKit(st: CharStyle, d: number): Partial<Kit> {
     torso: box(0.36 * s, 0.66, 0.25, 0.08),
     chestZ: 0.125 * 0.97,
     backZ: -0.125 * 0.97,
-    shoulderX: 0.2 * s,
+    // El brazo cuelga separado del tronco y de la pierna (como en el dibujo): borde del tronco + medio brazo + aire.
+    shoulderX: 0.18 * s + 0.06 * t + 0.03,
     pelvis: box(0.33, 0.2, 0.25, 0.06),
     // Brazo y antebrazo del mismo grosor y más largos que el hueso: se meten uno en el otro en el codo (y el antebrazo en
     // el puño), así el brazo estirado parece un solo cilindro. La bisagra rellena el codo cuando se dobla.
+    // Brazo y pierna enteros, de una sola pieza (se doblan en el codo y la rodilla): sin uniones ni rayas.
+    arm: bar(0.108 * t, DIMS.upperArm + DIMS.forearm + 0.06, 0.108 * t, 0.04, 1.12),
+    leg: bar(0.15 * t, DIMS.thigh + DIMS.shin + 0.04, 0.15 * t, 0.05, 0.92),
     upperArm: bar(0.115 * t, DIMS.upperArm + 0.1, 0.115 * t, 0.04),
     forearm: bar(0.112 * t, DIMS.forearm + 0.08, 0.112 * t, 0.04),
-    // Puño más ancho que el antebrazo: palma, un rollo de dedos doblados abajo y adelante, y el pulgar encima.
-    hand: box(0.125 * t, 0.115, 0.125 * t, 0.05),
-    fingers: bar(0.07 * t, 0.13 * t, 0.075 * t, 0.034),
-    thumb: bar(0.045 * t, 0.085, 0.05 * t, 0.022),
+    // Mano como mitón: palma alta que sigue al antebrazo, dedos doblados abajo hacia adentro (con la punta que sube) y el
+    // pulgar arriba; entre la punta de los dedos y el pulgar queda la muesca del puño cerrado.
+    // La mano sigue al antebrazo con el mismo ancho y termina redonda abajo (el borde de afuera baja y se curva hacia
+    // adentro, como una J); los dedos doblados cruzan por abajo y su punta asoma del lado del cuerpo, con la muesca encima.
+    hand: bar(0.114 * t, 0.27, 0.114 * t, 0.045, 1.07),
+    fingers: box(0.095 * t, 0.058, 0.108 * t, 0.026),
+    tip: box(0.046 * t, 0.062, 0.098 * t, 0.021),
+    thumb: null,
     thigh: bar(0.155 * t, DIMS.thigh + 0.08, 0.155 * t, 0.05),
     shin: bar(0.14 * t, DIMS.shin + 0.06, 0.14 * t, 0.045),
     hinge: box(0.112 * t, 0.112 * t, 0.112 * t, 0.056 * t),
@@ -485,7 +523,7 @@ const PAD = '#22252b';
 const SOCK = '#f2f2f2';
 
 /** Piezas de cada articulación del personaje que se está armando (se unen al final en una sola malla). */
-let pending: { bone: THREE.Bone; parts: Part[] }[] = [];
+let pending: { bone: THREE.Bone; parts: Part[]; blend?: { bone: THREE.Bone; at: number } }[] = [];
 
 function joint(parent: THREE.Object3D, x: number, y: number, z: number): THREE.Bone {
   const j = new THREE.Bone();
@@ -500,24 +538,50 @@ function attach(parent: THREE.Bone, parts: Part[]): void {
 }
 
 /**
+ * Pieza continua entre dos articulaciones (brazo de hombro a muñeca): arriba de `at` (y local del primer hueso) la
+ * mueve el primero, abajo el segundo, y en una franja alrededor del codo se reparte suave entre los dos.
+ */
+function attachBlend(parent: THREE.Bone, parts: Part[], next: THREE.Bone, at: number): void {
+  pending.push({ bone: parent, parts, blend: { bone: next, at } });
+}
+
+/** Ancho (m) de la franja del codo o la rodilla donde el peso pasa de un hueso al otro. */
+const BLEND_BAND = 0.07;
+
+/**
  * Todo el cuerpo en una sola malla con esqueleto (cada articulación es un hueso) y su contorno: 2 llamadas de dibujo
  * por personaje en vez de ~24. Muchas menos llamadas = sin tirones, también en el teléfono.
  */
 function skinCharacter(root: THREE.Object3D): void {
   root.updateMatrixWorld(true);
-  const bones = [...new Set(pending.map((p) => p.bone))];
+  const bones = [...new Set(pending.flatMap((p) => (p.blend ? [p.bone, p.blend.bone] : [p.bone])))];
   const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
-  const pieces = pending.map((p) => {
-    const geometry = mergeParts(p.parts);
+  // El contorno se arma sin los detalles internos (dedos, pulgar): si no, su contorno raya la mano por dentro.
+  const piecesFor = (forOutline: boolean) => pending.flatMap((p) => {
+    const parts = forOutline ? p.parts.filter((q) => q.outline !== false) : p.parts;
+    if (!parts.length) return [];
+    const geometry = mergeParts(parts);
+    let weights: Float32Array | undefined;
+    if (p.blend) {
+      const pos = geometry.attributes.position;
+      weights = new Float32Array(pos.count);
+      for (let i = 0; i < pos.count; i++) {
+        const t = THREE.MathUtils.clamp((p.blend.at + BLEND_BAND / 2 - pos.getY(i)) / BLEND_BAND, 0, 1);
+        weights[i] = t * t * (3 - 2 * t);
+      }
+    }
     geometry.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, p.bone.matrixWorld));
-    return { geometry, bone: bones.indexOf(p.bone) };
+    return [{ geometry, bone: bones.indexOf(p.bone), ...(p.blend ? { bone2: bones.indexOf(p.blend.bone), weights } : {}) }];
   });
+  const meshPieces = piecesFor(false);
+  const outlinePieces = piecesFor(true);
   pending = [];
-  const geometry = mergeSkinned(pieces);
-  for (const p of pieces) p.geometry.dispose();
+  const geometry = mergeSkinned(meshPieces);
+  const outlineGeometry = mergeSkinned(outlinePieces);
+  for (const p of [...meshPieces, ...outlinePieces]) p.geometry.dispose();
   const skeleton = new THREE.Skeleton(bones);
   const mesh = new THREE.SkinnedMesh(geometry, toonVertexColors());
-  const outline = new THREE.SkinnedMesh(geometry, OUTLINE_SKINNED);
+  const outline = new THREE.SkinnedMesh(outlineGeometry, OUTLINE_SKINNED);
   root.add(mesh, outline);
   root.updateMatrixWorld(true);
   mesh.bind(skeleton);
@@ -593,28 +657,35 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     const sleeve = side === 1 ? look.armSleeve.L : look.armSleeve.R;
     const shoulder = joint(spine, side * kit.shoulderX, 0.46, 0);
     const upper: Part[] = [
-      { geometry: kit.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) },
+      ...(kit.arm ? [] : [{ geometry: kit.upperArm, color: skin, matrix: placed(0, -DIMS.upperArm / 2, 0) }]),
       { geometry: kit.sleeve, color: shirt, matrix: placed(0, -0.06, 0) },
-      { geometry: kit.shoulderCap, color: shirt, matrix: placed(0, 0, 0) },
+      // Hombrera corrida hacia el cuerpo: une la manga con el tronco aunque el brazo cuelgue más afuera.
+      { geometry: kit.shoulderCap, color: shirt, matrix: placed(block ? -side * 0.03 : 0, 0, 0, [0, 0, 0], block ? [1.15, 1, 1] : [1, 1, 1]) },
     ];
     // Ribete claro en el borde de la manga (como las camisetas del dibujo).
     if (kit.trim) upper.push({ geometry: kit.trim, color: trim, matrix: placed(0, -0.14, 0) });
     if (sleeve) upper.push({ geometry: kit.armSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.upperArm / 2 - 0.03, 0) });
     attach(shoulder, upper);
     const elbow = joint(shoulder, 0, -DIMS.upperArm, 0);
-    const lower: Part[] = [{ geometry: kit.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
+    // Brazo entero (bloques): de dentro del hombro hasta dentro de la palma, una sola pieza que se dobla en el codo.
+    if (kit.arm) attachBlend(shoulder, [{ geometry: kit.arm, color: skin, matrix: placed(0, -(DIMS.upperArm + DIMS.forearm) / 2 + 0.005, 0) }], elbow, -DIMS.upperArm);
+    const lower: Part[] = kit.arm ? [] : [{ geometry: kit.forearm, color: skin, matrix: placed(0, -DIMS.forearm / 2, 0) }];
     // La manga llega a la muñeca: la mano queda descubierta.
     if (sleeve) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
-    if (kit.hinge) lower.push({ geometry: kit.hinge, color: skin, matrix: placed(0, 0, 0) });
-    if (st.hands && block && kit.fingers && kit.thumb) {
-      // Puño: la palma mira hacia el cuerpo; los dedos se doblan hacia adentro y adelante, el pulgar los cierra arriba.
+    if (st.hands && block && kit.fingers && kit.tip) {
+      // Mitón: la palma (mira hacia el cuerpo) sale de la muñeca; abajo los dedos doblados hacia adentro y su punta que
+      // sube; arriba de la muesca, el pulgar. Dedos y pulgar sin contorno: el pliegue se ve por la sombra, sin rayas.
       const f = st.fist;
       const inner = -side;
-      const y = -DIMS.forearm - 0.045 * f;
+      const w = -DIMS.forearm;
+      const at = (x: number, y: number, z: number) => [inner * x * f, w + y * f, z * f] as const;
+      const part = (geometry: THREE.BufferGeometry, [x, y, z]: readonly [number, number, number], rot: [number, number, number], outline = true): Part =>
+        ({ geometry, color: skin, matrix: placed(x, y, z, rot, [f, f, f]), outline });
+      // Toda la mano sin contorno: así no queda una raya donde la palma sale del antebrazo.
       lower.push(
-        { geometry: kit.hand, color: skin, matrix: placed(0, y, 0.005, [0, 0, 0], [f, f, f]) },
-        { geometry: kit.fingers, color: skin, matrix: placed(inner * 0.012 * f, y - 0.035 * f, 0.035 * f, [0, 0, Math.PI / 2], [f, f, f]) },
-        { geometry: kit.thumb, color: skin, matrix: placed(inner * 0.045 * f, y + 0.012 * f, 0.045 * f, [0.5, 0, inner * 0.35], [f, f, f]) },
+        part(kit.hand, at(0, -0.02, 0.002), [0, 0, 0], false),
+        part(kit.fingers, at(0.038, -0.125, 0.004), [0, 0, inner * 0.4], false),
+        part(kit.tip, at(0.084, -0.104, 0.004), [0, 0, inner * -0.2], false),
       );
     } else if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
     attach(elbow, lower);
@@ -627,13 +698,14 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     const sleeve = side === 1 ? look.legSleeve.L : look.legSleeve.R;
     const hip = joint(hips, side * 0.1, -0.02, 0);
     const upper: Part[] = [
-      { geometry: kit.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) },
+      ...(kit.leg ? [] : [{ geometry: kit.thigh, color: skin, matrix: placed(0, -DIMS.thigh / 2, 0) }]),
       { geometry: kit.shortsLeg, color: shorts, matrix: placed(0, -0.09, 0) },
     ];
     if (sleeve) upper.push({ geometry: kit.legSleeveUpper, color: look.sleeve, matrix: placed(0, -DIMS.thigh + 0.13, 0) });
     attach(hip, upper);
     const knee = joint(hip, 0, -DIMS.thigh, 0);
-    const lower: Part[] = [{ geometry: kit.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
+    if (kit.leg) attachBlend(hip, [{ geometry: kit.leg, color: skin, matrix: placed(0, -(DIMS.thigh + DIMS.shin) / 2 + 0.01, 0) }], knee, -DIMS.thigh);
+    const lower: Part[] = kit.leg ? [] : [{ geometry: kit.shin, color: skin, matrix: placed(0, -DIMS.shin / 2, 0) }];
     if (sleeve) lower.push({ geometry: kit.legSleeveLower, color: look.sleeve, matrix: placed(0, -DIMS.shin / 2 + 0.02, 0) });
     attach(knee, [
       ...lower,

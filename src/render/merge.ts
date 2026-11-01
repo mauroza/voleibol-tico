@@ -5,6 +5,8 @@ export interface Part {
   color: THREE.ColorRepresentation;
   /** Transformación local de la pieza respecto de su articulación. */
   matrix: THREE.Matrix4;
+  /** false: la pieza no lleva contorno negro (detalles dentro de la silueta, como los dedos: si no, se ven rayas). */
+  outline?: boolean;
 }
 
 /**
@@ -62,7 +64,7 @@ export function mergeParts(parts: readonly Part[]): THREE.BufferGeometry {
  * Une las geometrías de cada articulación (ya en el espacio del personaje) en una sola, con el hueso de cada vértice
  * (`skinIndex`, peso 1): todo el personaje se dibuja en una sola llamada y los huesos lo deforman en la GPU.
  */
-export function mergeSkinned(pieces: readonly { geometry: THREE.BufferGeometry; bone: number }[]): THREE.BufferGeometry {
+export function mergeSkinned(pieces: readonly { geometry: THREE.BufferGeometry; bone: number; bone2?: number; weights?: Float32Array }[]): THREE.BufferGeometry {
   let vertices = 0;
   let indices = 0;
   for (const p of pieces) {
@@ -88,8 +90,14 @@ export function mergeSkinned(pieces: readonly { geometry: THREE.BufferGeometry; 
     color.set(g.attributes.color.array as Float32Array, vo * 3);
     uv.set(g.attributes.uv.array as Float32Array, vo * 2);
     for (let i = 0; i < n; i++) {
+      // Pieza continua entre dos huesos (brazo, pierna): cada vértice se reparte según su peso hacia el segundo.
+      const w = p.weights && p.bone2 !== undefined ? p.weights[i] : 0;
       skinIndex[(vo + i) * 4] = p.bone;
-      skinWeight[(vo + i) * 4] = 1;
+      skinWeight[(vo + i) * 4] = 1 - w;
+      if (w > 0) {
+        skinIndex[(vo + i) * 4 + 1] = p.bone2!;
+        skinWeight[(vo + i) * 4 + 1] = w;
+      }
     }
     const src = g.index!;
     for (let i = 0; i < src.count; i++) index[io + i] = src.getX(i) + vo;

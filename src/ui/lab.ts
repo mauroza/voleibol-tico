@@ -23,7 +23,8 @@ const LABELS: Partial<Record<keyof CharStyle, string>> = {
   detail: 'Suavidad de las curvas', head: 'Tamaño de la cabeza', shoulders: 'Ancho de hombros', waist: 'Cintura',
   limbs: 'Grosor de brazos y piernas', eyes: 'Tamaño de los ojos', tones: 'Tonos de sombra', soft: 'Sombra difuminada',
   shadow: 'Claridad de la sombra', outline: 'Contorno negro', rim: 'Luz de borde', brows: 'Cejas (− alegre · + serio)',
-  hairVolume: 'Volumen del pelo', shoes: 'Tamaño de zapatillas',
+  hairVolume: 'Volumen del pelo', shoes: 'Tamaño de zapatillas', fist: 'Tamaño del puño', warmth: 'Sombra cálida',
+  vivid: 'Viveza de colores',
 };
 
 const HAIR_LABELS: Record<HairStyle, string> = { variado: 'Variado', casquete: 'Corto', puntas: 'Puntas anime', mechones: 'Mechones', cola: 'Cola' };
@@ -156,9 +157,9 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
     }
     // Cerca: de frente a la altura del pecho. Partido: alto y lejos, como la cámara de juego.
     const fit = Math.max(1, 1.25 / camera.aspect);
-    // Detalle: a tres metros del de la izquierda (que deja de girar con los demás, para verlo de frente).
+    // Detalle: a cuatro metros del de la izquierda (que deja de girar con los demás, para verlo de frente).
     if (cam === 'far') camera.position.set(0, 7.4, 15.2);
-    else if (cam === 'detail') camera.position.set(-1.05, 1.3, 3.0 * fit);
+    else if (cam === 'detail') camera.position.set(-1.05, 1.25, 4.3 * fit);
     else camera.position.set(0, 1.5, 6.2 * fit);
     camera.lookAt(cam === 'detail' ? -1.05 : 0, cam === 'far' ? 0.6 : cam === 'detail' ? 1.15 : 1.05, 0);
     renderer.render(scene, camera);

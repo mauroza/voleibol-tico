@@ -30,12 +30,13 @@ let vertexToon: THREE.MeshToonMaterial | null = null;
 /** Rampa de tonos propia de los jugadores (la del Probador) y la luz de borde. */
 let charGradient: THREE.DataTexture | null = null;
 const rimUniform = { value: 0 };
+const vividUniform = { value: 1 };
 
 /**
  * Rampa de `tones` tonos desde `shadow` hasta 1; `soft` difumina el paso entre uno y otro (0 = bandas cortadas).
  * 64 muestras con filtro lineal: con soft 0 se ve igual que las bandas de antes.
  */
-function rampData(tones: number, soft: number, shadow: number): Uint8Array<ArrayBuffer> {
+function rampData(tones: number, soft: number, shadow: number, warmth: number): Uint8Array<ArrayBuffer> {
   const n = 64;
   const data = new Uint8Array(n * 4);
   const steps = Math.max(2, Math.round(tones));
@@ -47,15 +48,19 @@ function rampData(tones: number, soft: number, shadow: number): Uint8Array<Array
     const w = Math.max(1e-3, soft * 0.5);
     const t = band < steps - 1 ? THREE.MathUtils.smoothstep(f - band, 1 - w, 1) : 0;
     const level = Math.min(steps - 1, band + t) / (steps - 1);
-    const v = Math.round(255 * (shadow + (1 - shadow) * level));
-    data.set([v, v, v, 255], i * 4);
+    const v = shadow + (1 - shadow) * level;
+    // Sombra cálida: en la parte oscura baja más el azul y el verde que el rojo (la piel se ve durazno, no gris).
+    const dark = (1 - level) * warmth;
+    const c = (k: number) => Math.round(255 * Math.min(1, v * (1 - dark * k)));
+    data.set([c(-0.06), c(0.12), c(0.3), 255], i * 4);
   }
   return data;
 }
 
 /** Aplica el sombreado del estilo de los jugadores: tonos, sombra, contorno y luz de borde. */
-export function applyCharShading(s: { tones: number; soft: number; shadow: number; outline: number; rim: number }): void {
-  const data = rampData(s.tones, s.soft, s.shadow);
+export function applyCharShading(s: { tones: number; soft: number; shadow: number; outline: number; rim: number; warmth?: number; vivid?: number }): void {
+  const data = rampData(s.tones, s.soft, s.shadow, s.warmth ?? 0);
+  vividUniform.value = s.vivid ?? 1;
   if (!charGradient) {
     charGradient = new THREE.DataTexture(data, 64, 1, THREE.RGBAFormat);
     charGradient.minFilter = THREE.LinearFilter;
@@ -77,10 +82,13 @@ export function toonVertexColors(): THREE.MeshToonMaterial {
   // Luz de borde: un brillo frío en el contorno de la silueta (donde la superficie se pone de canto a la cámara).
   vertexToon.onBeforeCompile = (shader) => {
     shader.uniforms.rimStrength = rimUniform;
-    shader.fragmentShader = `uniform float rimStrength;\n${shader.fragmentShader}`.replace(
+    shader.uniforms.vivid = vividUniform;
+    // Viveza: separa el color de su gris (el tono del pabellón apaga los colores; esto los devuelve).
+    shader.fragmentShader = `uniform float rimStrength;\nuniform float vivid;\n${shader.fragmentShader}`.replace(
       '#include <opaque_fragment>',
       `float rimF = 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0);
       outgoingLight += vec3(0.75, 0.85, 1.0) * rimStrength * smoothstep(0.55, 0.95, rimF) * 0.6;
+      outgoingLight = max(vec3(0.0), mix(vec3(dot(outgoingLight, vec3(0.299, 0.587, 0.114))), outgoingLight, vivid));
       #include <opaque_fragment>`,
     );
   };

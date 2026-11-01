@@ -174,6 +174,9 @@ interface Kit {
   trim: THREE.BufferGeometry | null;
   /** Bisagra del codo (cuerpo de bloques): rellena la unión cuando el brazo se dobla. */
   hinge: THREE.BufferGeometry | null;
+  /** Puño (cuerpo de bloques): dedos doblados y pulgar sobre la palma. */
+  fingers: THREE.BufferGeometry | null;
+  thumb: THREE.BufferGeometry | null;
   /** Pelo de la cabeza cúbica: tapa arriba y nuca (en vez del casquete redondo). */
   hairCap: THREE.BufferGeometry | null;
   hairBack: THREE.BufferGeometry | null;
@@ -252,6 +255,8 @@ function kitFor(st: CharStyle): Kit {
     hairCap: null,
     hairBack: null,
     hinge: null,
+    fingers: null,
+    thumb: null,
   };
   if (st.body === 'bloque') Object.assign(kit, blockKit(st, d));
   // El Probador crea una variante por cada valor del deslizador: se guardan solo las últimas.
@@ -347,7 +352,10 @@ function blockKit(st: CharStyle, d: number): Partial<Kit> {
     // el puño), así el brazo estirado parece un solo cilindro. La bisagra rellena el codo cuando se dobla.
     upperArm: bar(0.115 * t, DIMS.upperArm + 0.1, 0.115 * t, 0.04),
     forearm: bar(0.112 * t, DIMS.forearm + 0.08, 0.112 * t, 0.04),
-    hand: box(0.13 * t, 0.125, 0.12 * t, 0.045),
+    // Puño más ancho que el antebrazo: palma, un rollo de dedos doblados abajo y adelante, y el pulgar encima.
+    hand: box(0.125 * t, 0.115, 0.125 * t, 0.05),
+    fingers: bar(0.07 * t, 0.13 * t, 0.075 * t, 0.034),
+    thumb: bar(0.045 * t, 0.085, 0.05 * t, 0.022),
     thigh: bar(0.155 * t, DIMS.thigh + 0.08, 0.155 * t, 0.05),
     shin: bar(0.14 * t, DIMS.shin + 0.06, 0.14 * t, 0.045),
     hinge: box(0.112 * t, 0.112 * t, 0.112 * t, 0.056 * t),
@@ -598,7 +606,17 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     // La manga llega a la muñeca: la mano queda descubierta.
     if (sleeve) lower.push({ geometry: kit.armSleeveLower, color: look.sleeve, matrix: placed(0, -(DIMS.forearm - 0.1) / 2, 0) });
     if (kit.hinge) lower.push({ geometry: kit.hinge, color: skin, matrix: placed(0, 0, 0) });
-    if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
+    if (st.hands && block && kit.fingers && kit.thumb) {
+      // Puño: la palma mira hacia el cuerpo; los dedos se doblan hacia adentro y adelante, el pulgar los cierra arriba.
+      const f = st.fist;
+      const inner = -side;
+      const y = -DIMS.forearm - 0.045 * f;
+      lower.push(
+        { geometry: kit.hand, color: skin, matrix: placed(0, y, 0.005, [0, 0, 0], [f, f, f]) },
+        { geometry: kit.fingers, color: skin, matrix: placed(inner * 0.012 * f, y - 0.035 * f, 0.035 * f, [0, 0, Math.PI / 2], [f, f, f]) },
+        { geometry: kit.thumb, color: skin, matrix: placed(inner * 0.045 * f, y + 0.012 * f, 0.045 * f, [0.5, 0, inner * 0.35], [f, f, f]) },
+      );
+    } else if (st.hands) lower.push({ geometry: kit.hand, color: skin, matrix: block ? placed(0, -DIMS.forearm - 0.045, 0.005) : placed(0, -DIMS.forearm - 0.035, 0.005, [0, 0, 0], [0.85, 1.3, 0.62]) });
     attach(elbow, lower);
     return { shoulder, elbow };
   };

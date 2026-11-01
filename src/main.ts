@@ -31,10 +31,14 @@ import { LineupEditor } from './ui/lineup';
 import { Lockstep, leadForDelay } from './net/lockstep';
 import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
+import { labView } from './ui/lab';
 
 const ui = document.getElementById('hud')!;
 startClubSync();
-showMenu(ui).then(async (setup) => {
+// Editor de personajes: solo para quien diseña el juego (`?editor` o `#editor`); no aparece en el menú.
+const editor = new URLSearchParams(location.search).has('editor') || location.hash === '#editor';
+if (editor) openEditor();
+else showMenu(ui).then(async (setup) => {
   if (!setup.online) return start(setup);
   // Online: sala con código. El anfitrión elige los equipos; el invitado juega con el rival.
   const lobby = showLobby(ui);
@@ -51,6 +55,20 @@ showMenu(ui).then(async (setup) => {
     lobby.fail(err instanceof Error ? err.message : 'No se pudo conectar');
   }
 });
+
+/** Editor de personajes a pantalla completa. "Probar en un partido" arranca un amistoso con el borrador. */
+function openEditor(): void {
+  const shell = document.createElement('div');
+  shell.className = 'app-menu';
+  const home = () => {
+    location.href = location.pathname;
+  };
+  shell.append(labView(home, () => {
+    saveSetup({ team: -1, rival: 0, setsToWin: 1, difficulty: 'normal', mode: 'friendly' }, true);
+    home();
+  }));
+  ui.append(shell);
+}
 
 function start(setup: MatchSetup, online?: OnlineMatch): void {
   const deal = online?.deal;

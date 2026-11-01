@@ -338,6 +338,24 @@ function aimed(at: THREE.Vector3, dir: THREE.Vector3, s: number, stretch = 1): T
   return new THREE.Matrix4().compose(at, q, new THREE.Vector3(s, s * stretch, s));
 }
 
+/**
+ * Volumen del pelo: agranda cada mechón, punta o cola en su lugar. Las primeras `base` piezas (casquete, o tapa y
+ * nuca en la cabeza cúbica) quedan igual: siempre calzan en la cabeza.
+ */
+function bulk(parts: Part[], volume: number, base: number): Part[] {
+  if (Math.abs(volume - 1) < 1e-3) return parts;
+  const pos = new THREE.Vector3();
+  return parts.map((p, i) => {
+    if (i < base) return p;
+    pos.setFromMatrixPosition(p.matrix);
+    const m = new THREE.Matrix4().makeTranslation(pos.x, pos.y, pos.z)
+      .multiply(new THREE.Matrix4().makeScale(volume, volume, volume))
+      .multiply(new THREE.Matrix4().makeTranslation(-pos.x, -pos.y, -pos.z))
+      .multiply(p.matrix);
+    return { ...p, matrix: m };
+  });
+}
+
 /** Pelo: casquete y, según el peinado, puntas anime, mechones o cola. */
 function hairParts(kit: Kit, style: Exclude<HairStyle, 'variado'>, color: string, c: THREE.Vector3, h: number): Part[] {
   if (kit.hairCap && kit.hairBack) return blockHair(kit, style, color, c, h);
@@ -467,6 +485,7 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
   applyCharShading(st);
   const kit = kitFor(st);
   const { shirt, shorts, skin } = look;
+  const shoe = st.shoes;
   const trim = contrast(shirt) === '#ffffff' ? '#e9ecf2' : '#2a2e36';
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -508,13 +527,14 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
     if (st.eyeShine) head.push({ geometry: kit.shine, color: '#ffffff', matrix: placed(x + side * 0.006 * h * e, y + 0.009 * h * e, z + 0.011 * h, [0, 0, 0], [h * e, h * e, 0.6 * h]) });
     const [bx, by, bz] = face(side * 0.05, 0.068 + (e - 1) * 0.02, 0.118);
     // Bloque: cejas gruesas y serias (bajan hacia adentro), como en el dibujo.
-    if (block) head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by - 0.008 * h, bz + 0.018, [0, 0, side * 0.32], [h, h, h]) });
-    else head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by, bz, [0, 0, Math.PI / 2 - side * 0.12], [h, h, h]) });
+    // Cejas: positivo baja hacia adentro (serio), negativo sube hacia adentro (alegre o preocupado).
+    if (block) head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by - 0.008 * h, bz + 0.018, [0, 0, side * st.brows], [h, h, h]) });
+    else head.push({ geometry: kit.brow, color: FACE_INK, matrix: placed(bx, by, bz, [0, 0, Math.PI / 2 + side * st.brows], [h, h, h]) });
   }
   const [mx, my, mz] = face(0, -0.06, 0.13);
   if (st.body === 'bloque') head.push({ geometry: kit.mouth, color: '#5a2420', matrix: placed(mx, my - 0.005, mz + 0.012, [0, 0, 0], [h, h, h]) });
   else head.push({ geometry: kit.mouth, color: '#5a2420', matrix: placed(mx, my, mz, [0, 0, Math.PI / 2], [h, h, 0.6 * h]) });
-  if (look.hair) head.push(...hairParts(kit, hairOf(look, st), look.hair, c, h));
+  if (look.hair) head.push(...bulk(hairParts(kit, hairOf(look, st), look.hair, c, h), st.hairVolume, kit.hairBack ? 2 : 1));
   attach(neck, head);
 
   const arm = (side: 1 | -1) => {
@@ -558,11 +578,11 @@ export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
       { geometry: kit.kneePad, color: PAD, matrix: placed(0, -0.03, 0.006) },
       // Zapatilla: un poco más plana y larga que antes cuando el estilo es de atleta; de bloque, gruesa y con suela.
       block
-        ? { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.035, 0.055) }
-        : { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03, 0.06, [Math.PI / 2, 0, 0], athlete ? [1.05, 1.08, 0.82] : [1, 1, 1]) },
-      ...(kit.sole ? [{ geometry: kit.sole, color: PAD, matrix: placed(0, -DIMS.shin - DIMS.foot + 0.015, 0.055) }] : []),
+        ? { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.035 + (shoe - 1) * 0.05, 0.055 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, shoe, shoe]) }
+        : { geometry: kit.foot, color: SHOE, matrix: placed(0, -DIMS.shin - DIMS.foot / 2 + 0.03 + (shoe - 1) * 0.03, 0.06 + (shoe - 1) * 0.07, [Math.PI / 2, 0, 0], (athlete ? [1.05, 1.08, 0.82] : [1, 1, 1]).map((v) => v * shoe) as [number, number, number]) },
+      ...(kit.sole ? [{ geometry: kit.sole, color: PAD, matrix: placed(0, -DIMS.shin - DIMS.foot + 0.015, 0.055 + (shoe - 1) * 0.07, [0, 0, 0], [shoe, 1, shoe]) }] : []),
       // Media blanca entre la rodillera y la zapatilla.
-      ...(kit.sock ? [{ geometry: kit.sock, color: SOCK, matrix: placed(0, -DIMS.shin + 0.1, 0) }] : []),
+      ...(kit.sock && st.socks ? [{ geometry: kit.sock, color: SOCK, matrix: placed(0, -DIMS.shin + 0.1, 0) }] : []),
     ]);
     return { hip, knee };
   };

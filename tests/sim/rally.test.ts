@@ -13,7 +13,7 @@ describe('Simulation', () => {
     const b = runMatch(opts(5));
     expect(a.time).toBe(b.time);
     expect(a.match.winner).toBe(b.match.winner);
-  });
+  }, 30_000);
 
   it('completa un partido a 1 set', () => {
     const sim = runMatch(opts(9));

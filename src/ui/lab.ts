@@ -2,15 +2,16 @@ import * as THREE from 'three';
 import { DIMS, buildCharacter, lookFor, type Rig } from '../render/character';
 import { JOINTS, POSES, hipHeight, sampleTrack, TRACKS, trackSpan, resetPosePool, type Pose } from '../render/pose';
 import {
-  BEFORE_STYLE, BLOCK_STYLE, ROUND_STYLE, STYLE_RANGES, charStyle, resetCharStyle, setCharStyle,
+  BEFORE_STYLE, BLOCK_STYLE, GAME_STYLE, ROUND_STYLE, STYLE_RANGES, draftStyle, saveDraft, tryDraftInMatch,
   type CharStyle, type HairStyle,
 } from '../render/style';
 import { audio } from '../audio/music';
 
 /**
- * Probador de jugadores: tres jugadores en una tarima que gira, con poses del partido y todos los ajustes del estilo
- * (forma, cabeza, pelo, ojos, sombreado, contorno). Cada cambio se ve al instante y queda guardado: el partido usa lo
- * que se deje aquí. "Copiar ajustes" da el texto para pasárselo a quien hace el juego.
+ * Editor de personajes (solo para quien diseña el juego, en `?editor`): tres jugadores en una tarima que gira, con
+ * poses del partido y todos los ajustes del estilo (forma, cabeza, pelo, cara, zapatillas, sombreado, contorno). El
+ * borrador queda en este navegador; "Copiar ajustes" da el texto para ponerlo en el juego (`GAME_STYLE`), y "Probar en
+ * un partido" juega uno con el borrador solo en esta pestaña. Los jugadores nunca ven este editor.
  */
 
 type PoseId = 'idle' | 'ready' | 'spike' | 'block' | 'bump' | 'set' | 'serve' | 'celebrate';
@@ -21,7 +22,8 @@ const POSE_LABELS: Record<PoseId, string> = {
 const LABELS: Partial<Record<keyof CharStyle, string>> = {
   detail: 'Suavidad de las curvas', head: 'Tamaño de la cabeza', shoulders: 'Ancho de hombros', waist: 'Cintura',
   limbs: 'Grosor de brazos y piernas', eyes: 'Tamaño de los ojos', tones: 'Tonos de sombra', soft: 'Sombra difuminada',
-  shadow: 'Claridad de la sombra', outline: 'Contorno negro', rim: 'Luz de borde',
+  shadow: 'Claridad de la sombra', outline: 'Contorno negro', rim: 'Luz de borde', brows: 'Cejas (− alegre · + serio)',
+  hairVolume: 'Volumen del pelo', shoes: 'Tamaño de zapatillas',
 };
 
 const HAIR_LABELS: Record<HairStyle, string> = { variado: 'Variado', casquete: 'Corto', puntas: 'Puntas anime', mechones: 'Mechones', cola: 'Cola' };
@@ -33,7 +35,8 @@ const MODELS = [
   { def: { number: 1, skin: 0, hair: 3, armSleeve: 0, legSleeve: 0, sleeveColor: 1 }, name: 'MORA', primary: '#2459d6', secondary: '#f4c430', libero: true },
 ];
 
-export function labView(onBack: () => void): HTMLElement {
+export function labView(onBack: () => void, onTry: () => void): HTMLElement {
+  let draft = draftStyle();
   const el = document.createElement('section');
   el.className = 'am-lab';
   el.innerHTML = `
@@ -42,10 +45,10 @@ export function labView(onBack: () => void): HTMLElement {
       <div class="lab-cam"><button type="button" data-cam="near" class="on">Cerca</button><button type="button" data-cam="far">Como en el partido</button><button type="button" data-spin class="on">Girar</button></div>
     </div>
     <aside class="lab-panel">
-      <div class="lab-head"><button type="button" class="am-back lab-back" aria-label="Volver">‹</button><div><h2>Probador</h2><p>Ajusta cómo se ven los jugadores. Se guarda solo y se usa en el partido.</p></div></div>
+      <div class="lab-head"><button type="button" class="am-back lab-back" aria-label="Volver">‹</button><div><h2>Editor de personajes</h2><p>Solo para ti. Ajusta, toca <b>Copiar ajustes</b> y pásaselo a Claude: lo pone en el juego para todos.</p></div></div>
       <div class="lab-presets"></div>
       <div class="lab-controls"></div>
-      <div class="lab-actions"><button type="button" class="am-cta" data-copy>Copiar ajustes</button><button type="button" class="am-ghost" data-reset>Volver al estilo por defecto</button></div>
+      <div class="lab-actions"><button type="button" class="am-cta" data-copy>Copiar ajustes</button><button type="button" class="am-ghost" data-try>Probar en un partido</button></div>
       <textarea class="lab-out" readonly rows="4" hidden></textarea>
     </aside>`;
   const canvas = el.querySelector('canvas')!;
@@ -85,7 +88,7 @@ export function labView(onBack: () => void): HTMLElement {
       turntable.remove(r.root);
       r.root.traverse((o) => { if (o instanceof THREE.SkinnedMesh && o.material !== null && o.geometry) o.geometry.dispose(); });
     }
-    const st = charStyle();
+    const st = draft;
     rigs = MODELS.map((m, i) => {
       const rig = buildCharacter(lookFor(m.def, m.name, m.primary, m.secondary, m.libero), st);
       // En triángulo: de perfil no se tapan uno al otro.
@@ -183,13 +186,15 @@ export function labView(onBack: () => void): HTMLElement {
   tap(el.querySelector<HTMLButtonElement>('.lab-back')!, onBack);
 
   const change = (patch: Partial<CharStyle>) => {
-    setCharStyle({ ...charStyle(), ...patch });
+    draft = { ...draft, ...patch };
+    saveDraft(draft);
     build();
     out.hidden = true;
   };
 
   const presets = el.querySelector('.lab-presets')!;
-  const presetList: [string, CharStyle][] = [['Antes', BEFORE_STYLE], ['Redondo', ROUND_STYLE], ['Bloque (tu dibujo)', BLOCK_STYLE]];
+  // Puntos de partida: el que tiene hoy el juego, los de bloques y redondo, y cómo era antes.
+  const presetList: [string, CharStyle][] = [['El del juego', GAME_STYLE], ['Bloque', BLOCK_STYLE], ['Redondo', ROUND_STYLE], ['Antes', BEFORE_STYLE]];
   for (const [label, st] of presetList) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -208,7 +213,7 @@ export function labView(onBack: () => void): HTMLElement {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = text;
-      b.classList.toggle('active', charStyle()[k] === v);
+      b.classList.toggle('active', draft[k] === v);
       tap(b, () => {
         change({ [k]: v } as Partial<CharStyle>);
         seg.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
@@ -221,7 +226,7 @@ export function labView(onBack: () => void): HTMLElement {
     const [min, max, step] = STYLE_RANGES[k]!;
     const row = document.createElement('label');
     row.className = 'lab-row lab-slider';
-    const v = charStyle()[k] as number;
+    const v = draft[k] as number;
     row.innerHTML = `<span>${LABELS[k]}<b>${v}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}">`;
     const input = row.querySelector('input')!;
     const shown = row.querySelector('b')!;
@@ -239,13 +244,17 @@ export function labView(onBack: () => void): HTMLElement {
     choice('hair', 'Peinado', (Object.keys(HAIR_LABELS) as HairStyle[]).map((hh) => [hh, HAIR_LABELS[hh]]));
     choice('hands', 'Manos', [[true, 'Sí'], [false, 'No']]);
     choice('eyeShine', 'Brillo en los ojos', [[true, 'Sí'], [false, 'No']]);
+    choice('socks', 'Medias blancas (bloques)', [[true, 'Sí'], [false, 'No']]);
     for (const k of Object.keys(STYLE_RANGES) as (keyof CharStyle)[]) slider(k);
   };
   renderControls();
 
-  tap(el.querySelector<HTMLButtonElement>('[data-reset]')!, () => { resetCharStyle(); build(); renderControls(); });
+  tap(el.querySelector<HTMLButtonElement>('[data-try]')!, () => {
+    tryDraftInMatch(true);
+    onTry();
+  });
   tap(el.querySelector<HTMLButtonElement>('[data-copy]')!, () => {
-    const text = `Estilo de jugadores: ${JSON.stringify(charStyle())}`;
+    const text = `Estilo de jugadores: ${JSON.stringify(draft)}`;
     out.value = text;
     out.hidden = false;
     out.select();

@@ -9,7 +9,6 @@ import { SQUAD_ROLES, basePlayers, clubTeam, squadPlayer } from '../data/club';
 import { createRng } from '../sim/rng';
 import { audio } from '../audio/music';
 import { tutorialView } from './tutorial';
-import { labView } from './lab';
 import { BYE, ROUND_NAMES, createTournament, finishWithoutUser, nextOpponent, recordResult } from '../data/tournament';
 import { CREST_COUNT, CREST_NAMES, crestSvg, icon, initials, type IconName } from './crest';
 import { cardEl, esc, playerChip, rarityLevel, ROLE_SHORT } from './cards-ui';
@@ -104,7 +103,7 @@ function takeScreen(): Screen | null {
 
 const DEFAULT: MatchSetup = { team: CLUB, rival: 0, setsToWin: 1, difficulty: 'normal', mode: 'friendly' };
 
-type Screen = 'welcome' | 'tutorial' | 'home' | 'solo' | 'tournament' | 'lab' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
+type Screen = 'welcome' | 'tutorial' | 'home' | 'solo' | 'tournament' | 'online' | 'club' | 'packs' | 'ranking' | 'settings' | 'help';
 
 const ONLINE_AVAILABLE = import.meta.env.MODE !== 'artifact';
 
@@ -172,7 +171,7 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
   const renderTop = () => {
     const p = loadProfile();
     top.replaceChildren();
-    if (screen === 'welcome' || screen === 'tutorial' || screen === 'lab') return;
+    if (screen === 'welcome' || screen === 'tutorial') return;
     const brand = button('am-brand', '<b>VOLEIBOL</b><span>TICO</span>', () => go('home'), 'back');
     const club = button('am-clubchip', `${crestSvg(p.club, 30)}<div><b>${esc(p.club.name)}</b><small>${icon('user', 12)} ${esc(p.nickname)}</small></div>`, () => go('club'));
     const packs = button('am-packchip', `${icon('pack', 18)}<b>${p.packs}</b>`, () => go('packs'));
@@ -193,7 +192,6 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
       home: homeScreen,
       solo: soloScreen,
       tournament: tournamentScreen,
-      lab: () => labView(() => go('home')),
       online: onlineScreen,
       club: clubScreen,
       packs: packsScreen,
@@ -284,7 +282,6 @@ export function showMenu(root: HTMLElement): Promise<MatchSetup> {
     item('club', 'Mi club', 'Nombre, escudo, colores y plantilla', () => go('club'));
     item('pack', 'Sobres', p.packs ? `Tienes ${p.packs} por abrir` : 'Gana partidos para conseguir sobres', () => go('packs'), p.packs ? `<span class="am-badge">${p.packs}</span>` : '');
     item('trophy', 'Tabla de clubes', LEADERBOARD_AVAILABLE ? 'Los clubes de todos los jugadores y sus victorias' : 'Solo en el sitio del juego (mauroza.github.io)', () => go('ranking'));
-    item('user', 'Probador', 'Ajusta cómo se ven los jugadores 3D', () => go('lab'));
     item('settings', 'Ajustes', 'Sonido, controles, sensibilidad, FPS', () => go('settings'));
     item('tutorial', 'Tutorial', 'Aprende todas las mecánicas paso a paso', () => go('tutorial'));
     item('help', 'Cómo jugar', 'Resumen de controles y jugadas', () => go('help'));

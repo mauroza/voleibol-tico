@@ -1,6 +1,7 @@
 /**
- * Estilo de los jugadores 3D: forma del cuerpo, cara, pelo, sombreado y contorno. El Probador (menú → Probador) lo
- * cambia en vivo y lo guarda en este navegador; el partido usa lo guardado (o el estilo por defecto).
+ * Estilo de los jugadores 3D: forma del cuerpo, cara, pelo, sombreado y contorno. Es uno solo para todo el juego
+ * (`GAME_STYLE`). El editor de personajes (`?editor`, solo para quien diseña) arma uno nuevo; sus ajustes se copian y se
+ * pegan aquí. "Probar en un partido" usa el borrador del editor solo en esa pestaña.
  */
 
 import { settings } from '../data/profile';
@@ -43,37 +44,48 @@ export interface CharStyle {
   outline: number;
   /** Luz de borde que despega al jugador del fondo. */
   rim: number;
+  /** Tamaño de las zapatillas. */
+  shoes: number;
+  /** Medias blancas (cuerpo de bloques). */
+  socks: boolean;
+  /** Cejas: positivo bajan hacia adentro (serio), negativo suben (alegre). */
+  brows: number;
+  /** Volumen de mechones, puntas y cola. */
+  hairVolume: number;
 }
 
-/** Cómo se veían los jugadores antes del Probador (para comparar). */
+/** Cómo se veían los jugadores antes del editor (para comparar). */
 export const BEFORE_STYLE: CharStyle = {
   body: 'redondo', detail: 1, torso: 'capsula', head: 1, shoulders: 1, waist: 1, limbs: 1, hands: false, hair: 'casquete',
-  eyes: 1, eyeShine: false, tones: 4, soft: 0, shadow: 0.47, outline: 1, rim: 0,
+  eyes: 1, eyeShine: false, tones: 4, soft: 0, shadow: 0.47, outline: 1, rim: 0, shoes: 1, socks: false, brows: -0.12, hairVolume: 1,
 };
 
 /** Redondo: curvas suaves, tronco de atleta, cara anime y sombreado suave. */
 export const ROUND_STYLE: CharStyle = {
   body: 'redondo', detail: 3, torso: 'atleta', head: 1.12, shoulders: 1.12, waist: 0.8, limbs: 1, hands: true, hair: 'variado',
-  eyes: 1.25, eyeShine: true, tones: 3, soft: 0.35, shadow: 0.55, outline: 0.75, rim: 0.35,
+  eyes: 1.25, eyeShine: true, tones: 3, soft: 0.35, shadow: 0.55, outline: 0.75, rim: 0.35, shoes: 1, socks: false, brows: -0.12, hairVolume: 1,
 };
 
 /** Bloques redondeados, como el dibujo del jugador con el 10: cabeza grande, puños, medias y zapatillas gruesas. */
 export const BLOCK_STYLE: CharStyle = {
   body: 'bloque', detail: 3, torso: 'atleta', head: 1.3, shoulders: 1.1, waist: 0.9, limbs: 1.1, hands: true, hair: 'mechones',
-  eyes: 1.1, eyeShine: false, tones: 3, soft: 0.6, shadow: 0.6, outline: 0.35, rim: 0.25,
+  eyes: 1.1, eyeShine: false, tones: 3, soft: 0.6, shadow: 0.6, outline: 0.35, rim: 0.25, shoes: 1, socks: true, brows: 0.32, hairVolume: 1,
 };
 
-/** Estilo por defecto del juego: el de bloques. */
-export const DEFAULT_STYLE: CharStyle = BLOCK_STYLE;
+/** El estilo del juego: el que ven todos. Se cambia pegando aquí los ajustes copiados del editor. */
+export const GAME_STYLE: CharStyle = BLOCK_STYLE;
 
-/** Rango de cada ajuste numérico del Probador. */
+/** Rango de cada ajuste numérico del editor. */
 export const STYLE_RANGES: Partial<Record<keyof CharStyle, [number, number, number]>> = {
   detail: [1, 4, 1],
-  head: [0.85, 1.4, 0.01],
+  head: [0.85, 1.6, 0.01],
   shoulders: [0.85, 1.35, 0.01],
   waist: [0.6, 1.1, 0.01],
-  limbs: [0.75, 1.3, 0.01],
+  limbs: [0.75, 1.4, 0.01],
   eyes: [0.6, 1.8, 0.01],
+  brows: [-0.5, 0.6, 0.01],
+  hairVolume: [0.7, 1.5, 0.01],
+  shoes: [0.8, 1.5, 0.01],
   tones: [2, 5, 1],
   soft: [0, 1, 0.01],
   shadow: [0.3, 0.85, 0.01],
@@ -81,55 +93,55 @@ export const STYLE_RANGES: Partial<Record<keyof CharStyle, [number, number, numb
   rim: [0, 1, 0.01],
 };
 
-const KEY = 'voleibol-tico:look';
+/** Borrador del editor (solo en el navegador de quien diseña) y la marca de "probar en un partido" de esta pestaña. */
+const DRAFT_KEY = 'voleibol-tico:editor';
+const TRY_KEY = 'voleibol-tico:editor-try';
+
+/** Borrador guardado del editor (o el estilo del juego si no hay). */
+export function draftStyle(): CharStyle {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) return { ...GAME_STYLE, ...(JSON.parse(raw) as Partial<CharStyle>) };
+  } catch {
+    // Sin almacenamiento: el del juego.
+  }
+  return { ...GAME_STYLE };
+}
+
+export function saveDraft(s: CharStyle): void {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(s));
+  } catch {
+    // Sin almacenamiento: el borrador dura lo que la página.
+  }
+}
+
+/** El próximo partido de esta pestaña usa el borrador del editor (nadie más lo ve). */
+export function tryDraftInMatch(on: boolean): void {
+  try {
+    if (on) sessionStorage.setItem(TRY_KEY, '1');
+    else sessionStorage.removeItem(TRY_KEY);
+  } catch {
+    // Sin almacenamiento: se juega con el estilo del juego.
+  }
+}
+
+/** Estilo de los jugadores: el del juego, salvo que esta pestaña esté probando el borrador del editor. */
+export function charStyle(): CharStyle {
+  try {
+    if (sessionStorage.getItem(TRY_KEY)) return draftStyle();
+  } catch {
+    // Sin almacenamiento: el del juego.
+  }
+  return GAME_STYLE;
+}
 
 /**
- * Estilo para el partido: el del Probador con la suavidad limitada por la calidad de Ajustes (en el partido hay ~30
- * personajes; en calidad baja las curvas son las de antes y el teléfono no sufre).
+ * Estilo para el partido: con la suavidad limitada por la calidad de Ajustes (en el partido hay ~30 personajes; en
+ * calidad baja las curvas son las de antes y el teléfono no sufre).
  */
 export function matchStyle(): CharStyle {
   const s = charStyle();
   const cap = { alta: 3, media: 2, baja: 1 }[settings().quality];
   return s.detail > cap ? { ...s, detail: cap } : s;
-}
-
-let current: CharStyle | null = null;
-const listeners: ((s: CharStyle) => void)[] = [];
-
-/** Estilo en uso: el guardado en el Probador o el de por defecto. */
-export function charStyle(): CharStyle {
-  if (current) return current;
-  current = { ...DEFAULT_STYLE };
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) current = { ...DEFAULT_STYLE, ...(JSON.parse(raw) as Partial<CharStyle>) };
-  } catch {
-    // Sin almacenamiento: estilo por defecto.
-  }
-  return current;
-}
-
-/** Cambia el estilo (lo guarda) y avisa a quien lo dibuja. */
-export function setCharStyle(s: CharStyle): void {
-  current = { ...s };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(current));
-  } catch {
-    // Sin almacenamiento: vale solo para esta sesión.
-  }
-  for (const f of listeners) f(current);
-}
-
-/** Vuelve al estilo por defecto (borra lo guardado). */
-export function resetCharStyle(): void {
-  setCharStyle(DEFAULT_STYLE);
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // Nada que borrar.
-  }
-}
-
-export function onCharStyle(f: (s: CharStyle) => void): void {
-  listeners.push(f);
 }

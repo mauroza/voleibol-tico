@@ -32,13 +32,17 @@ import { Lockstep, leadForDelay } from './net/lockstep';
 import { hostRoom, joinRoom, type OnlineMatch } from './net/room';
 import { showLobby } from './ui/lobby';
 import { labView } from './ui/lab';
+import { loadPlayerModel } from './render/model';
 
 const ui = document.getElementById('hud')!;
 startClubSync();
+// El modelo de los jugadores baja mientras se elige el partido; si no llega, se juega con los bloques.
+const model = loadPlayerModel();
 // Editor de personajes: solo para quien diseña el juego (`?editor` o `#editor`); no aparece en el menú.
 const editor = new URLSearchParams(location.search).has('editor') || location.hash === '#editor';
-if (editor) openEditor();
+if (editor) void model.then(openEditor);
 else showMenu(ui).then(async (setup) => {
+  await model;
   if (!setup.online) return start(setup);
   // Online: sala con código. El anfitrión elige los equipos; el invitado juega con el rival.
   const lobby = showLobby(ui);

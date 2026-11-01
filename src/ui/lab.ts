@@ -109,7 +109,9 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   let cam: 'detail' | 'near' | 'far' = 'near';
   let yaw = 0.35;
   let t0 = performance.now();
-  if (import.meta.env.DEV) Object.assign(window, { __lab: { cam: (c: number[] | null) => { devCam = c; }, yaw: (v: number) => { yaw = v; } } });
+  // Solo en desarrollo: congelar la pista en un instante (s relativos al momento clave) para revisar cuadros.
+  let devAt: number | null = null;
+  if (import.meta.env.DEV) Object.assign(window, { __lab: { cam: (c: number[] | null) => { devCam = c; }, yaw: (v: number) => { yaw = v; }, at: (t: number | null) => { devAt = t; }, pose: (p: PoseId) => { pose = p; } } });
   const apply = (rig: Rig, p: Pose) => {
     for (const j of JOINTS) {
       const e = p[j];
@@ -123,6 +125,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   const currentPose = (now: number): Pose => {
     if (pose === 'idle' || pose === 'ready' || pose === 'celebrate') return POSES[pose];
     const track = TRACKS[pose];
+    if (devAt !== null) return sampleTrack(track, devAt);
     const [a, b] = trackSpan(track);
     const len = b - a + 0.6;
     return sampleTrack(track, a + (((now - t0) / 1000) % len));
@@ -251,7 +254,7 @@ export function labView(onBack: () => void, onTry: () => void): HTMLElement {
   };
   const renderControls = () => {
     controls.replaceChildren();
-    choice('body', 'Forma', [['redondo', 'Redonda'], ['bloque', 'Bloques']]);
+    choice('body', 'Forma', [['modelo', 'Modelo'], ['bloque', 'Bloques'], ['redondo', 'Redonda']]);
     choice('torso', 'Tronco', [['atleta', 'Atleta'], ['capsula', 'Cápsula']]);
     choice('hair', 'Peinado', (Object.keys(HAIR_LABELS) as HairStyle[]).map((hh) => [hh, HAIR_LABELS[hh]]));
     choice('hands', 'Manos', [[true, 'Sí'], [false, 'No']]);

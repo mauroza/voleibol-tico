@@ -9,7 +9,7 @@ import { settings } from '../data/profile';
 export type HairStyle = 'variado' | 'casquete' | 'puntas' | 'mechones' | 'cola';
 export type TorsoShape = 'capsula' | 'atleta';
 /** Cuerpo de curvas (cápsulas y esferas) o de bloques redondeados (cabeza cúbica, puños, zapatillas gruesas). */
-export type BodyShape = 'redondo' | 'bloque';
+export type BodyShape = 'redondo' | 'bloque' | 'modelo';
 
 export interface CharStyle {
   /** Forma de las piezas: redondas o bloques redondeados. */
@@ -76,6 +76,10 @@ export const ROUND_STYLE: CharStyle = {
   eyes: 1.25, eyeShine: true, tones: 3, soft: 0.35, shadow: 0.55, outline: 0.75, rim: 0.35, shoes: 1, socks: false, brows: -0.12, hairVolume: 1, fist: 1, warmth: 0.3, vivid: 1.1, legs: 1, legGap: 0.05,
 };
 
+/**
+ * El juego usa el modelo de Blender (`body: 'modelo'`, ver render/model.ts) con el sombreado de los bloques; si el
+ * modelo no carga, se arma con bloques.
+ */
 /** Bloques redondeados, como el dibujo del jugador con el 10: cabeza grande, puños, medias y zapatillas gruesas. */
 export const BLOCK_STYLE: CharStyle = {
   body: 'bloque', detail: 3, torso: 'atleta', head: 1.3, shoulders: 1.1, waist: 0.9, limbs: 1.1, hands: true, hair: 'mechones',
@@ -84,7 +88,7 @@ export const BLOCK_STYLE: CharStyle = {
 };
 
 /** El estilo del juego: el que ven todos. Se cambia pegando aquí los ajustes copiados del editor. */
-export const GAME_STYLE: CharStyle = BLOCK_STYLE;
+export const GAME_STYLE: CharStyle = { ...BLOCK_STYLE, body: 'modelo' };
 
 /** Rango de cada ajuste numérico del editor. */
 export const STYLE_RANGES: Partial<Record<keyof CharStyle, [number, number, number]>> = {

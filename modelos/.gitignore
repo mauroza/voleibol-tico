@@ -1,0 +1,6 @@
+# Generados por modelos/scripts (se rehacen con Blender)
+fotos/
+*.blend1
+personaje.blend
+juego.blend
+variantes/*.blend

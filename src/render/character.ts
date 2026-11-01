@@ -3,6 +3,7 @@ import { mergeParts, mergeSkinned, placed, type Part } from './merge';
 import type { JointName } from './pose';
 import { OUTLINE_SKINNED, applyCharShading, toon, toonVertexColors } from './toon';
 import { charStyle, type CharStyle, type HairStyle } from './style';
+import { buildModelCharacter, modelReady } from './model';
 
 /** Medidas del personaje (metros). */
 export const DIMS = {
@@ -625,10 +626,45 @@ function skinCharacter(root: THREE.Object3D): void {
 }
 
 /**
+ * Jugador con el modelo de Blender: colores del equipo por vértice y número y apellido impresos en pecho y espalda,
+ * donde el modelo tenía su "10".
+ */
+function modelCharacter(look: Look, st: CharStyle): Rig {
+  applyCharShading(st);
+  const ink = contrast(look.shirt);
+  const trim = ink === '#ffffff' ? '#e9ecf2' : '#2a2e36';
+  const colors = { shirt: look.shirt, shorts: look.shorts, skin: look.skin, hair: look.hair ?? '#2a1d16', trim };
+  return buildModelCharacter(look, colors, (spine, at) => {
+    const chest = at.numero_pecho;
+    if (chest) {
+      const number = new THREE.Mesh(CHEST_NUMBER, numberMaterial(look.number, ink));
+      const k = (chest[3] * 1.15) / 0.17;
+      number.scale.setScalar(k);
+      number.position.set(chest[0], chest[1], chest[2] + 0.012);
+      spine.add(number);
+    }
+    const back = at.numero_espalda;
+    if (back) {
+      // En la textura de la espalda el número está debajo del apellido: se sube para que quede donde estaba el 10.
+      const print = new THREE.Mesh(BACK_PRINT, backMaterial(look.name, look.number, ink));
+      const size = back[3] * 1.7;
+      print.scale.setScalar(size / 0.27);
+      print.position.set(back[0], back[1] + size * 0.145, back[2] - 0.012);
+      print.rotation.y = Math.PI;
+      spine.add(print);
+    }
+  });
+}
+
+/**
  * Jugador estilizado: piel, camisa de manga corta con número y apellido, pantaloneta, rodilleras, zapatos,
  * pelo y una cara sencilla. La forma (cuerpo, cabeza, ojos, peinado) sale del estilo del Probador.
  */
 export function buildCharacter(look: Look, st: CharStyle = charStyle()): Rig {
+  if (st.body === 'modelo') {
+    if (modelReady()) return modelCharacter(look, st);
+    st = { ...st, body: 'bloque' };
+  }
   applyCharShading(st);
   const kit = kitFor(st);
   const D = dimsFor(st);

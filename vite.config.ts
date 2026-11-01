@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) =>
           emptyOutDir: true,
           minify: false,
           cssCodeSplit: false,
+          // El modelo de los jugadores va dentro del código: el Artifact no sirve archivos binarios sueltos.
+          assetsInlineLimit: (file: string) => (file.endsWith('.bin') ? true : undefined),
           rollupOptions: {
             external: ['three'],
             output: { entryFileNames: 'assets/game.js', assetFileNames: 'assets/game[extname]' },

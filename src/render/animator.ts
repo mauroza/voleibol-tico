@@ -204,9 +204,11 @@ export class Animator {
           const lift = this.liftToReach(TRACKS.set, 'L', up.point.y, 0, 0.45);
           if (lift > 0.05) this.startJump(up.time, 0.55, lift);
         }
-        aim = { target, arms: 'both', weight: ease(1 - lead / 0.3) * 0.85 };
+        // Apunta solo en parte: si no, los brazos rectos hacia la pelota deshacían el marco de las manos sobre la frente.
+        aim = { target, arms: 'both', weight: ease(1 - lead / 0.3) * 0.45 };
       } else {
-        aim = { target, arms: 'both', weight: ease(1 - lead / 0.35) * 0.95 };
+        // La plataforma se orienta hacia la pelota, pero conserva los brazos juntos y bajos de la pose.
+        aim = { target, arms: 'both', weight: ease(1 - lead / 0.35) * 0.6 };
       }
     } else if (block && inPlay && block.keys.includes(this.key) && sim.humans.has(p.team)) {
       // Bloqueo de una persona: listos en la red con los brazos arriba; saltan cuando toca ESPACIO. Online, en la
@@ -354,7 +356,7 @@ export class Animator {
     }
     if (!aim && this.contactAim) {
       const since = now - this.contactAim.at;
-      if (since < 0.12) aim = { target: this.contactAim.target, arms: this.contactAim.arms, weight: (1 - since / 0.12) * 0.9 };
+      if (since < 0.12) aim = { target: this.contactAim.target, arms: this.contactAim.arms, weight: (1 - since / 0.12) * (this.contactAim.arms === 'both' ? 0.5 : 0.9) };
       else this.contactAim = null;
     }
     if (aim) this.aimArms(aim.target, aim.arms, aim.weight);

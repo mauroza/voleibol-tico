@@ -268,18 +268,23 @@ export const TRACKS: Record<'spike' | 'block' | 'set' | 'bump' | 'dive' | 'planc
     { t: 0.3, pose: { spine: [0.2, 0, 0], neck: [-0.2, 0, 0], ...both(-1.8, 0.15, -1.0), ...legs(-0.8, 1.3, 0.14) } },
     { t: 0.6, pose: POSES.ready },
   ],
-  // Manos que suben a la frente, extensión de brazos y piernas en el contacto.
+  // Colocación (como en los manuales): agachado, las manos suben y arman el marco adelante y arriba de la frente, juntas
+  // (brazos hacia adentro: con la cabeza grande, si no, quedaban a los costados), mirando la pelota; en el contacto
+  // empujan las piernas y los brazos se estiran juntos hacia arriba y adelante.
   set: [
-    { t: -0.45, pose: { spine: [0, 0, 0], neck: [-0.45, 0, 0], ...both(-2.3, 0.35, -1.7), ...legs(-0.45, 0.75) } },
-    { t: 0, pose: { spine: [-0.05, 0, 0], neck: [-0.45, 0, 0], ...both(-2.75, 0.3, -0.6), ...legs(-0.2, 0.35) } },
-    { t: 0.2, pose: { spine: [-0.05, 0, 0], neck: [-0.35, 0, 0], ...both(-3.0, 0.2, -0.1), ...legs(-0.1, 0.15) } },
-    { t: 0.5, pose: POSES.ready },
+    { t: -0.6, pose: { spine: [0.18, 0, 0], neck: [-0.35, 0, 0], ...both(-1.4, -0.15, -1.1), ...legs(-0.65, 1.05, 0.14) } },
+    { t: -0.28, pose: { spine: [0.06, 0, 0], neck: [-0.6, 0, 0], ...both(-2.5, -0.4, -0.7), ...legs(-0.6, 1.0, 0.14) } },
+    { t: 0, pose: { spine: [-0.02, 0, 0], neck: [-0.6, 0, 0], ...both(-2.65, -0.35, -0.35), ...legs(-0.35, 0.55, 0.12) } },
+    { t: 0.16, pose: { spine: [-0.08, 0, 0], neck: [-0.45, 0, 0], ...both(-2.95, -0.2, -0.05), ...legs(-0.05, 0.1, 0.1) } },
+    { t: 0.55, pose: POSES.ready },
   ],
-  // Plataforma con los brazos juntos y estirados, piernas flexionadas que empujan en el contacto.
+  // Recepción: la plataforma (brazos estirados y juntos) se arma antes de que llegue la pelota, bien abajo y con las
+  // rodillas flexionadas; en el contacto empujan las piernas y los brazos casi no suben (nunca sobre los hombros).
   bump: [
-    { t: -0.5, pose: { spine: [0.45, 0, 0], neck: [-0.35, 0, 0], ...both(-0.7, -0.3, 0), ...legs(-0.85, 1.35, 0.18) } },
-    { t: 0, pose: { spine: [0.35, 0, 0], neck: [-0.35, 0, 0], ...both(-1.0, -0.3, 0), ...legs(-0.7, 1.1, 0.18) } },
-    { t: 0.25, pose: { spine: [0.2, 0, 0], neck: [-0.3, 0, 0], ...both(-1.25, -0.28, 0), ...legs(-0.45, 0.7, 0.16) } },
+    { t: -0.6, pose: { spine: [0.3, 0, 0], neck: [-0.3, 0, 0], ...both(-0.45, -0.2, -0.6), ...legs(-0.7, 1.1, 0.2) } },
+    { t: -0.3, pose: { spine: [0.45, 0, 0], neck: [-0.45, 0, 0], ...both(-0.85, -0.42, -0.05), ...legs(-0.95, 1.45, 0.2) } },
+    { t: 0, pose: { spine: [0.38, 0, 0], neck: [-0.45, 0, 0], ...both(-0.95, -0.42, 0), ...legs(-0.75, 1.15, 0.2) } },
+    { t: 0.2, pose: { spine: [0.25, 0, 0], neck: [-0.35, 0, 0], ...both(-1.1, -0.4, 0), ...legs(-0.45, 0.65, 0.18) } },
     { t: 0.55, pose: POSES.ready },
   ],
   // Defensa baja: zancada profunda y brazos estirados hacia el piso.
